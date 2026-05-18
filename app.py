@@ -52,7 +52,7 @@ PALETTE = {
 SECTORS = [
     {
         "key": "faturados",
-        "title": "Produtos Faturados",
+        "title": "Análise de Faturamento",
         "subtitle": "Análise comercial e faturamento",
         "description": (
             "Visão completa de produtos faturados, ranking de clientes, "
@@ -67,7 +67,7 @@ SECTORS = [
     },
     {
         "key": "producao",
-        "title": "Produção Geral",
+        "title": "Análise de Produção",
         "subtitle": "Multi-empresas em tempo real",
         "description": (
             "Acompanhamento da produção de todas as empresas do grupo "
@@ -83,11 +83,11 @@ SECTORS = [
     },
     {
         "key": "corte",
-        "title": "Controle de Corte",
-        "subtitle": "Mantas — estações e desempenho",
+        "title": "Análise de Corte",
+        "subtitle": "Mantas/ Lençol — estações e desempenho",
         "description": (
             "Painel operacional do setor de corte de mantas com metas "
-            "diárias por estação (Máquina, Mesa 1, Mesa 2), produção, "
+            "diárias por estação, produção, "
             "OPs e indicadores por operador."
         ),
         "icon": "✂️",
@@ -443,11 +443,11 @@ with st.sidebar:
     st.markdown("**Navegação rápida**")
     # Botões com st.switch_page evitam o bug do st.page_link em algumas
     # versões do Streamlit quando os caminhos contêm emojis.
-    if st.button("📦  Produtos Faturados", key="nav_faturados", use_container_width=True):
+    if st.button("📦 Faturamento", key="nav_faturados", use_container_width=True):
         _safe_switch("pages/1_Produtos_Faturados.py")
-    if st.button("🏭  Produção Geral", key="nav_producao", use_container_width=True):
+    if st.button("🏭  Produção", key="nav_producao", use_container_width=True):
         _safe_switch("pages/2_Producao_Geral.py")
-    if st.button("✂️  Controle de Corte", key="nav_corte", use_container_width=True):
+    if st.button("✂️ Corte", key="nav_corte", use_container_width=True):
         _safe_switch("pages/3_Controle_de_Corte.py")
     st.markdown("---")
     st.caption(
