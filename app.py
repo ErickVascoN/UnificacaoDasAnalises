@@ -100,8 +100,8 @@ SECTORS = [
     },
 
     {
-        "key": "Aumoxarifado",
-        "title": "Análise de Aumoxarife",
+        "key": "Almoxarifado",
+        "title": "Análise de Almoxarife",
         "subtitle": "Insumos/ Materiais — controle e desempenho",
         "description": (
             "Em Breve..."
