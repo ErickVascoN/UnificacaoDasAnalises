@@ -56,9 +56,9 @@ SECTORS = [
         "subtitle": "Análise comercial e faturamento",
         "description": (
             "Visão completa de produtos faturados, ranking de clientes, "
-            "evolução de receita, mix de produtos e indicadores de venda."
+            "evolução de receita, Acompanhamento comercial para tomada de decisões estratégicas."
         ),
-        "icon": "📦",
+        "icon": "📊",
         "page_path": "pages/1_Produtos_Faturados.py",
         "color_a": "#1D3557",
         "color_b": "#0C6E74",
@@ -72,7 +72,7 @@ SECTORS = [
         "description": (
             "Acompanhamento da produção de todas as empresas do grupo "
             "(Burdays, Camesa, Niazitex, Cortex, Sultan, Decor, Marcelino) "
-            "com metas, evolução diária e comparativos."
+            "com metas e evolução diária. "
         ),
         "icon": "🏭",
         "page_path": "pages/2_Producao_Geral.py",
@@ -86,9 +86,10 @@ SECTORS = [
         "title": "Análise de Corte",
         "subtitle": "Mantas/ Lençol — estações e desempenho",
         "description": (
-            "Painel operacional do setor de corte de mantas com metas "
+            "Painel operacional dos setores de corte com metas "
             "diárias por estação, produção, "
-            "OPs e indicadores por operador."
+            "OPs, Cores, indicadores por operador "
+            "e Ranking de desempenho."
         ),
         "icon": "✂️",
         "page_path": "pages/3_Controle_de_Corte.py",
@@ -96,6 +97,36 @@ SECTORS = [
         "color_b": "#45B7D1",
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
+    },
+
+    {
+        "key": "Aumoxarifado",
+        "title": "Análise de Aumoxarife",
+        "subtitle": "Insumos/ Materiais — controle e desempenho",
+        "description": (
+            "Em Breve..."
+        ),
+        "icon": "📦",
+        "page_path": "EM BREVE!",
+        "color_a": "#1F3A93",
+        "color_b": "#3974E2",
+        "accent":  "#74C4BE",
+        "tags": ["Operação", "Aumoxarife", "Controle"],
+    },
+
+    {
+        "key": "Inventario",
+        "title": "Análise de Inventário",
+        "subtitle": "Inventário — controle e desempenho de consumo",
+        "description": (
+            "Em Breve..."
+        ),
+        "icon": "📦",
+        "page_path": "EM BREVE!",
+        "color_a": "#1F3A93",
+        "color_b": "#4EB9C3",
+        "accent":  "#74C4BE",
+        "tags": ["Mapa", "Inventário", "Estoque"],
     },
 ]
 
@@ -226,98 +257,107 @@ st.markdown(
             margin-bottom: 18px;
             text-align: center;
         }}
-        .sectors-container {{
-            display: flex;
-            justify-content: center;
-            gap: 24px;
-            flex-wrap: wrap;
-            max-width: 1400px;
-            margin: 24px auto;
-            padding: 0 16px;
-        }}
-        .sector-card-wrapper {{
-            flex: 1;
-            min-width: 300px;
-            max-width: 420px;
-        }}
 
-        [data-testid="stColumn"] {{
-            width: 100%;
+        /* Faz as colunas do Streamlit se esticarem igualmente na mesma linha */
+        [data-testid="stHorizontalBlock"] {{
+            align-items: stretch !important;
+        }}
+        [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {{
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }}
+        [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMarkdownContainer"] {{
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }}
+        [data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMarkdownContainer"] > div {{
+            height: 100%;
         }}
 
         .sector-card {{
             position: relative;
-            border-radius: 18px;
-            padding: 22px 22px 18px 22px;
+            border-radius: 14px;
+            padding: 14px 16px 12px 16px;
             background: linear-gradient(160deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 100%);
             border: 1px solid var(--border);
             overflow: hidden;
-            min-height: 270px;
-            transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+            height: 100%;
+            box-sizing: border-box;
+            transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
         }}
         .sector-card::before {{
             content: "";
             position: absolute;
             inset: 0;
             background: linear-gradient(160deg, var(--card-a) 0%, var(--card-b) 100%);
-            opacity: 0.18;
-            transition: opacity 0.25s ease;
+            opacity: 0.16;
+            transition: opacity 0.22s ease;
             pointer-events: none;
         }}
         .sector-card:hover {{
-            transform: translateY(-4px);
+            transform: translateY(-3px);
             border-color: var(--card-accent, var(--border-hover));
-            box-shadow: 0 12px 30px rgba(0,0,0,0.45),
+            box-shadow: 0 10px 24px rgba(0,0,0,0.40),
                         0 0 0 1px var(--card-accent, var(--border-hover));
         }}
-        .sector-card:hover::before {{ opacity: 0.32; }}
+        .sector-card:hover::before {{ opacity: 0.28; }}
 
+        .sector-card-inner {{
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            height: 100%;
+        }}
         .sector-icon-wrap {{
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 54px;
-            height: 54px;
-            border-radius: 14px;
+            flex-shrink: 0;
+            width: 42px;
+            height: 42px;
+            border-radius: 11px;
             background: linear-gradient(135deg, var(--card-a), var(--card-b));
-            font-size: 1.7rem;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-            margin: 0 auto 14px auto;
+            font-size: 1.25rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.30);
+            margin-top: 2px;
+        }}
+        .sector-card-body {{
+            flex: 1;
+            min-width: 0;
         }}
         .sector-title {{
             font-family: 'Sora', sans-serif;
-            font-size: 1.32rem;
+            font-size: 1.05rem;
             font-weight: 700;
             color: var(--text-strong);
-            margin: 0;
-            text-align: center;
+            margin: 0 0 1px 0;
+            line-height: 1.2;
         }}
         .sector-subtitle {{
-            font-size: 0.85rem;
+            font-size: 0.70rem;
             color: var(--card-accent);
-            margin: 2px 0 12px 0;
+            margin: 0 0 6px 0;
             font-weight: 600;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.05em;
             text-transform: uppercase;
-            text-align: center;
         }}
         .sector-desc {{
-            color: var(--text-default);
-            font-size: 0.95rem;
-            line-height: 1.55;
-            margin-bottom: 14px;
-            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.80rem;
+            line-height: 1.45;
+            margin-bottom: 8px;
         }}
         .sector-tags {{
             display: flex;
             flex-wrap: wrap;
-            gap: 6px;
-            margin-bottom: 6px;
-            justify-content: center;
+            gap: 4px;
+            margin-bottom: 0;
         }}
         .sector-tag {{
-            font-size: 0.72rem;
-            padding: 4px 10px;
+            font-size: 0.65rem;
+            padding: 2px 8px;
             border-radius: 999px;
             background: rgba(255,255,255,0.05);
             border: 1px solid var(--border);
@@ -330,12 +370,14 @@ st.markdown(
             background: linear-gradient(135deg, var(--teal), #2BB3AB) !important;
             color: #0B0E14 !important;
             font-weight: 700 !important;
-            border-radius: 12px !important;
-            padding: 10px 14px !important;
+            font-size: 0.82rem !important;
+            border-radius: 10px !important;
+            padding: 7px 12px !important;
             border: 1px solid rgba(78,205,196,0.55) !important;
-            box-shadow: 0 6px 18px rgba(78,205,196,0.25) !important;
+            box-shadow: 0 4px 14px rgba(78,205,196,0.22) !important;
             transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease !important;
             width: 100% !important;
+            margin-top: 6px !important;
         }}
         .stButton > button:hover {{
             transform: translateY(-2px);
@@ -525,63 +567,52 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Layout centralizado com wrapper HTML
-st.markdown(
-    """
-    <div style="
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        gap: 20px;
-        flex-wrap: wrap;
-        width: 100%;
-        margin: 0 auto;
-        padding: 0 20px;
-    ">
-    """,
-    unsafe_allow_html=True,
-)
+# Grid via st.columns — garante que botões fiquem alinhados aos cards.
+# Máximo de 3 colunas por linha; adapta automaticamente a qualquer nº de setores.
+COLS_PER_ROW = 3
+rows = [SECTORS[i : i + COLS_PER_ROW] for i in range(0, len(SECTORS), COLS_PER_ROW)]
 
-# Criar cards em colunas individuais, cada uma centralizada
-for sector in SECTORS:
-    st.markdown(
-        f"""
-        <div style="flex: 0 1 calc(33.333% - 14px); min-width: 280px; max-width: 360px;">
-        """,
-        unsafe_allow_html=True,
-    )
-    
-    tags_html = "".join(
-        f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
-    )
-    
-    st.markdown(
-        f"""
-        <div class="sector-card" style="
-            --card-a: {sector['color_a']};
-            --card-b: {sector['color_b']};
-            --card-accent: {sector['accent']};
-        ">
-            <div class="sector-icon-wrap">{sector['icon']}</div>
-            <div class="sector-subtitle">{sector['subtitle']}</div>
-            <h3 class="sector-title">{sector['title']}</h3>
-            <p class="sector-desc">{sector['description']}</p>
-            <div class="sector-tags">{tags_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    
-    if st.button(
-        f"Abrir {sector['title']}  →",
-        key=f"open_{sector['key']}",
-        use_container_width=True,
-    ):
-        _safe_switch(sector["page_path"])
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+for row_sectors in rows:
+    # Preenche a última linha com colunas vazias se incompleta
+    padding = COLS_PER_ROW - len(row_sectors)
+    cols = st.columns(COLS_PER_ROW, gap="medium")
 
-st.markdown("</div>", unsafe_allow_html=True)
+    for idx, (col, sector) in enumerate(zip(cols, row_sectors)):
+        with col:
+            tags_html = "".join(
+                f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
+            )
+            st.markdown(
+                f"""
+                <div class="sector-card" style="
+                    --card-a: {sector['color_a']};
+                    --card-b: {sector['color_b']};
+                    --card-accent: {sector['accent']};
+                ">
+                    <div class="sector-card-inner">
+                        <div class="sector-icon-wrap">{sector['icon']}</div>
+                        <div class="sector-card-body">
+                            <div class="sector-subtitle">{sector['subtitle']}</div>
+                            <h3 class="sector-title">{sector['title']}</h3>
+                            <p class="sector-desc">{sector['description']}</p>
+                            <div class="sector-tags">{tags_html}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                f"Abrir {sector['title']}  →",
+                key=f"open_{sector['key']}",
+                use_container_width=True,
+            ):
+                _safe_switch(sector["page_path"])
+
+    # Colunas de preenchimento (quando a última linha tem menos de COLS_PER_ROW)
+    for i in range(padding):
+        with cols[len(row_sectors) + i]:
+            st.empty()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
