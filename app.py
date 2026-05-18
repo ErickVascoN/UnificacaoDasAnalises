@@ -111,7 +111,7 @@ SECTORS = [
         "color_a": "#1F3A93",
         "color_b": "#3974E2",
         "accent":  "#74C4BE",
-        "tags": ["Operação", "Aumoxarife", "Controle"],
+        "tags": ["Operação", "Almoxarifado", "Controle"],
     },
 
     {
