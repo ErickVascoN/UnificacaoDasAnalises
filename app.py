@@ -711,14 +711,15 @@ for row_sectors in rows:
                 'color:#E76F51;font-weight:700;letter-spacing:.04em">🔒 ADMIN</div>'
             ) if locked else ""
 
+            card_style = (
+                f"--card-a:{sector['color_a']};--card-b:{sector['color_b']};"
+                f"--card-accent:{sector['accent']};"
+                + ("opacity:.45;pointer-events:none;" if locked else "")
+            )
+
             st.markdown(
                 f"""
-                <div class="sector-card" style="
-                    --card-a: {sector['color_a']};
-                    --card-b: {sector['color_b']};
-                    --card-accent: {sector['accent']};
-                    {'opacity:.45;pointer-events:none;' if locked else ''}
-                ">
+                <div class="sector-card" style="{card_style}">
                     {lock_badge}
                     <div class="sector-card-inner">
                         <div class="sector-icon-wrap">{sector['icon']}</div>
