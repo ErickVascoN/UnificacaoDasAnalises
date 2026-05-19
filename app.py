@@ -691,15 +691,14 @@ for row_sectors in rows:
             )
             st.markdown(card_html, unsafe_allow_html=True)
 
-            # ── Botão do card ────────────────────────────────────────────
+            # ── Botão / form inline do card ──────────────────────────────
             if locked:
-                # Usuário comum tentando acessar Faturamento
                 st.button("🔒 Acesso restrito — Admin",
                           key=f"open_{sector['key']}",
                           use_container_width=True, disabled=True)
 
             elif nivel_acesso:
-                # Já autenticado e com permissão — abre direto
+                # Já autenticado — abre direto
                 if "external_url" in sector:
                     st.link_button(f"Abrir {sector['title']}  →",
                                    sector["external_url"], use_container_width=True)
@@ -708,8 +707,41 @@ for row_sectors in rows:
                                  key=f"open_{sector['key']}", use_container_width=True):
                         _safe_switch(sector["page_path"])
 
+            elif st.session_state.auth_target == sector['key']:
+                # Form de senha inline, direto sob o card clicado
+                senha_input = st.text_input(
+                    "Senha", type="password",
+                    key=f"senha_{sector['key']}",
+                    placeholder="Digite a senha...",
+                    label_visibility="collapsed",
+                )
+                col_ok, col_x = st.columns([4, 1])
+                with col_ok:
+                    if st.button("Entrar  →", key=f"ok_{sector['key']}",
+                                 use_container_width=True):
+                        if not senha_input:
+                            st.warning("⚠️ Digite a senha.")
+                        else:
+                            nivel = verificar_acesso(senha_input)
+                            if nivel == "negado":
+                                st.error("❌ Senha incorreta.")
+                            elif sector['key'] == 'faturados' and nivel != 'admin':
+                                st.error("🔒 Faturamento requer senha Admin.")
+                            else:
+                                st.session_state.auth_nivel = nivel
+                                st.session_state.auth_target = None
+                                if "page_path" in sector:
+                                    _safe_switch(sector["page_path"])
+                                else:
+                                    st.rerun()
+                with col_x:
+                    if st.button("✕", key=f"cancel_{sector['key']}",
+                                 use_container_width=True):
+                        st.session_state.auth_target = None
+                        st.rerun()
+
             else:
-                # Não autenticado — pede senha ao clicar
+                # Não autenticado — ao clicar, abre o form inline
                 if st.button(f"🔒 Abrir {sector['title']}  →",
                              key=f"open_{sector['key']}", use_container_width=True):
                     st.session_state.auth_target = sector['key']
@@ -718,56 +750,6 @@ for row_sectors in rows:
     for i in range(padding):
         with cols[len(row_sectors) + i]:
             st.empty()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# FORMULÁRIO DE AUTENTICAÇÃO (aparece ao clicar em um card)
-# ──────────────────────────────────────────────────────────────────────────────
-if st.session_state.auth_target:
-    target = next((s for s in SECTORS if s['key'] == st.session_state.auth_target), None)
-
-    if target:
-        st.markdown("---")
-        _, col_auth, _ = st.columns([1, 2, 1])
-        with col_auth:
-            st.markdown(
-                f'<div style="background:linear-gradient(135deg,#1C1C22,#28282E);'
-                f'border:1px solid rgba(78,205,196,0.3);border-radius:16px;'
-                f'padding:24px 28px;text-align:center;margin:4px 0 16px 0;">'
-                f'<div style="font-size:1.8rem;margin-bottom:8px">{target["icon"]}</div>'
-                f'<h3 style="color:#FFFFFF;font-family:\'Sora\',sans-serif;'
-                f'font-size:1.1rem;margin:0 0 4px 0;font-weight:700">{target["title"]}</h3>'
-                f'<p style="color:#A0AEC0;font-size:.82rem;margin:0">Digite a senha para acessar</p>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-            senha_input = st.text_input(
-                "Senha", type="password", key="auth_senha",
-                placeholder="Digite a senha...", label_visibility="collapsed",
-            )
-
-            col_ok, col_cancel = st.columns(2)
-            with col_ok:
-                if st.button("Entrar  →", use_container_width=True, key="btn_auth_ok"):
-                    if not senha_input:
-                        st.warning("⚠️ Digite a senha.")
-                    else:
-                        nivel = verificar_acesso(senha_input)
-                        if nivel == "negado":
-                            st.error("❌ Senha incorreta.")
-                        elif target['key'] == 'faturados' and nivel != 'admin':
-                            st.error("🔒 Faturamento requer senha Admin.")
-                        else:
-                            st.session_state.auth_nivel = nivel
-                            st.session_state.auth_target = None
-                            if "page_path" in target:
-                                _safe_switch(target["page_path"])
-                            else:
-                                st.rerun()
-            with col_cancel:
-                if st.button("Cancelar", use_container_width=True, key="btn_auth_cancel"):
-                    st.session_state.auth_target = None
-                    st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
