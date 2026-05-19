@@ -49,6 +49,34 @@ PALETTE = {
     "border_hover": "rgba(78,205,196,0.55)",
 }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# AUTENTICAÇÃO
+# ──────────────────────────────────────────────────────────────────────────────
+SENHA_USUARIO = "0102"
+SENHA_ADMIN = "adm0102"
+
+def verificar_acesso(senha: str) -> str:
+    """Verifica a senha e retorna o nível de acesso: 'admin', 'usuario' ou 'negado'."""
+    if senha == SENHA_ADMIN:
+        return "admin"
+    elif senha == SENHA_USUARIO:
+        return "usuario"
+    else:
+        return "negado"
+
+def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
+    """Verifica se o usuário pode acessar um card específico."""
+    if nivel_acesso == "admin":
+        return True
+    if nivel_acesso == "usuario":
+        # Usuário normal não pode acessar Faturamento
+        return card_key != "faturados"
+    return False
+
+# Inicializar session_state de autenticação
+if "auth_nivel" not in st.session_state:
+    st.session_state.auth_nivel = ""
+
 SECTORS = [
     {
         "key": "apontador_gut",
@@ -64,6 +92,7 @@ SECTORS = [
         "color_b": "#2E8B9E",
         "accent":  "#26D0CE",
         "tags": ["GUT", "Eficiência", "Real-time"],
+        "requires_auth": True,
     },
     {
         "key": "analise_dados_gut",
@@ -79,6 +108,7 @@ SECTORS = [
         "color_b": "#D97706",
         "accent":  "#FBBF24",
         "tags": ["Análise", "GUT", "Insights"],
+        "requires_auth": True,
     },
     {
         "key": "faturados",
@@ -94,6 +124,7 @@ SECTORS = [
         "color_b": "#0C6E74",
         "accent":  "#E76F51",
         "tags": ["Comercial", "Receita", "Clientes"],
+        "requires_auth": True,
     },
     {
         "key": "producao",
@@ -110,6 +141,7 @@ SECTORS = [
         "color_b": "#4ECDC4",
         "accent":  "#FFA726",
         "tags": ["Produção", "Multi-empresa", "Metas"],
+        "requires_auth": True,
     },
     {
         "key": "corte",
@@ -127,6 +159,7 @@ SECTORS = [
         "color_b": "#45B7D1",
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
+        "requires_auth": True,
     },
 
     {
@@ -142,6 +175,7 @@ SECTORS = [
         "color_b": "#3974E2",
         "accent":  "#74C4BE",
         "tags": ["Operação", "Almoxarifado", "Controle"],
+        "requires_auth": False,
     },
 
     {
@@ -157,6 +191,7 @@ SECTORS = [
         "color_b": "#4EB9C3",
         "accent":  "#74C4BE",
         "tags": ["Mapa", "Inventário", "Estoque"],
+        "requires_auth": False,
     },
 ]
 
@@ -511,6 +546,17 @@ def _safe_switch(page_path: str) -> None:
 with st.sidebar:
     st.markdown("### 🏢 Central de Análise Zanattex")
     st.caption("setores — Grupo")
+    
+    # Status de autenticação
+    if st.session_state.auth_nivel:
+        nivel_label = "👑 Admin" if st.session_state.auth_nivel == "admin" else "👤 Usuário"
+        st.success(f"{nivel_label} · Autenticado")
+        if st.button("🚪 Fazer Logout", use_container_width=True):
+            st.session_state.auth_nivel = ""
+            st.rerun()
+    else:
+        st.info("🔓 Não autenticado")
+    
     st.markdown("---")
     st.markdown("**Navegação rápida**")
     # Botões com st.switch_page evitam o bug do st.page_link em algumas
@@ -635,20 +681,61 @@ for row_sectors in rows:
                 """,
                 unsafe_allow_html=True,
             )
-            # Verifica se é um link externo ou página interna
-            if "external_url" in sector:
-                st.link_button(
-                    f"Abrir {sector['title']}  →",
-                    sector["external_url"],
-                    use_container_width=True,
-                )
-            else:
+            
+            # Verifica se precisa de autenticação
+            requires_auth = sector.get("requires_auth", False)
+            
+            if requires_auth:
+                # Botão com autenticação necessária
                 if st.button(
-                    f"Abrir {sector['title']}  →",
+                    f"🔒 Abrir {sector['title']}  →",
                     key=f"open_{sector['key']}",
                     use_container_width=True,
                 ):
-                    _safe_switch(sector["page_path"])
+                    nivel = st.session_state.auth_nivel
+                    if not nivel:
+                        # Solicitar senha
+                        st.warning(f"🔒 Acesso restrito: **{sector['title']}**")
+                        senha = st.text_input(
+                            "Digite a senha de acesso:",
+                            type="password",
+                            key=f"senha_{sector['key']}",
+                        )
+                        if senha:
+                            nivel = verificar_acesso(senha)
+                            if nivel == "negado":
+                                st.error("❌ Senha incorreta!")
+                                st.stop()
+                            else:
+                                st.session_state.auth_nivel = nivel
+                                st.rerun()
+                    
+                    # Verificar acesso após autenticação
+                    if st.session_state.auth_nivel and pode_acessar(sector['key'], st.session_state.auth_nivel):
+                        if "external_url" in sector:
+                            st.markdown(
+                                f'<meta http-equiv="refresh" content="0;url={sector["external_url"]}" />',
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            _safe_switch(sector["page_path"])
+                    else:
+                        st.error(f"❌ Acesso negado! Esta seção requer privilégios de administrador.")
+            else:
+                # Sem autenticação
+                if "external_url" in sector:
+                    st.link_button(
+                        f"Abrir {sector['title']}  →",
+                        sector["external_url"],
+                        use_container_width=True,
+                    )
+                else:
+                    if st.button(
+                        f"Abrir {sector['title']}  →",
+                        key=f"open_{sector['key']}",
+                        use_container_width=True,
+                    ):
+                        _safe_switch(sector["page_path"])
 
     # Colunas de preenchimento (quando a última linha tem menos de COLS_PER_ROW)
     for i in range(padding):
