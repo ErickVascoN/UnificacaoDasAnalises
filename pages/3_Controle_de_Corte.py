@@ -445,7 +445,7 @@ def carregar_dados():
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    df_corte['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=False, errors='coerce')
+    df_corte['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
     df_corte = df_corte[df_corte['DATA'] <= pd.Timestamp.now()]
     df_corte = df_corte.dropna(subset=['DATA', 'OP'])
     df_corte = df_corte[df_corte['OP'].astype(str).str.strip() != '']
