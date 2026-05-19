@@ -537,7 +537,7 @@ st.markdown(
     """
     <div class="hero">
         <div class="hero-badge">Grupo Zanattex</div>
-        <h1 class="hero-title">Central de <span class="accent"> Análise Zanattex</span></h1>
+        <h1 class="hero-title">Central de Análise <span class="accent"> Zanattex</span></h1>
         <p class="hero-subtitle">
             Acesse, em um só lugar, todos os painéis setoriais da operação.
             Escolha o setor para visualizar produção, faturamento e desempenho em tempo real.
