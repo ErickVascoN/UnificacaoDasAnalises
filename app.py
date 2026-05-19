@@ -685,44 +685,45 @@ for row_sectors in rows:
             # Verifica se precisa de autenticação
             requires_auth = sector.get("requires_auth", False)
             
-            if requires_auth:
-                # Botão com autenticação necessária
-                if st.button(
-                    f"🔒 Abrir {sector['title']}  →",
-                    key=f"open_{sector['key']}",
-                    use_container_width=True,
-                ):
-                    nivel = st.session_state.auth_nivel
-                    if not nivel:
-                        # Solicitar senha
-                        st.warning(f"🔒 Acesso restrito: **{sector['title']}**")
-                        senha = st.text_input(
-                            "Digite a senha de acesso:",
-                            type="password",
-                            key=f"senha_{sector['key']}",
-                        )
-                        if senha:
-                            nivel = verificar_acesso(senha)
-                            if nivel == "negado":
-                                st.error("❌ Senha incorreta!")
-                                st.stop()
-                            else:
-                                st.session_state.auth_nivel = nivel
-                                st.rerun()
-                    
-                    # Verificar acesso após autenticação
-                    if st.session_state.auth_nivel and pode_acessar(sector['key'], st.session_state.auth_nivel):
-                        if "external_url" in sector:
-                            st.markdown(
-                                f'<meta http-equiv="refresh" content="0;url={sector["external_url"]}" />',
-                                unsafe_allow_html=True,
-                            )
-                        else:
-                            _safe_switch(sector["page_path"])
+            # Se requer autenticação e usuário não está autenticado
+            if requires_auth and not st.session_state.auth_nivel:
+                # Mostrar diálogo de senha
+                st.warning(f"🔒 Acesso restrito: **{sector['title']}**")
+                senha = st.text_input(
+                    "Digite a senha de acesso:",
+                    type="password",
+                    key=f"senha_{sector['key']}",
+                )
+                if senha:
+                    nivel = verificar_acesso(senha)
+                    if nivel == "negado":
+                        st.error("❌ Senha incorreta!")
                     else:
-                        st.error(f"❌ Acesso negado! Esta seção requer privilégios de administrador.")
+                        st.session_state.auth_nivel = nivel
+                        st.rerun()
+            
+            # Verificar se pode acessar
+            elif requires_auth and st.session_state.auth_nivel:
+                if not pode_acessar(sector['key'], st.session_state.auth_nivel):
+                    st.error(f"❌ Acesso negado! Esta seção requer privilégios de administrador.")
+                else:
+                    # Acesso permitido - renderizar botão
+                    if "external_url" in sector:
+                        st.link_button(
+                            f"Abrir {sector['title']}  →",
+                            sector["external_url"],
+                            use_container_width=True,
+                        )
+                    else:
+                        if st.button(
+                            f"Abrir {sector['title']}  →",
+                            key=f"open_{sector['key']}",
+                            use_container_width=True,
+                        ):
+                            _safe_switch(sector["page_path"])
+            
+            # Sem autenticação necessária
             else:
-                # Sem autenticação
                 if "external_url" in sector:
                     st.link_button(
                         f"Abrir {sector['title']}  →",
