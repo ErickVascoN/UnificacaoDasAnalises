@@ -76,6 +76,8 @@ def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
 # Inicializar session_state de autenticação
 if "auth_nivel" not in st.session_state:
     st.session_state.auth_nivel = ""
+if "auth_sector_key" not in st.session_state:
+    st.session_state.auth_sector_key = None
 
 SECTORS = [
     {
@@ -628,35 +630,6 @@ st.markdown(
 
 st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# BLOCO DE AUTENTICAÇÃO (LOGIN SIMPLES)
-# ──────────────────────────────────────────────────────────────────────────────
-if not st.session_state.auth_nivel:
-    st.warning("🔐 **Você precisa se autenticar para acessar os dashboards protegidos**")
-    with st.expander("🔑 Fazer Login", expanded=True):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            senha = st.text_input(
-                "Senha:",
-                type="password",
-                placeholder="Digite 0102 (usuário) ou adm0102 (admin)",
-                key="login_password",
-            )
-        with col2:
-            st.markdown("<div style='margin-top: 32px'></div>", unsafe_allow_html=True)
-            if st.button("Entrar", use_container_width=True):
-                if senha:
-                    nivel = verificar_acesso(senha)
-                    if nivel == "negado":
-                        st.error("❌ Senha incorreta! Tente novamente.")
-                    else:
-                        st.session_state.auth_nivel = nivel
-                        st.success(f"✅ Bem-vindo! Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}")
-                        st.rerun()
-                else:
-                    st.warning("Digite a senha")
-
-st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 st.markdown(
     """
     <div style="text-align: center; margin-top: 32px; margin-bottom: 8px;">
@@ -711,12 +684,40 @@ for row_sectors in rows:
             # Verifica se precisa de autenticação
             requires_auth = sector.get("requires_auth", False)
             
-            # Se requer auth, verifica se o usuário tem permissão
-            if requires_auth and not pode_acessar(sector['key'], st.session_state.auth_nivel):
-                # Usuário não tem permissão
-                st.error("🔒 Acesso restrito (admin)")
+            # Se requer auth mas usuário não está autenticado
+            if requires_auth and not st.session_state.auth_nivel:
+                # Mostrar botão que pede senha
+                if st.button(
+                    f"🔒 Abrir {sector['title']}  →",
+                    key=f"open_{sector['key']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.auth_sector_key = sector['key']
+                    st.rerun()
+            
+            # Se requer auth e usuário está autenticado, verifica permissão
+            elif requires_auth and st.session_state.auth_nivel:
+                if not pode_acessar(sector['key'], st.session_state.auth_nivel):
+                    # Usuário não tem permissão para este card específico
+                    st.error("🔒 Acesso restrito (admin)")
+                else:
+                    # Tem permissão, mostra botão normal
+                    if "external_url" in sector:
+                        st.link_button(
+                            f"Abrir {sector['title']}  →",
+                            sector["external_url"],
+                            use_container_width=True,
+                        )
+                    else:
+                        if st.button(
+                            f"Abrir {sector['title']}  →",
+                            key=f"open_{sector['key']}",
+                            use_container_width=True,
+                        ):
+                            _safe_switch(sector["page_path"])
+            
+            # Sem autenticação necessária - acesso direto
             else:
-                # Usuário tem permissão
                 if "external_url" in sector:
                     st.link_button(
                         f"Abrir {sector['title']}  →",
@@ -735,6 +736,54 @@ for row_sectors in rows:
     for i in range(padding):
         with cols[len(row_sectors) + i]:
             st.empty()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DIÁLOGO DE AUTENTICAÇÃO (QUANDO CLICA EM CARD PROTEGIDO)
+# ──────────────────────────────────────────────────────────────────────────────
+if st.session_state.auth_sector_key:
+    # Encontrar o setor que está pedindo autenticação
+    sector_auth = None
+    for sector in SECTORS:
+        if sector['key'] == st.session_state.auth_sector_key:
+            sector_auth = sector
+            break
+    
+    if sector_auth:
+        st.markdown("---")
+        st.markdown(f"### 🔐 Autenticação Necessária")
+        st.markdown(f"Digite a senha para acessar **{sector_auth['title']}**")
+        
+        col_input, col_btn_submit, col_btn_cancel = st.columns([2, 1, 1])
+        
+        with col_input:
+            senha = st.text_input(
+                "Senha:",
+                type="password",
+                key="auth_dialog_password",
+                placeholder="Ex: 0102 ou adm0102"
+            )
+        
+        with col_btn_submit:
+            st.markdown("<div style='margin-top: 30px'></div>", unsafe_allow_html=True)
+            if st.button("Entrar", use_container_width=True, key="btn_auth_submit"):
+                if senha:
+                    nivel = verificar_acesso(senha)
+                    if nivel == "negado":
+                        st.error("❌ Senha incorreta!")
+                    else:
+                        # Senha correta, autenticar
+                        st.session_state.auth_nivel = nivel
+                        st.session_state.auth_sector_key = None
+                        st.success(f"✅ Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}!")
+                        st.rerun()
+                else:
+                    st.warning("Digite a senha")
+        
+        with col_btn_cancel:
+            st.markdown("<div style='margin-top: 30px'></div>", unsafe_allow_html=True)
+            if st.button("Cancelar", use_container_width=True, key="btn_auth_cancel"):
+                st.session_state.auth_sector_key = None
+                st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
