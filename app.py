@@ -693,7 +693,6 @@ for row_sectors in rows:
                     use_container_width=True,
                 ):
                     st.session_state.auth_sector_key = sector['key']
-                    st.rerun()
             
             # Se requer auth e usuário está autenticado, verifica permissão
             elif requires_auth and st.session_state.auth_nivel:
@@ -750,38 +749,35 @@ if st.session_state.auth_sector_key:
     
     if sector_auth:
         st.markdown("---")
-        st.markdown(f"### 🔐 Autenticação Necessária")
-        st.markdown(f"Digite a senha para acessar **{sector_auth['title']}**")
-        
-        col_input, col_btn_submit, col_btn_cancel = st.columns([2, 1, 1])
-        
-        with col_input:
-            senha = st.text_input(
-                "Senha:",
-                type="password",
-                key="auth_dialog_password",
-                placeholder="Ex: 0102 ou adm0102"
-            )
-        
-        with col_btn_submit:
-            st.markdown("<div style='margin-top: 30px'></div>", unsafe_allow_html=True)
-            if st.button("Entrar", use_container_width=True, key="btn_auth_submit"):
-                if senha:
-                    nivel = verificar_acesso(senha)
-                    if nivel == "negado":
-                        st.error("❌ Senha incorreta!")
+        with st.container(border=True):
+            st.markdown(f"### 🔐 Autenticação Necessária para: **{sector_auth['title']}**")
+            
+            col_input, col_btn = st.columns([3, 1])
+            
+            with col_input:
+                senha = st.text_input(
+                    "Digite a senha:",
+                    type="password",
+                    key="auth_dialog_password",
+                    placeholder="Ex: 0102 ou adm0102"
+                )
+            
+            with col_btn:
+                st.markdown("")
+                if st.button("✓ Entrar", use_container_width=True, key="btn_auth_submit"):
+                    if not senha:
+                        st.error("Você precisa digitar a senha!")
                     else:
-                        # Senha correta, autenticar
-                        st.session_state.auth_nivel = nivel
-                        st.session_state.auth_sector_key = None
-                        st.success(f"✅ Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}!")
-                        st.rerun()
-                else:
-                    st.warning("Digite a senha")
-        
-        with col_btn_cancel:
-            st.markdown("<div style='margin-top: 30px'></div>", unsafe_allow_html=True)
-            if st.button("Cancelar", use_container_width=True, key="btn_auth_cancel"):
+                        nivel = verificar_acesso(senha)
+                        if nivel == "negado":
+                            st.error("❌ Senha incorreta!")
+                        else:
+                            st.session_state.auth_nivel = nivel
+                            st.session_state.auth_sector_key = None
+                            st.success(f"✅ Bem-vindo! Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}!")
+                            st.balloons()
+            
+            if st.button("✕ Cancelar", use_container_width=True, key="btn_auth_cancel"):
                 st.session_state.auth_sector_key = None
                 st.rerun()
 
