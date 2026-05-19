@@ -76,6 +76,8 @@ def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
 # Inicializar session_state de autenticação
 if "auth_nivel" not in st.session_state:
     st.session_state.auth_nivel = ""
+if "auth_target" not in st.session_state:
+    st.session_state.auth_target = None  # key do setor que pediu acesso
 
 SECTORS = [
     {
@@ -644,49 +646,7 @@ st.markdown(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LOGIN GATE — bloqueia os cards até autenticação
-# ──────────────────────────────────────────────────────────────────────────────
-if not st.session_state.auth_nivel:
-    _, col_login, _ = st.columns([1, 2, 1])
-    with col_login:
-        st.markdown(
-            """
-            <div style="background:linear-gradient(135deg,#1C1C22,#28282E);
-                border:1px solid rgba(78,205,196,0.3);border-radius:16px;
-                padding:32px 28px;text-align:center;margin:8px 0 20px 0;">
-                <div style="font-size:2.4rem;margin-bottom:12px">🔐</div>
-                <h3 style="color:#FFFFFF;font-family:'Sora',sans-serif;
-                    font-size:1.4rem;margin:0 0 8px 0;font-weight:700">
-                    Acesso Restrito
-                </h3>
-                <p style="color:#A0AEC0;font-size:.88rem;margin:0;line-height:1.5">
-                    Digite sua senha para acessar os painéis da Central de Análise
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        senha_input = st.text_input(
-            "Senha",
-            type="password",
-            key="login_senha",
-            placeholder="Digite a senha de acesso...",
-            label_visibility="collapsed",
-        )
-        if st.button("Entrar  →", use_container_width=True, key="btn_login"):
-            if not senha_input:
-                st.warning("⚠️ Digite a senha antes de continuar.")
-            else:
-                nivel = verificar_acesso(senha_input)
-                if nivel == "negado":
-                    st.error("❌ Senha incorreta. Tente novamente.")
-                else:
-                    st.session_state.auth_nivel = nivel
-                    st.rerun()
-    st.stop()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CARDS DE SETORES (autenticado)
+# CARDS DE SETORES — sempre visíveis
 # ──────────────────────────────────────────────────────────────────────────────
 nivel_acesso = st.session_state.auth_nivel
 COLS_PER_ROW = 3
@@ -698,8 +658,8 @@ for row_sectors in rows:
 
     for idx, (col, sector) in enumerate(zip(cols, row_sectors)):
         with col:
-            # Faturamento só para admin
-            locked = sector['key'] == 'faturados' and nivel_acesso != 'admin'
+            # Faturamento bloqueado para nível usuário (libera só com admin)
+            locked = sector['key'] == 'faturados' and nivel_acesso not in ('', 'admin')
 
             tags_html = "".join(
                 f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
@@ -717,8 +677,6 @@ for row_sectors in rows:
                 + ("opacity:.45;pointer-events:none;" if locked else "")
             )
 
-            # Sem quebras de linha no HTML — evita que o Markdown do Streamlit
-            # interprete linhas em branco como fim de bloco e escape o conteúdo.
             card_html = (
                 f'<div class="sector-card" style="{card_style}">'
                 f'{lock_badge}'
@@ -733,30 +691,83 @@ for row_sectors in rows:
             )
             st.markdown(card_html, unsafe_allow_html=True)
 
+            # ── Botão do card ────────────────────────────────────────────
             if locked:
-                st.button(
-                    "🔒 Acesso restrito — Admin",
-                    key=f"open_{sector['key']}",
-                    use_container_width=True,
-                    disabled=True,
-                )
-            elif "external_url" in sector:
-                st.link_button(
-                    f"Abrir {sector['title']}  →",
-                    sector["external_url"],
-                    use_container_width=True,
-                )
+                # Usuário comum tentando acessar Faturamento
+                st.button("🔒 Acesso restrito — Admin",
+                          key=f"open_{sector['key']}",
+                          use_container_width=True, disabled=True)
+
+            elif nivel_acesso:
+                # Já autenticado e com permissão — abre direto
+                if "external_url" in sector:
+                    st.link_button(f"Abrir {sector['title']}  →",
+                                   sector["external_url"], use_container_width=True)
+                else:
+                    if st.button(f"Abrir {sector['title']}  →",
+                                 key=f"open_{sector['key']}", use_container_width=True):
+                        _safe_switch(sector["page_path"])
+
             else:
-                if st.button(
-                    f"Abrir {sector['title']}  →",
-                    key=f"open_{sector['key']}",
-                    use_container_width=True,
-                ):
-                    _safe_switch(sector["page_path"])
+                # Não autenticado — pede senha ao clicar
+                if st.button(f"🔒 Abrir {sector['title']}  →",
+                             key=f"open_{sector['key']}", use_container_width=True):
+                    st.session_state.auth_target = sector['key']
+                    st.rerun()
 
     for i in range(padding):
         with cols[len(row_sectors) + i]:
             st.empty()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FORMULÁRIO DE AUTENTICAÇÃO (aparece ao clicar em um card)
+# ──────────────────────────────────────────────────────────────────────────────
+if st.session_state.auth_target:
+    target = next((s for s in SECTORS if s['key'] == st.session_state.auth_target), None)
+
+    if target:
+        st.markdown("---")
+        _, col_auth, _ = st.columns([1, 2, 1])
+        with col_auth:
+            st.markdown(
+                f'<div style="background:linear-gradient(135deg,#1C1C22,#28282E);'
+                f'border:1px solid rgba(78,205,196,0.3);border-radius:16px;'
+                f'padding:24px 28px;text-align:center;margin:4px 0 16px 0;">'
+                f'<div style="font-size:1.8rem;margin-bottom:8px">{target["icon"]}</div>'
+                f'<h3 style="color:#FFFFFF;font-family:\'Sora\',sans-serif;'
+                f'font-size:1.1rem;margin:0 0 4px 0;font-weight:700">{target["title"]}</h3>'
+                f'<p style="color:#A0AEC0;font-size:.82rem;margin:0">Digite a senha para acessar</p>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            senha_input = st.text_input(
+                "Senha", type="password", key="auth_senha",
+                placeholder="Digite a senha...", label_visibility="collapsed",
+            )
+
+            col_ok, col_cancel = st.columns(2)
+            with col_ok:
+                if st.button("Entrar  →", use_container_width=True, key="btn_auth_ok"):
+                    if not senha_input:
+                        st.warning("⚠️ Digite a senha.")
+                    else:
+                        nivel = verificar_acesso(senha_input)
+                        if nivel == "negado":
+                            st.error("❌ Senha incorreta.")
+                        elif target['key'] == 'faturados' and nivel != 'admin':
+                            st.error("🔒 Faturamento requer senha Admin.")
+                        else:
+                            st.session_state.auth_nivel = nivel
+                            st.session_state.auth_target = None
+                            if "page_path" in target:
+                                _safe_switch(target["page_path"])
+                            else:
+                                st.rerun()
+            with col_cancel:
+                if st.button("Cancelar", use_container_width=True, key="btn_auth_cancel"):
+                    st.session_state.auth_target = None
+                    st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
