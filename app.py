@@ -717,23 +717,21 @@ for row_sectors in rows:
                 + ("opacity:.45;pointer-events:none;" if locked else "")
             )
 
-            st.markdown(
-                f"""
-                <div class="sector-card" style="{card_style}">
-                    {lock_badge}
-                    <div class="sector-card-inner">
-                        <div class="sector-icon-wrap">{sector['icon']}</div>
-                        <div class="sector-card-body">
-                            <div class="sector-subtitle">{sector['subtitle']}</div>
-                            <h3 class="sector-title">{sector['title']}</h3>
-                            <p class="sector-desc">{sector['description']}</p>
-                            <div class="sector-tags">{tags_html}</div>
-                        </div>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            # Sem quebras de linha no HTML — evita que o Markdown do Streamlit
+            # interprete linhas em branco como fim de bloco e escape o conteúdo.
+            card_html = (
+                f'<div class="sector-card" style="{card_style}">'
+                f'{lock_badge}'
+                f'<div class="sector-card-inner">'
+                f'<div class="sector-icon-wrap">{sector["icon"]}</div>'
+                f'<div class="sector-card-body">'
+                f'<div class="sector-subtitle">{sector["subtitle"]}</div>'
+                f'<h3 class="sector-title">{sector["title"]}</h3>'
+                f'<p class="sector-desc">{sector["description"]}</p>'
+                f'<div class="sector-tags">{tags_html}</div>'
+                f'</div></div></div>'
             )
+            st.markdown(card_html, unsafe_allow_html=True)
 
             if locked:
                 st.button(
