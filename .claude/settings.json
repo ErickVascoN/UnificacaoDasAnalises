@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('pages/3_Controle_de_Corte.py', encoding='utf-8'\\).read\\(\\)\\); print\\('Sintaxe OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('pages/3_Controle_de_Corte.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
+    ]
+  }
+}

@@ -3,13 +3,17 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta
 import locale
 import io
 import os
 import sys
+import re
 import urllib.request
 from urllib.error import HTTPError, URLError
+import requests
+import numpy as np
+from plotly.subplots import make_subplots
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
@@ -520,6 +524,227 @@ def carregar_dados_iacanga():
 
 
 # =====================================================================
+# LENÇOL — CONSTANTES E HELPERS
+# =====================================================================
+LENCOL_SPREADSHEET_ID = "15hviwiTl3o-EYl5BnbFC439LI4YaDPwF"
+LENCOL_CACHE_TTL = 60
+
+LENCOL_CORES_EMPRESA = {
+    "BURDAYS":   "#FF6B6B",
+    "CAMESA":    "#4ECDC4",
+    "NIAZITEX":  "#45B7D1",
+    "CORTTEX":   "#FFA726",
+    "CORTEX":    "#FFA726",
+    "SULTAN":    "#AB47BC",
+    "DECOR":     "#26C6DA",
+    "MARCELINO": "#FFD54F",
+    "SEVEN":     "#66BB6A",
+    "HOTEL":     "#EC407A",
+}
+
+LENCOL_PALETA = [
+    "#4ECDC4", "#FF6B6B", "#45B7D1", "#FFA726",
+    "#AB47BC", "#66BB6A", "#FFD54F", "#EC407A",
+    "#7E57C2", "#26C6DA",
+]
+
+LENCOL_DARK = dict(
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#CBD5E0", size=12),
+    separators=",.",
+    margin=dict(l=40, r=20, t=50, b=40),
+)
+
+LENCOL_DARK_AXES = dict(
+    xaxis=dict(gridcolor="#2D3748", zerolinecolor="#2D3748", color="#A0AEC0"),
+    yaxis=dict(gridcolor="#2D3748", zerolinecolor="#2D3748", color="#A0AEC0"),
+)
+
+LENCOL_MESES_PT = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+                   7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
+
+LENCOL_DIAS_PT = {
+    "Monday":"Seg","Tuesday":"Ter","Wednesday":"Qua",
+    "Thursday":"Qui","Friday":"Sex","Saturday":"Sáb","Sunday":"Dom",
+}
+LENCOL_ORDEM_DIAS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+
+
+def lencol_layout_dark(**kwargs):
+    layout = {**LENCOL_DARK, **LENCOL_DARK_AXES}
+    if 'yaxis' in kwargs:
+        layout['yaxis'] = {**LENCOL_DARK_AXES['yaxis'], **kwargs.pop('yaxis')}
+    if 'xaxis' in kwargs:
+        layout['xaxis'] = {**LENCOL_DARK_AXES['xaxis'], **kwargs.pop('xaxis')}
+    layout.update(kwargs)
+    return layout
+
+
+def lencol_fmt_num(v, dec=0):
+    txt = f"{float(v):,.{dec}f}"
+    return txt.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def lencol_fmt_brl(v):
+    return f"R$ {lencol_fmt_num(v, 2)}"
+
+
+def lencol_parse_brl(s):
+    if pd.isna(s):
+        return 0.0
+    s_str = str(s).strip()
+    if s_str in ("", "nan", "NaN", "none", "None", "N/A"):
+        return 0.0
+    try:
+        s_str = re.sub(r"R\$\s*", "", s_str).strip()
+        s_str = s_str.replace(".", "").replace(",", ".")
+        return float(s_str)
+    except Exception:
+        return 0.0
+
+
+def lencol_cat_base(cat):
+    if pd.isna(cat) or str(cat).strip().lower() in ("", "nan", "none", "n/a"):
+        return ""
+    c = re.sub(r"\s+", " ", str(cat).strip().upper())
+    c = c.replace("DUPLOM", "DUPLO")
+    for suf in (" KING", " QUEEN", " QE", " CS", " ST", " SOLT", " SIMPLES SOLT"):
+        if c.endswith(suf):
+            c = c[: -len(suf)].strip()
+            break
+    return c
+
+
+def lencol_cor_empresa(emp):
+    return LENCOL_CORES_EMPRESA.get(emp.upper().strip(), "#718096")
+
+
+def lencol_parse_date(data_str):
+    if pd.isna(data_str) or not str(data_str).strip():
+        return pd.NaT
+    data_str = str(data_str).strip()
+    formatos = ["%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y",
+                "%d.%m.%Y", "%m-%d-%Y", "%Y/%m/%d"]
+    for fmt in formatos:
+        try:
+            return pd.to_datetime(data_str, format=fmt)
+        except Exception:
+            continue
+    try:
+        return pd.to_datetime(data_str, errors="coerce")
+    except Exception:
+        return pd.NaT
+
+
+def lencol_delta_icon(v):
+    if v > 0:
+        return f"▲ {lencol_fmt_num(v, 1)}%"
+    if v < 0:
+        return f"▼ {lencol_fmt_num(abs(v), 1)}%"
+    return "— 0,0%"
+
+
+@st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
+def load_corte_lencol() -> pd.DataFrame:
+    urls = [
+        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv",
+        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=CORTE+DIARIO",
+    ]
+    texto = None
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200 and len(r.text) > 200:
+                texto = r.text
+                break
+        except Exception:
+            continue
+    if not texto:
+        raise ConnectionError("Não foi possível baixar dados da planilha de lençol.")
+
+    linhas = texto.splitlines()
+    header_row = 0
+    for i, linha in enumerate(linhas[:6]):
+        if "DATA" in linha.upper() and "PRESTADOR" in linha.upper():
+            header_row = i
+            break
+
+    df = pd.read_csv(io.StringIO(texto), skiprows=header_row, header=0, dtype=str)
+    df = df.iloc[:, :11].copy()
+    df.columns = [
+        "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
+        "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
+    ]
+
+    df["DATA"] = df["DATA"].astype(str).str.strip().apply(lencol_parse_date)
+    df = df[df["DATA"].notna()]
+    now = pd.Timestamp.now().normalize()
+    df = df[df["DATA"] <= now]
+
+    df["QUANT"] = pd.to_numeric(
+        df["QUANT"].astype(str).str.replace(",", ""), errors="coerce"
+    ).fillna(0).astype(int)
+    df["VALOR_PECA"] = df["VALOR_PECA"].apply(lencol_parse_brl)
+    df["VALOR_RECEBER"] = df["VALOR_RECEBER"].apply(lencol_parse_brl)
+    df["RETALHO_KG"] = df["RETALHO_KG"].apply(lencol_parse_brl)
+
+    df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip()
+    df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()
+    df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip().str.upper()
+    df["CATEGORIA"] = df["CATEGORIA"].apply(
+        lambda x: re.sub(r"\s+", " ", str(x))
+        if pd.notna(x) and str(x).strip() not in ("", "nan", "none") else ""
+    )
+    df["TECIDO"] = df["TECIDO"].astype(str).str.strip()
+    df["OP"] = df["OP"].astype(str).str.strip()
+
+    invalidos = {"", "NAN", "NONE", "N/A", "NAO", "NAO INFORMADO"}
+    df = df[~df["PRESTADOR"].str.upper().isin(invalidos)]
+    df = df[~df["EMPRESA"].str.upper().isin(invalidos)]
+    df = df[df["QUANT"] > 0]
+    df = df.reset_index(drop=True)
+
+    mask0 = df["VALOR_RECEBER"] == 0
+    df.loc[mask0, "VALOR_RECEBER"] = df.loc[mask0, "QUANT"] * df.loc[mask0, "VALOR_PECA"]
+
+    df["CAT_BASE"] = df["CATEGORIA"].apply(lencol_cat_base)
+    df["ANO"] = df["DATA"].dt.year
+    df["MES"] = df["DATA"].dt.month
+    df["MES_NOME"] = df["MES"].map(LENCOL_MESES_PT)
+    df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)
+    df["SEMANA"] = df["DATA"].dt.isocalendar().week.astype(int)
+    df["DIA_SEMANA"] = df["DATA"].dt.day_name()
+    df["DIA_SEMANA_PT"] = df["DIA_SEMANA"].map(LENCOL_DIAS_PT)
+    return df
+
+
+@st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
+def load_metas_lencol() -> pd.DataFrame:
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}"
+        f"/gviz/tq?tqx=out:csv&sheet=METAS"
+    )
+    try:
+        r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        df = pd.read_csv(io.StringIO(r.text), header=0, dtype=str)
+        df.columns = df.columns.str.strip().str.upper()
+        if "PRESTADOR" not in df.columns and df.shape[1] >= 4:
+            df.columns = ["PRESTADOR", "EMPRESA", "CATEGORIA", "META"]
+        df["PRESTADOR"] = df["PRESTADOR"].replace("", np.nan).ffill()
+        df["EMPRESA"] = df["EMPRESA"].replace("", np.nan).ffill()
+        df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip().str.upper()
+        df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()
+        df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip().str.upper()
+        df["META"] = pd.to_numeric(df["META"], errors="coerce")
+        df = df[df["META"].notna() & (df["META"] > 0)].reset_index(drop=True)
+        return df
+    except Exception as e:
+        return pd.DataFrame(columns=["PRESTADOR", "EMPRESA", "CATEGORIA", "META"])
+
+
+# =====================================================================
 # NAVIGATION HELPERS
 # =====================================================================
 if 'corte_screen' not in st.session_state:
@@ -549,12 +774,17 @@ with st.sidebar:
             _go('arealva_products')
         if st.button("← Regiões", key="sb_back3", use_container_width=True):
             _go('regions')
+    elif screen == 'arealva_lencol':
+        if st.button("← Produtos", key="sb_back5", use_container_width=True):
+            _go('arealva_products')
+        if st.button("← Regiões", key="sb_back6", use_container_width=True):
+            _go('regions')
     elif screen == 'iacanga':
         if st.button("← Regiões", key="sb_back4", use_container_width=True):
             _go('regions')
 
     # Filters injected below only for the dashboard screens
-    if screen in ('arealva_manta', 'iacanga'):
+    if screen in ('arealva_manta', 'iacanga', 'arealva_lencol'):
         st.markdown("---")
         st.header("🔍 Filtros")
 
@@ -661,20 +891,24 @@ elif screen == 'arealva_products':
 
     with col_lencol:
         st.markdown("""
-        <div class="region-card disabled" style="--rc-a:#5D4037; --rc-b:#8D6E63; --rc-accent:#FFA726;">
-            <div class="rc-icon">📏</div>
+        <div class="region-card" style="--rc-a:#1A3A1A; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">✂️</div>
             <div class="rc-label">Produto · Arealva</div>
             <div class="rc-title">Lençol</div>
             <div class="rc-desc">
-                Dashboard de corte de lençol em desenvolvimento.
-                Disponível em breve.
+                Painel completo de corte de lençol com metas, prestadores,
+                empresas, categorias, análise temporal e financeira.
             </div>
             <div class="rc-tags">
-                <span class="rc-tag-soon">🚧 Em breve</span>
+                <span class="rc-tag">Prestadores</span>
+                <span class="rc-tag">Empresas</span>
+                <span class="rc-tag">Financeiro</span>
+                <span class="rc-tag">Metas</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Em breve", key="btn_lencol", use_container_width=True, disabled=True)
+        if st.button("Abrir Dashboard  →", key="btn_lencol", use_container_width=True):
+            _go('arealva_lencol')
 
     st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
     col_back, *_ = st.columns([2, 5])
@@ -1858,6 +2092,820 @@ elif screen == 'arealva_manta':
     st.markdown(
         "<div style='text-align:center; color:#606878; font-size:0.82rem;'>"
         "✂️ Arealva · Manta &nbsp;|&nbsp; Alimentado pela planilha CONTROLE GERAL MANTAS.xlsx &nbsp;|&nbsp; "
+        f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# =====================================================================
+# SCREEN — AREALVA LENÇOL DASHBOARD
+# =====================================================================
+elif screen == 'arealva_lencol':
+
+    # CSS específico do lençol
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+    /* ── Métricas – estilo do dashboard original ── */
+    div[data-testid="stMetric"] {
+        background: linear-gradient(135deg,#1C1C22 0%,#28282E 100%) !important;
+        border: 1px solid rgba(255,255,255,.10) !important;
+        border-radius: 12px !important;
+        padding: 16px 20px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,.3) !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+    div[data-testid="stMetric"] label {
+        color: #A0AEC0 !important;
+        font-size: .72rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: .8px !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+        font-size: 1.65rem !important;
+        font-family: 'Sora', sans-serif !important;
+    }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] * {
+        font-family: 'Sora', sans-serif !important;
+    }
+    div[data-testid="stMetric"] div[data-testid="stMetricDelta"] {
+        font-size: .8rem !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+    }
+    /* ── Seções e utilitários ── */
+    .ln-sec {
+        font-size:1rem;font-weight:700;color:#E2E8F0;
+        margin:20px 0 10px 0;padding-bottom:6px;
+        border-bottom:2px solid rgba(78,205,196,.3);
+    }
+    .ln-insight {
+        background:linear-gradient(135deg,rgba(78,205,196,.07),rgba(69,183,209,.04));
+        border:1px solid rgba(78,205,196,.22);border-radius:12px;
+        padding:14px 18px;margin:8px 0;
+    }
+    .ln-insight h4 {color:#4ECDC4;margin:0 0 6px;font-size:.8rem;
+        text-transform:uppercase;letter-spacing:.5px}
+    .ln-insight p {color:#CBD5E0;margin:0;font-size:.88rem;line-height:1.55}
+    .ln-rank-gold   {color:#FFD700;font-weight:800;font-size:1.1rem}
+    .ln-rank-silver {color:#C0C0C0;font-weight:700}
+    .ln-rank-bronze {color:#CD7F32;font-weight:700}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Breadcrumb
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Arealva</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Lençol</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Carregar dados
+    with st.spinner("⏳ Carregando dados da planilha de lençol…"):
+        try:
+            df_raw_ln = load_corte_lencol()
+            df_metas_ln = load_metas_lencol()
+        except Exception as _e_ln:
+            st.error(f"❌ Erro ao carregar dados: {_e_ln}")
+            st.info("Verifique se a planilha está compartilhada como 'Qualquer pessoa com o link'.")
+            st.stop()
+
+    if df_raw_ln.empty:
+        st.error("❌ Nenhum dado encontrado na planilha de lençol.")
+        st.stop()
+
+    data_min_ln = df_raw_ln["DATA"].min().date()
+    data_max_ln = df_raw_ln["DATA"].max().date()
+    hoje_ln = datetime.now().date()
+
+    # ── Sidebar filters ───────────────────────────────────────────────
+    with st.sidebar:
+        st.caption(f"Atualizado a cada {LENCOL_CACHE_TTL}s · {datetime.now().strftime('%H:%M:%S')}")
+        if st.button("🔄 Limpar Cache", key="ln_clear", use_container_width=True):
+            load_corte_lencol.clear()
+            load_metas_lencol.clear()
+            st.rerun()
+
+        st.markdown("**📅 Período**")
+        periodo_opt_ln = st.radio(
+            "Preset lençol",
+            ["Personalizado", "7 dias", "30 dias", "Mês atual", "Todo o período"],
+            index=4, label_visibility="collapsed", key="ln_periodo_opt",
+        )
+
+        if periodo_opt_ln == "7 dias":
+            p_ini_ln, p_fim_ln = hoje_ln - timedelta(days=6), hoje_ln
+        elif periodo_opt_ln == "30 dias":
+            p_ini_ln, p_fim_ln = hoje_ln - timedelta(days=29), hoje_ln
+        elif periodo_opt_ln == "Mês atual":
+            p_ini_ln = hoje_ln.replace(day=1)
+            p_fim_ln = hoje_ln
+        elif periodo_opt_ln == "Todo o período":
+            p_ini_ln, p_fim_ln = data_min_ln, data_max_ln
+        else:
+            if "ln_periodo_ini" not in st.session_state:
+                st.session_state["ln_periodo_ini"] = data_min_ln
+            if "ln_periodo_fim" not in st.session_state:
+                st.session_state["ln_periodo_fim"] = data_max_ln
+            st.session_state["ln_periodo_ini"] = max(min(st.session_state["ln_periodo_ini"], data_max_ln), data_min_ln)
+            st.session_state["ln_periodo_fim"] = max(min(st.session_state["ln_periodo_fim"], data_max_ln), data_min_ln)
+            col_d1_ln, col_d2_ln = st.columns(2)
+            with col_d1_ln:
+                p_ini_ln = st.date_input("De", value=st.session_state["ln_periodo_ini"],
+                                         format="DD/MM/YYYY", key="ln_periodo_ini")
+            with col_d2_ln:
+                p_fim_ln = st.date_input("Até", value=st.session_state["ln_periodo_fim"],
+                                         format="DD/MM/YYYY", key="ln_periodo_fim")
+            if p_ini_ln > p_fim_ln:
+                st.error("❌ Data 'De' não pode ser maior que 'Até'")
+
+        p_ini_ln = max(p_ini_ln, data_min_ln)
+        p_fim_ln = min(p_fim_ln, data_max_ln)
+
+        st.markdown("**🔍 Filtros**")
+        todos_prest_ln = sorted([x for x in df_raw_ln["PRESTADOR"].unique() if pd.notna(x) and str(x).strip()])
+        sel_prest_ln = st.multiselect("Prestador", todos_prest_ln, placeholder="Todos", key="ln_prest")
+
+        todas_emp_ln = sorted([x for x in df_raw_ln["EMPRESA"].unique() if pd.notna(x) and str(x).strip()])
+        sel_emp_ln = st.multiselect("Empresa", todas_emp_ln, placeholder="Todas", key="ln_emp")
+
+        todas_cats_ln = sorted([x for x in df_raw_ln["CAT_BASE"].unique() if pd.notna(x) and str(x).strip()])
+        sel_cat_ln = st.multiselect("Categoria", todas_cats_ln, placeholder="Todas", key="ln_cat")
+
+        st.caption(f"📊 {len(df_raw_ln):,} registros totais")
+
+    # ── Aplicar filtros ───────────────────────────────────────────────
+    df_ln = df_raw_ln[
+        (df_raw_ln["DATA"].dt.date >= p_ini_ln) &
+        (df_raw_ln["DATA"].dt.date <= p_fim_ln)
+    ].copy()
+    if sel_prest_ln:
+        df_ln = df_ln[df_ln["PRESTADOR"].isin(sel_prest_ln)]
+    if sel_emp_ln:
+        df_ln = df_ln[df_ln["EMPRESA"].isin(sel_emp_ln)]
+    if sel_cat_ln:
+        df_ln = df_ln[df_ln["CAT_BASE"].isin(sel_cat_ln)]
+
+    if df_ln.empty:
+        st.warning("⚠️ Nenhum dado para os filtros selecionados.")
+        st.stop()
+
+    # ── Métricas globais ──────────────────────────────────────────────
+    total_pecas_ln = int(df_ln["QUANT"].sum())
+    total_valor_ln = df_ln["VALOR_RECEBER"].sum()
+    dias_trab_ln = (p_fim_ln - p_ini_ln).days + 1
+    dias_com_dados_ln = df_ln["DATA"].dt.date.nunique()
+    media_diaria_ln = total_pecas_ln / dias_com_dados_ln if dias_com_dados_ln else 0
+    n_prestadores_ln = df_ln["PRESTADOR"].nunique()
+    n_empresas_ln = df_ln["EMPRESA"].nunique()
+    ticket_medio_ln = total_valor_ln / total_pecas_ln if total_pecas_ln else 0
+    top_prestador_ln = df_ln.groupby("PRESTADOR")["QUANT"].sum().idxmax() if not df_ln.empty else "—"
+    top_empresa_ln = df_ln.groupby("EMPRESA")["QUANT"].sum().idxmax() if not df_ln.empty else "—"
+
+    dias_periodo_ln = (p_fim_ln - p_ini_ln).days + 1
+    p_ini_ant_ln = p_ini_ln - timedelta(days=dias_periodo_ln)
+    p_fim_ant_ln = p_ini_ln - timedelta(days=1)
+    df_ant_ln = df_raw_ln[
+        (df_raw_ln["DATA"].dt.date >= p_ini_ant_ln) &
+        (df_raw_ln["DATA"].dt.date <= p_fim_ant_ln)
+    ]
+    if sel_prest_ln: df_ant_ln = df_ant_ln[df_ant_ln["PRESTADOR"].isin(sel_prest_ln)]
+    if sel_emp_ln:   df_ant_ln = df_ant_ln[df_ant_ln["EMPRESA"].isin(sel_emp_ln)]
+    if sel_cat_ln:   df_ant_ln = df_ant_ln[df_ant_ln["CAT_BASE"].isin(sel_cat_ln)]
+    pecas_ant_ln = int(df_ant_ln["QUANT"].sum()) if not df_ant_ln.empty else 0
+    valor_ant_ln = df_ant_ln["VALOR_RECEBER"].sum() if not df_ant_ln.empty else 0
+    delta_pecas_ln = ((total_pecas_ln - pecas_ant_ln) / pecas_ant_ln * 100) if pecas_ant_ln else None
+    delta_valor_ln = ((total_valor_ln - valor_ant_ln) / valor_ant_ln * 100) if valor_ant_ln else None
+
+    status_pg_ln = "Pago" if p_fim_ln < data_max_ln else "A Pagar"
+
+    # ── Header ────────────────────────────────────────────────────────
+    st.markdown(
+        f"<h1 style='text-align:center;color:#FFFFFF;font-size:2rem;"
+        f"font-weight:800;margin-bottom:2px'>✂️ Dashboard Corte · Lençol</h1>"
+        f"<p style='text-align:center;color:#718096;font-size:.9rem;margin-bottom:0'>"
+        f"{p_ini_ln.strftime('%d/%m/%Y')} — {p_fim_ln.strftime('%d/%m/%Y')} · "
+        f"{total_pecas_ln:,} peças · {dias_trab_ln} dias no período</p>",
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
+    # ── Abas ──────────────────────────────────────────────────────────
+    tabs_ln = st.tabs([
+        "📊 Visão Geral", "👥 Prestadores", "🏭 Empresas",
+        "📦 Categorias", "📅 Temporal", "💰 Financeiro",
+        "🎯 Metas", "🏆 Ranking",
+    ])
+
+    # ── TAB 1 — VISÃO GERAL ───────────────────────────────────────────
+    with tabs_ln[0]:
+        c1, c2, c3, c4 = st.columns(4)
+        kd_p = lencol_delta_icon(delta_pecas_ln) if delta_pecas_ln is not None else None
+        kd_v = lencol_delta_icon(delta_valor_ln) if delta_valor_ln is not None else None
+        c1.metric("🧵 Total de Peças", lencol_fmt_num(total_pecas_ln), kd_p)
+        c2.metric(f"💰 Total {status_pg_ln}", lencol_fmt_brl(total_valor_ln), kd_v)
+        c3.metric("📆 Dias no Período", str(dias_trab_ln))
+        c4.metric("📈 Média Diária", lencol_fmt_num(media_diaria_ln, 0) + " pç/dia")
+
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric("👷 Prestadores", str(n_prestadores_ln))
+        c6.metric("🏭 Empresas", str(n_empresas_ln))
+        c7.metric("🥇 Top Prestador", top_prestador_ln)
+        c8.metric("🏆 Top Empresa", top_empresa_ln)
+
+        st.divider()
+        col_a_ln, col_b_ln = st.columns([2, 1])
+
+        with col_a_ln:
+            st.markdown("<div class='ln-sec'>Produção Mensal</div>", unsafe_allow_html=True)
+            df_mes_ln = (
+                df_ln.groupby(["ANO_MES", "MES_NOME"])["QUANT"].sum()
+                .reset_index().sort_values("ANO_MES")
+            )
+            fig_ln1 = go.Figure(go.Bar(
+                x=df_mes_ln["ANO_MES"], y=df_mes_ln["QUANT"],
+                text=[lencol_fmt_num(v) for v in df_mes_ln["QUANT"]],
+                textposition="outside",
+                textfont=dict(color="#CBD5E0", size=11),
+                marker=dict(color=df_mes_ln["QUANT"],
+                            colorscale=[[0, "#1C3A4A"], [1, "#4ECDC4"]], showscale=False),
+            ))
+            fig_ln1.update_layout(**lencol_layout_dark(title="Peças cortadas por mês", height=320))
+            st.plotly_chart(fig_ln1, use_container_width=True)
+
+        with col_b_ln:
+            st.markdown("<div class='ln-sec'>Market Share Empresas</div>", unsafe_allow_html=True)
+            df_emp_ln0 = df_ln.groupby("EMPRESA")["QUANT"].sum().reset_index().sort_values("QUANT", ascending=False)
+            fig_ln2 = go.Figure(go.Pie(
+                labels=df_emp_ln0["EMPRESA"], values=df_emp_ln0["QUANT"],
+                hole=0.5,
+                marker=dict(colors=[lencol_cor_empresa(e) for e in df_emp_ln0["EMPRESA"]]),
+                textinfo="percent",
+                hovertemplate="%{label}<br>%{value:,.0f} peças<br>%{percent}<extra></extra>",
+            ))
+            fig_ln2.update_layout(**lencol_layout_dark(
+                height=320,
+                legend=dict(orientation="v", font=dict(size=10)),
+                annotations=[dict(text="Empresas", x=.5, y=.5,
+                                  font=dict(size=12, color="#CBD5E0"), showarrow=False)],
+            ))
+            st.plotly_chart(fig_ln2, use_container_width=True)
+
+        col_c_ln, col_d_ln = st.columns(2)
+        with col_c_ln:
+            st.markdown("<div class='ln-sec'>Evolução Diária + Média Móvel 7d</div>", unsafe_allow_html=True)
+            df_dia_ln = df_ln.groupby("DATA")["QUANT"].sum().reset_index().sort_values("DATA")
+            df_dia_ln["MA7"] = df_dia_ln["QUANT"].rolling(7, min_periods=1).mean().round(0)
+            fig_ln3 = go.Figure()
+            fig_ln3.add_trace(go.Bar(x=df_dia_ln["DATA"], y=df_dia_ln["QUANT"],
+                                     name="Peças/dia", marker_color="rgba(78,205,196,0.35)"))
+            fig_ln3.add_trace(go.Scatter(x=df_dia_ln["DATA"], y=df_dia_ln["MA7"],
+                                         name="Média 7d", line=dict(color="#FF6B6B", width=2)))
+            fig_ln3.update_layout(**lencol_layout_dark(height=280, title="Produção diária"))
+            st.plotly_chart(fig_ln3, use_container_width=True)
+
+        with col_d_ln:
+            st.markdown("<div class='ln-sec'>Top 8 Categorias</div>", unsafe_allow_html=True)
+            df_cat_ln0 = (df_ln.groupby("CAT_BASE")["QUANT"].sum()
+                          .reset_index().sort_values("QUANT", ascending=True).tail(8))
+            fig_ln4 = go.Figure(go.Bar(
+                x=df_cat_ln0["QUANT"], y=df_cat_ln0["CAT_BASE"],
+                orientation="h",
+                text=[lencol_fmt_num(v) for v in df_cat_ln0["QUANT"]],
+                textposition="outside",
+                textfont=dict(color="#CBD5E0"),
+                marker_color="#4ECDC4",
+            ))
+            fig_ln4.update_layout(**lencol_layout_dark(height=280, title="Peças por categoria"))
+            st.plotly_chart(fig_ln4, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>💡 Insights Automáticos</div>", unsafe_allow_html=True)
+        ic1_ln, ic2_ln, ic3_ln = st.columns(3)
+        df_dsem_ln = df_ln.groupby("DIA_SEMANA")["QUANT"].mean()
+        if not df_dsem_ln.empty:
+            melhor_dia_ln = LENCOL_DIAS_PT.get(df_dsem_ln.idxmax(), df_dsem_ln.idxmax())
+            with ic1_ln:
+                st.markdown(
+                    f"<div class='ln-insight'><h4>📅 Melhor dia</h4>"
+                    f"<p><b>{melhor_dia_ln}</b> é o dia mais produtivo em média, "
+                    f"com <b>{lencol_fmt_num(df_dsem_ln.max(), 0)}</b> peças/dia.</p></div>",
+                    unsafe_allow_html=True,
+                )
+        df_emp_ln_i = df_ln.groupby("EMPRESA")["QUANT"].sum()
+        if not df_emp_ln_i.empty:
+            emp_top_ln = df_emp_ln_i.idxmax()
+            pct_top_ln = df_emp_ln_i.max() / df_emp_ln_i.sum() * 100
+            with ic2_ln:
+                st.markdown(
+                    f"<div class='ln-insight'><h4>🏭 Empresa líder</h4>"
+                    f"<p><b>{emp_top_ln}</b> responde por <b>{lencol_fmt_num(pct_top_ln, 1)}%</b> "
+                    f"de toda a produção no período.</p></div>",
+                    unsafe_allow_html=True,
+                )
+        with ic3_ln:
+            st.markdown(
+                f"<div class='ln-insight'><h4>💲 Ticket médio</h4>"
+                f"<p>Cada peça cortada vale em média <b>R$ {lencol_fmt_num(ticket_medio_ln, 4)}</b>. "
+                f"Total acumulado: <b>{lencol_fmt_brl(total_valor_ln)}</b>.</p></div>",
+                unsafe_allow_html=True,
+            )
+
+    # ── TAB 2 — PRESTADORES ───────────────────────────────────────────
+    with tabs_ln[1]:
+        st.markdown("<div class='ln-sec'>Desempenho por Prestador</div>", unsafe_allow_html=True)
+        df_prest_ln = (
+            df_ln.groupby("PRESTADOR")
+            .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"),
+                 Dias=("DATA","nunique"), Empresas=("EMPRESA","nunique"),
+                 Categorias=("CAT_BASE","nunique"))
+            .reset_index().sort_values("Peças", ascending=False)
+        )
+        df_prest_ln["Média/Dia"] = (df_prest_ln["Peças"] / df_prest_ln["Dias"]).round(0).astype(int)
+        df_prest_ln["R$/Peça"] = (df_prest_ln["Valor"] / df_prest_ln["Peças"]).round(4)
+        df_prest_show_ln = df_prest_ln.copy()
+        df_prest_show_ln["Peças"] = df_prest_show_ln["Peças"].apply(lencol_fmt_num)
+        df_prest_show_ln["Valor"] = df_prest_show_ln["Valor"].apply(lencol_fmt_brl)
+        df_prest_show_ln["Média/Dia"] = df_prest_show_ln["Média/Dia"].apply(lencol_fmt_num)
+        df_prest_show_ln["R$/Peça"] = df_prest_show_ln["R$/Peça"].apply(lambda v: f"R$ {lencol_fmt_num(v,4)}")
+        st.dataframe(df_prest_show_ln.rename(columns={"PRESTADOR":"Prestador"}),
+                     use_container_width=True, hide_index=True)
+
+        col_p1_ln, col_p2_ln = st.columns(2)
+        with col_p1_ln:
+            st.markdown("<div class='ln-sec'>Produção por Prestador</div>", unsafe_allow_html=True)
+            fig_p1_ln = go.Figure(go.Bar(
+                y=df_prest_ln["PRESTADOR"], x=df_prest_ln["Peças"], orientation="h",
+                text=[lencol_fmt_num(v) for v in df_prest_ln["Peças"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker=dict(
+                    color=list(range(len(df_prest_ln))),
+                    colorscale=[[i/max(len(df_prest_ln)-1,1), c]
+                                for i,c in enumerate(LENCOL_PALETA[:len(df_prest_ln)])],
+                    showscale=False,
+                ),
+            ))
+            fig_p1_ln.update_layout(**lencol_layout_dark(height=360, title="Total de peças cortadas"))
+            st.plotly_chart(fig_p1_ln, use_container_width=True)
+
+        with col_p2_ln:
+            st.markdown("<div class='ln-sec'>Valor Ganho por Prestador</div>", unsafe_allow_html=True)
+            fig_p2_ln = go.Figure(go.Bar(
+                y=df_prest_ln["PRESTADOR"], x=df_prest_ln["Valor"], orientation="h",
+                text=[lencol_fmt_brl(v) for v in df_prest_ln["Valor"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker_color="#FFD54F",
+            ))
+            fig_p2_ln.update_layout(**lencol_layout_dark(height=360, title=f"R$ {status_pg_ln} por prestador"))
+            st.plotly_chart(fig_p2_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Evolução Mensal por Prestador</div>", unsafe_allow_html=True)
+        df_pmes_ln = (df_ln.groupby(["ANO_MES","PRESTADOR"])["QUANT"].sum()
+                      .reset_index().sort_values("ANO_MES"))
+        fig_pev_ln = px.line(df_pmes_ln, x="ANO_MES", y="QUANT", color="PRESTADOR",
+                             markers=True, color_discrete_sequence=LENCOL_PALETA,
+                             labels={"QUANT":"Peças","ANO_MES":"Mês","PRESTADOR":"Prestador"})
+        fig_pev_ln.update_layout(**lencol_layout_dark(height=320, title="Peças cortadas por mês"))
+        fig_pev_ln.update_traces(line_width=2, marker_size=6)
+        st.plotly_chart(fig_pev_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Prestador × Empresa (peças)</div>", unsafe_allow_html=True)
+        df_hm_ln = df_ln.pivot_table(index="PRESTADOR", columns="EMPRESA",
+                                     values="QUANT", aggfunc="sum", fill_value=0)
+        fig_hm_ln = go.Figure(go.Heatmap(
+            z=df_hm_ln.values, x=list(df_hm_ln.columns), y=list(df_hm_ln.index),
+            colorscale="Teal",
+            text=[[lencol_fmt_num(v) for v in row] for row in df_hm_ln.values],
+            texttemplate="%{text}", textfont=dict(size=10),
+        ))
+        fig_hm_ln.update_layout(**lencol_layout_dark(height=300, title="Distribuição prestador × empresa"))
+        st.plotly_chart(fig_hm_ln, use_container_width=True)
+
+    # ── TAB 3 — EMPRESAS ──────────────────────────────────────────────
+    with tabs_ln[2]:
+        df_emp_tab_ln = (
+            df_ln.groupby("EMPRESA")
+            .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"),
+                 Dias=("DATA","nunique"), Prestadores=("PRESTADOR","nunique"),
+                 Categorias=("CAT_BASE","nunique"), OPs=("OP","nunique"))
+            .reset_index().sort_values("Peças", ascending=False)
+        )
+        df_emp_tab_ln["Share%"] = (df_emp_tab_ln["Peças"] / df_emp_tab_ln["Peças"].sum() * 100).round(1)
+        df_emp_tab_ln["R$/Peça"] = (df_emp_tab_ln["Valor"] / df_emp_tab_ln["Peças"]).round(4)
+
+        st.markdown("<div class='ln-sec'>Resumo por Empresa</div>", unsafe_allow_html=True)
+        cols_emp_ln = st.columns(min(len(df_emp_tab_ln), 5))
+        for idx_e, (_, row_e) in enumerate(df_emp_tab_ln.iterrows()):
+            if idx_e >= len(cols_emp_ln):
+                break
+            with cols_emp_ln[idx_e]:
+                cor_e = lencol_cor_empresa(row_e["EMPRESA"])
+                st.markdown(
+                    f"<div style='background:linear-gradient(135deg,#1C1C22,#28282E);"
+                    f"border:1px solid {cor_e}44;border-top:3px solid {cor_e};"
+                    f"border-radius:10px;padding:12px 14px;text-align:center'>"
+                    f"<div style='color:{cor_e};font-weight:700;font-size:.8rem'>{row_e['EMPRESA']}</div>"
+                    f"<div style='color:#FFF;font-size:1.3rem;font-weight:800'>{lencol_fmt_num(row_e['Peças'])}</div>"
+                    f"<div style='color:#A0AEC0;font-size:.75rem'>peças · {row_e['Share%']}%</div>"
+                    f"<div style='color:#CBD5E0;font-size:.8rem;margin-top:4px'>{lencol_fmt_brl(row_e['Valor'])}</div>"
+                    f"</div>", unsafe_allow_html=True,
+                )
+
+        st.divider()
+        col_e1_ln, col_e2_ln = st.columns(2)
+        with col_e1_ln:
+            st.markdown("<div class='ln-sec'>Volume por Empresa</div>", unsafe_allow_html=True)
+            fig_e1_ln = go.Figure(go.Bar(
+                x=df_emp_tab_ln["EMPRESA"], y=df_emp_tab_ln["Peças"],
+                text=[lencol_fmt_num(v) for v in df_emp_tab_ln["Peças"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker=dict(color=[lencol_cor_empresa(e) for e in df_emp_tab_ln["EMPRESA"]]),
+            ))
+            fig_e1_ln.update_layout(**lencol_layout_dark(height=300, title="Peças por empresa"))
+            st.plotly_chart(fig_e1_ln, use_container_width=True)
+
+        with col_e2_ln:
+            st.markdown("<div class='ln-sec'>Valor por Empresa</div>", unsafe_allow_html=True)
+            fig_e2_ln = go.Figure(go.Bar(
+                x=df_emp_tab_ln["EMPRESA"], y=df_emp_tab_ln["Valor"],
+                text=[lencol_fmt_brl(v) for v in df_emp_tab_ln["Valor"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker=dict(color=[lencol_cor_empresa(e) for e in df_emp_tab_ln["EMPRESA"]]),
+            ))
+            fig_e2_ln.update_layout(**lencol_layout_dark(height=300, title=f"R$ {status_pg_ln} por empresa"))
+            st.plotly_chart(fig_e2_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Evolução Mensal por Empresa</div>", unsafe_allow_html=True)
+        df_emes_ln = (df_ln.groupby(["ANO_MES","EMPRESA"])["QUANT"].sum()
+                      .reset_index().sort_values("ANO_MES"))
+        fig_emes_ln = px.bar(df_emes_ln, x="ANO_MES", y="QUANT", color="EMPRESA",
+                             barmode="stack", color_discrete_map=LENCOL_CORES_EMPRESA,
+                             labels={"QUANT":"Peças","ANO_MES":"Mês","EMPRESA":"Empresa"})
+        fig_emes_ln.update_layout(**lencol_layout_dark(height=320, title="Volume mensal empilhado por empresa"))
+        st.plotly_chart(fig_emes_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Tabela Comparativa</div>", unsafe_allow_html=True)
+        df_emp_show_ln = df_emp_tab_ln.copy()
+        df_emp_show_ln["Peças"] = df_emp_show_ln["Peças"].apply(lencol_fmt_num)
+        df_emp_show_ln["Valor"] = df_emp_show_ln["Valor"].apply(lencol_fmt_brl)
+        df_emp_show_ln["R$/Peça"] = df_emp_show_ln["R$/Peça"].apply(lambda v: f"R$ {lencol_fmt_num(v,4)}")
+        df_emp_show_ln["Share%"] = df_emp_show_ln["Share%"].apply(lambda v: f"{lencol_fmt_num(v,1)}%")
+        st.dataframe(df_emp_show_ln.rename(columns={"EMPRESA":"Empresa"}),
+                     use_container_width=True, hide_index=True)
+
+    # ── TAB 4 — CATEGORIAS ────────────────────────────────────────────
+    with tabs_ln[3]:
+        df_cat_tab_ln = (
+            df_ln.groupby("CAT_BASE")
+            .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"),
+                 Empresas=("EMPRESA","nunique"), Registros=("QUANT","count"))
+            .reset_index().sort_values("Peças", ascending=False)
+        )
+        df_cat_tab_ln["Share%"] = (df_cat_tab_ln["Peças"] / df_cat_tab_ln["Peças"].sum() * 100).round(1)
+        df_cat_tab_ln["R$/Peça"] = (df_cat_tab_ln["Valor"] / df_cat_tab_ln["Peças"]).round(4)
+
+        col_c1_ln, col_c2_ln = st.columns(2)
+        with col_c1_ln:
+            st.markdown("<div class='ln-sec'>Top Categorias – Volume</div>", unsafe_allow_html=True)
+            df_top_ln = df_cat_tab_ln.sort_values("Peças", ascending=True).tail(10)
+            fig_c1_ln = go.Figure(go.Bar(
+                x=df_top_ln["Peças"], y=df_top_ln["CAT_BASE"], orientation="h",
+                text=[lencol_fmt_num(v) for v in df_top_ln["Peças"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker=dict(color=df_top_ln["Peças"],
+                            colorscale=[[0,"#1C3A4A"],[1,"#4ECDC4"]], showscale=False),
+            ))
+            fig_c1_ln.update_layout(**lencol_layout_dark(height=350, title="Peças por categoria (Top 10)"))
+            st.plotly_chart(fig_c1_ln, use_container_width=True)
+
+        with col_c2_ln:
+            st.markdown("<div class='ln-sec'>Top Categorias – Valor</div>", unsafe_allow_html=True)
+            df_top_v_ln = df_cat_tab_ln.sort_values("Valor", ascending=True).tail(10)
+            fig_c2_ln = go.Figure(go.Bar(
+                x=df_top_v_ln["Valor"], y=df_top_v_ln["CAT_BASE"], orientation="h",
+                text=[lencol_fmt_brl(v) for v in df_top_v_ln["Valor"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker_color="#FFD54F",
+            ))
+            fig_c2_ln.update_layout(**lencol_layout_dark(height=350, title="Valor R$ por categoria (Top 10)"))
+            st.plotly_chart(fig_c2_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Distribuição: Empresa → Categoria</div>", unsafe_allow_html=True)
+        df_tree_ln = df_ln.groupby(["EMPRESA","CAT_BASE"])["QUANT"].sum().reset_index()
+        df_tree_ln = df_tree_ln[df_tree_ln["QUANT"] > 0]
+        fig_tree_ln = px.treemap(df_tree_ln, path=["EMPRESA","CAT_BASE"], values="QUANT",
+                                 color="EMPRESA", color_discrete_map=LENCOL_CORES_EMPRESA)
+        fig_tree_ln.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                                  font=dict(color="#CBD5E0"),
+                                  margin=dict(l=10,r=10,t=40,b=10), height=380)
+        fig_tree_ln.update_traces(textfont=dict(color="#FFFFFF"),
+                                  hovertemplate="<b>%{label}</b><br>%{value:,} peças<extra></extra>")
+        st.plotly_chart(fig_tree_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Empresa × Categoria (peças)</div>", unsafe_allow_html=True)
+        df_hmec_ln = df_ln.pivot_table(index="EMPRESA", columns="CAT_BASE",
+                                       values="QUANT", aggfunc="sum", fill_value=0)
+        fig_hmec_ln = go.Figure(go.Heatmap(
+            z=df_hmec_ln.values, x=list(df_hmec_ln.columns), y=list(df_hmec_ln.index),
+            colorscale="Blues",
+            text=[[lencol_fmt_num(v) if v > 0 else "" for v in row] for row in df_hmec_ln.values],
+            texttemplate="%{text}", textfont=dict(size=9),
+        ))
+        fig_hmec_ln.update_layout(**lencol_layout_dark(height=300, title="Peças: empresa vs categoria"))
+        st.plotly_chart(fig_hmec_ln, use_container_width=True)
+
+    # ── TAB 5 — TEMPORAL ──────────────────────────────────────────────
+    with tabs_ln[4]:
+        col_t1_ln, col_t2_ln = st.columns(2)
+        with col_t1_ln:
+            st.markdown("<div class='ln-sec'>Produção Diária</div>", unsafe_allow_html=True)
+            df_d_ln = df_ln.groupby("DATA")["QUANT"].sum().reset_index().sort_values("DATA")
+            df_d_ln["MA7"] = df_d_ln["QUANT"].rolling(7, min_periods=1).mean().round(0)
+            df_d_ln["ACUM"] = df_d_ln["QUANT"].cumsum()
+            fig_t1_ln = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_t1_ln.add_trace(go.Bar(x=df_d_ln["DATA"], y=df_d_ln["QUANT"],
+                                       name="Peças/dia", marker_color="rgba(78,205,196,0.4)"),
+                                secondary_y=False)
+            fig_t1_ln.add_trace(go.Scatter(x=df_d_ln["DATA"], y=df_d_ln["MA7"],
+                                           name="Média 7d", line=dict(color="#FF6B6B", width=2)),
+                                secondary_y=False)
+            fig_t1_ln.add_trace(go.Scatter(x=df_d_ln["DATA"], y=df_d_ln["ACUM"],
+                                           name="Acumulado", line=dict(color="#FFD54F", width=1.5, dash="dot")),
+                                secondary_y=True)
+            fig_t1_ln.update_layout(**lencol_layout_dark(height=320, title="Diário + Acumulado",
+                                                         legend=dict(orientation="h", y=-0.2)))
+            fig_t1_ln.update_yaxes(title_text="Peças/dia", secondary_y=False, gridcolor="#2D3748")
+            fig_t1_ln.update_yaxes(title_text="Acumulado", secondary_y=True, gridcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig_t1_ln, use_container_width=True)
+
+        with col_t2_ln:
+            st.markdown("<div class='ln-sec'>Produção Semanal</div>", unsafe_allow_html=True)
+            df_sem_ln = df_ln.groupby(["ANO","SEMANA"])["QUANT"].sum().reset_index()
+            df_sem_ln["LABEL"] = df_sem_ln["ANO"].astype(str) + "-S" + df_sem_ln["SEMANA"].astype(str).str.zfill(2)
+            fig_t2_ln = go.Figure(go.Bar(
+                x=df_sem_ln["LABEL"], y=df_sem_ln["QUANT"],
+                marker=dict(color=df_sem_ln["QUANT"],
+                            colorscale=[[0,"#1C3A4A"],[1,"#4ECDC4"]], showscale=False),
+            ))
+            fig_t2_ln.update_layout(**lencol_layout_dark(height=320, title="Produção por semana"))
+            st.plotly_chart(fig_t2_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Calendário de Produção (Dia × Semana)</div>", unsafe_allow_html=True)
+        df_cal_ln = df_ln.groupby(["SEMANA","DIA_SEMANA"])["QUANT"].sum().reset_index()
+        df_cal_piv_ln = df_cal_ln.pivot_table(index="DIA_SEMANA", columns="SEMANA",
+                                              values="QUANT", fill_value=0)
+        ordem_ln = [d for d in LENCOL_ORDEM_DIAS if d in df_cal_piv_ln.index]
+        df_cal_piv_ln = df_cal_piv_ln.reindex(ordem_ln)
+        df_cal_piv_ln.index = [LENCOL_DIAS_PT.get(d, d) for d in df_cal_piv_ln.index]
+        fig_cal_ln = go.Figure(go.Heatmap(
+            z=df_cal_piv_ln.values,
+            x=[f"S{c}" for c in df_cal_piv_ln.columns],
+            y=list(df_cal_piv_ln.index),
+            colorscale="Teal",
+            hovertemplate="%{y} – Semana %{x}<br>%{z:,} peças<extra></extra>",
+        ))
+        fig_cal_ln.update_layout(**lencol_layout_dark(height=260, title="Intensidade de produção por semana e dia"))
+        st.plotly_chart(fig_cal_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Média por Dia da Semana</div>", unsafe_allow_html=True)
+        df_dsem2_ln = (
+            df_ln.groupby(["DATA","DIA_SEMANA"])["QUANT"].sum().reset_index()
+            .groupby("DIA_SEMANA")["QUANT"].mean().reset_index()
+        )
+        df_dsem2_ln = df_dsem2_ln[df_dsem2_ln["DIA_SEMANA"].isin(LENCOL_ORDEM_DIAS)]
+        df_dsem2_ln["ORDEM"] = df_dsem2_ln["DIA_SEMANA"].map({d:i for i,d in enumerate(LENCOL_ORDEM_DIAS)})
+        df_dsem2_ln = df_dsem2_ln.sort_values("ORDEM")
+        df_dsem2_ln["DIA_PT"] = df_dsem2_ln["DIA_SEMANA"].map(LENCOL_DIAS_PT)
+        fig_ds_ln = go.Figure(go.Bar(
+            x=df_dsem2_ln["DIA_PT"], y=df_dsem2_ln["QUANT"].round(0),
+            text=[lencol_fmt_num(v, 0) for v in df_dsem2_ln["QUANT"]],
+            textposition="outside",
+            marker=dict(color=df_dsem2_ln["QUANT"],
+                        colorscale=[[0,"#2C3E50"],[1,"#4ECDC4"]], showscale=False),
+        ))
+        fig_ds_ln.update_layout(**lencol_layout_dark(height=260, title="Média de peças por dia da semana"))
+        st.plotly_chart(fig_ds_ln, use_container_width=True)
+
+    # ── TAB 6 — FINANCEIRO ────────────────────────────────────────────
+    with tabs_ln[5]:
+        total_r_ln = df_ln["VALOR_RECEBER"].sum()
+        media_dia_r_ln = total_r_ln / dias_trab_ln if dias_trab_ln else 0
+        media_peca_r_ln = total_r_ln / df_ln["QUANT"].sum() if df_ln["QUANT"].sum() else 0
+
+        col_f0_ln, col_f1_ln, col_f2_ln, col_f3_ln = st.columns(4)
+        col_f0_ln.metric("💰 Total R$", lencol_fmt_brl(total_r_ln))
+        col_f1_ln.metric("📅 Média Diária R$", lencol_fmt_brl(media_dia_r_ln))
+        col_f2_ln.metric("🧵 R$/Peça Médio", f"R$ {lencol_fmt_num(media_peca_r_ln, 4)}")
+        col_f3_ln.metric("🗓️ Dias no Período", str(dias_trab_ln))
+
+        st.divider()
+        col_fa_ln, col_fb_ln = st.columns(2)
+        with col_fa_ln:
+            st.markdown("<div class='ln-sec'>Ranking Financeiro – Prestadores</div>", unsafe_allow_html=True)
+            df_fpr_ln = (df_ln.groupby("PRESTADOR")["VALOR_RECEBER"].sum()
+                         .reset_index().sort_values("VALOR_RECEBER", ascending=True))
+            fig_fa_ln = go.Figure(go.Bar(
+                x=df_fpr_ln["VALOR_RECEBER"], y=df_fpr_ln["PRESTADOR"], orientation="h",
+                text=[lencol_fmt_brl(v) for v in df_fpr_ln["VALOR_RECEBER"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker_color="#FFD54F",
+            ))
+            fig_fa_ln.update_layout(**lencol_layout_dark(height=300, title=f"Total R$ {status_pg_ln} por prestador"))
+            st.plotly_chart(fig_fa_ln, use_container_width=True)
+
+        with col_fb_ln:
+            st.markdown("<div class='ln-sec'>Ticket Médio por Empresa</div>", unsafe_allow_html=True)
+            df_tick_ln = (
+                df_ln.groupby("EMPRESA")
+                .apply(lambda x: (x["VALOR_RECEBER"].sum() / x["QUANT"].sum()) if x["QUANT"].sum() > 0 else 0)
+                .reset_index(name="Ticket").sort_values("Ticket", ascending=True)
+            )
+            fig_fb_ln = go.Figure(go.Bar(
+                x=df_tick_ln["Ticket"], y=df_tick_ln["EMPRESA"], orientation="h",
+                text=[f"R$ {lencol_fmt_num(v, 4)}" for v in df_tick_ln["Ticket"]],
+                textposition="outside", textfont=dict(color="#CBD5E0"),
+                marker=dict(color=[lencol_cor_empresa(e) for e in df_tick_ln["EMPRESA"]]),
+            ))
+            fig_fb_ln.update_layout(**lencol_layout_dark(height=300, title="R$ por peça (ticket médio)"))
+            st.plotly_chart(fig_fb_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Evolução Financeira Mensal</div>", unsafe_allow_html=True)
+        df_fmes_ln = (df_ln.groupby(["ANO_MES","EMPRESA"])["VALOR_RECEBER"].sum()
+                      .reset_index().sort_values("ANO_MES"))
+        fig_fmes_ln = px.bar(df_fmes_ln, x="ANO_MES", y="VALOR_RECEBER", color="EMPRESA",
+                             barmode="stack", color_discrete_map=LENCOL_CORES_EMPRESA,
+                             labels={"VALOR_RECEBER":"R$","ANO_MES":"Mês","EMPRESA":"Empresa"})
+        fig_fmes_ln.update_layout(**lencol_layout_dark(height=300, title=f"Valor R$ mensal {status_pg_ln} por empresa"))
+        st.plotly_chart(fig_fmes_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Relação Quantidade × Valor por Registro</div>", unsafe_allow_html=True)
+        fig_sc_ln = px.scatter(
+            df_ln, x="QUANT", y="VALOR_RECEBER", color="EMPRESA",
+            size="QUANT", size_max=18, opacity=0.7,
+            hover_data=["PRESTADOR","CATEGORIA","DATA"],
+            color_discrete_map=LENCOL_CORES_EMPRESA,
+            labels={"QUANT":"Quantidade (peças)","VALOR_RECEBER":"Valor (R$)","EMPRESA":"Empresa"},
+        )
+        fig_sc_ln.update_layout(**lencol_layout_dark(height=320))
+        st.plotly_chart(fig_sc_ln, use_container_width=True)
+
+    # ── TAB 7 — METAS ─────────────────────────────────────────────────
+    with tabs_ln[6]:
+        if df_metas_ln.empty:
+            st.info("Nenhuma meta encontrada na planilha METAS.")
+        else:
+            df_real_ln = (
+                df_ln.groupby(["EMPRESA","CAT_BASE"])["QUANT"].sum().reset_index()
+                .rename(columns={"CAT_BASE":"CATEGORIA","QUANT":"REAL"})
+            )
+            df_metas_clean_ln = df_metas_ln.copy()
+            df_metas_clean_ln["EMPRESA"] = df_metas_clean_ln["EMPRESA"].str.strip().str.upper()
+            df_metas_clean_ln["CATEGORIA"] = df_metas_clean_ln["CATEGORIA"].apply(lencol_cat_base)
+
+            df_comp_ln = df_metas_clean_ln.merge(df_real_ln, on=["EMPRESA","CATEGORIA"], how="left")
+            df_comp_ln["REAL"] = df_comp_ln["REAL"].fillna(0).astype(int)
+            df_comp_ln["ATINGIMENTO%"] = (df_comp_ln["REAL"] / df_comp_ln["META"] * 100).round(1)
+            df_comp_ln["DESVIO"] = (df_comp_ln["REAL"] - df_comp_ln["META"]).astype(int)
+            df_comp_ln = df_comp_ln.sort_values("ATINGIMENTO%", ascending=False)
+
+            meta_total_ln = df_comp_ln["META"].sum()
+            real_total_ln = df_comp_ln["REAL"].sum()
+            ating_geral_ln = real_total_ln / meta_total_ln * 100 if meta_total_ln else 0
+            n_atingidas_ln = int((df_comp_ln["ATINGIMENTO%"] >= 100).sum())
+
+            c_m1_ln, c_m2_ln, c_m3_ln, c_m4_ln = st.columns(4)
+            c_m1_ln.metric("🎯 Meta Total", lencol_fmt_num(meta_total_ln))
+            c_m2_ln.metric("✅ Produção Real", lencol_fmt_num(real_total_ln))
+            c_m3_ln.metric("📊 Atingimento", f"{lencol_fmt_num(ating_geral_ln, 1)}%")
+            c_m4_ln.metric("🏆 Metas Atingidas", f"{n_atingidas_ln}/{len(df_comp_ln)}")
+
+            st.divider()
+            st.markdown("<div class='ln-sec'>Meta vs Realizado por Empresa × Categoria</div>", unsafe_allow_html=True)
+            df_comp_sorted_ln = df_comp_ln.sort_values("META", ascending=True)
+            df_comp_sorted_ln = df_comp_sorted_ln.copy()
+            df_comp_sorted_ln["LABEL"] = df_comp_sorted_ln["EMPRESA"] + " · " + df_comp_sorted_ln["CATEGORIA"]
+            fig_meta_ln = go.Figure()
+            fig_meta_ln.add_trace(go.Bar(
+                y=df_comp_sorted_ln["LABEL"], x=df_comp_sorted_ln["META"],
+                name="Meta", orientation="h", marker_color="rgba(160,174,192,0.4)",
+            ))
+            fig_meta_ln.add_trace(go.Bar(
+                y=df_comp_sorted_ln["LABEL"], x=df_comp_sorted_ln["REAL"],
+                name="Realizado", orientation="h",
+                marker_color=[
+                    "#4ECDC4" if v >= 100 else ("#FFD54F" if v >= 75 else "#FF6B6B")
+                    for v in df_comp_sorted_ln["ATINGIMENTO%"]
+                ],
+            ))
+            fig_meta_ln.update_layout(
+                **LENCOL_DARK, height=max(280, len(df_comp_sorted_ln) * 32),
+                barmode="overlay", title="Verde ≥ 100% · Amarelo ≥ 75% · Vermelho < 75%",
+            )
+            st.plotly_chart(fig_meta_ln, use_container_width=True)
+
+            st.markdown("<div class='ln-sec'>Progresso por Empresa × Categoria</div>", unsafe_allow_html=True)
+            for _, row_m in df_comp_ln.iterrows():
+                pct_m = min(float(row_m["ATINGIMENTO%"]), 100.0) / 100
+                lbl_m = f"{row_m['EMPRESA']} · {row_m['CATEGORIA']}"
+                col_lbl_m, col_prog_m, col_pct_m = st.columns([3, 5, 1])
+                with col_lbl_m: st.caption(lbl_m)
+                with col_prog_m: st.progress(pct_m)
+                with col_pct_m: st.caption(f"{lencol_fmt_num(row_m['ATINGIMENTO%'], 1)}%")
+
+            st.markdown("<div class='ln-sec'>Tabela Detalhada de Metas</div>", unsafe_allow_html=True)
+            df_meta_show_ln = df_comp_ln[["EMPRESA","CATEGORIA","META","REAL","DESVIO","ATINGIMENTO%"]].copy()
+            df_meta_show_ln["META"] = df_meta_show_ln["META"].apply(lencol_fmt_num)
+            df_meta_show_ln["REAL"] = df_meta_show_ln["REAL"].apply(lencol_fmt_num)
+            df_meta_show_ln["DESVIO"] = df_meta_show_ln["DESVIO"].apply(
+                lambda v: f"+{lencol_fmt_num(v)}" if v >= 0 else lencol_fmt_num(v)
+            )
+            df_meta_show_ln["ATINGIMENTO%"] = df_meta_show_ln["ATINGIMENTO%"].apply(
+                lambda v: f"{lencol_fmt_num(v, 1)}%"
+            )
+            st.dataframe(df_meta_show_ln, use_container_width=True, hide_index=True)
+
+    # ── TAB 8 — RANKING ───────────────────────────────────────────────
+    with tabs_ln[7]:
+        st.markdown("<div class='ln-sec'>🏆 Ranking Geral de Prestadores</div>", unsafe_allow_html=True)
+        df_rank_ln = (
+            df_ln.groupby("PRESTADOR")
+            .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"), Dias=("DATA","nunique"))
+            .reset_index().sort_values("Peças", ascending=False)
+        ).reset_index(drop=True)
+        df_rank_ln["Pos"] = df_rank_ln.index + 1
+        df_rank_ln["Média/Dia"] = (df_rank_ln["Peças"] / df_rank_ln["Dias"]).round(0)
+
+        for i, row_r in df_rank_ln.iterrows():
+            if i == 0:
+                badge = "<span class='ln-rank-gold'>🥇 1º</span>"
+            elif i == 1:
+                badge = "<span class='ln-rank-silver'>🥈 2º</span>"
+            elif i == 2:
+                badge = "<span class='ln-rank-bronze'>🥉 3º</span>"
+            else:
+                badge = f"<span style='color:#A0AEC0'>{i+1}º</span>"
+            pct_r = row_r["Peças"] / df_rank_ln["Peças"].sum() * 100 if df_rank_ln["Peças"].sum() > 0 else 0
+            col_rank_a, col_rank_b, col_rank_c = st.columns([1, 4, 3])
+            with col_rank_a:
+                st.markdown(badge, unsafe_allow_html=True)
+            with col_rank_b:
+                st.markdown(f"**{row_r['PRESTADOR']}** — {lencol_fmt_num(row_r['Peças'])} peças ({lencol_fmt_num(pct_r,1)}%)")
+            with col_rank_c:
+                st.markdown(f"{lencol_fmt_brl(row_r['Valor'])} · {lencol_fmt_num(row_r['Média/Dia'],0)} pç/dia")
+
+        st.divider()
+        st.markdown("<div class='ln-sec'>Comparativo de Desempenho</div>", unsafe_allow_html=True)
+        fig_rank_ln = go.Figure(go.Bar(
+            x=df_rank_ln["PRESTADOR"],
+            y=df_rank_ln["Peças"],
+            text=[lencol_fmt_num(v) for v in df_rank_ln["Peças"]],
+            textposition="outside", textfont=dict(color="#CBD5E0"),
+            marker=dict(
+                color=list(range(len(df_rank_ln))),
+                colorscale=[[i/max(len(df_rank_ln)-1,1), c]
+                            for i,c in enumerate(LENCOL_PALETA[:len(df_rank_ln)])],
+                showscale=False,
+            ),
+        ))
+        fig_rank_ln.update_layout(**lencol_layout_dark(height=300, title="Ranking por total de peças"))
+        st.plotly_chart(fig_rank_ln, use_container_width=True)
+
+        st.markdown("<div class='ln-sec'>Radar de Performance (normalizado)</div>", unsafe_allow_html=True)
+        if len(df_rank_ln) >= 2:
+            df_radar_ln = df_rank_ln.copy()
+            for col_r in ["Peças", "Valor", "Média/Dia"]:
+                mx = df_radar_ln[col_r].max()
+                df_radar_ln[col_r + "_norm"] = (df_radar_ln[col_r] / mx * 100).round(1) if mx > 0 else 0
+            categorias_r = ["Peças", "Valor", "Média/Dia"]
+            fig_radar_ln = go.Figure()
+            for _, row_rd in df_radar_ln.iterrows():
+                vals = [row_rd[c + "_norm"] for c in categorias_r] + [row_rd[categorias_r[0] + "_norm"]]
+                fig_radar_ln.add_trace(go.Scatterpolar(
+                    r=vals, theta=categorias_r + [categorias_r[0]],
+                    fill="toself", name=row_rd["PRESTADOR"], opacity=0.7,
+                ))
+            fig_radar_ln.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#2D3748"),
+                           angularaxis=dict(gridcolor="#2D3748")),
+                **LENCOL_DARK, height=380,
+            )
+            st.plotly_chart(fig_radar_ln, use_container_width=True)
+        else:
+            st.info("Radar disponível com 2 ou mais prestadores.")
+
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align:center; color:#606878; font-size:0.82rem;'>"
+        "✂️ Arealva · Lençol &nbsp;|&nbsp; Alimentado pela planilha CONTROLE DE CORTE DIÁRIO LENÇOL &nbsp;|&nbsp; "
         f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         "</div>",
         unsafe_allow_html=True,
