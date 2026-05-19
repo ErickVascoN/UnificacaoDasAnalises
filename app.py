@@ -76,8 +76,6 @@ def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
 # Inicializar session_state de autenticação
 if "auth_nivel" not in st.session_state:
     st.session_state.auth_nivel = ""
-if "auth_sector_key" not in st.session_state:
-    st.session_state.auth_sector_key = None
 
 SECTORS = [
     {
@@ -631,8 +629,34 @@ st.markdown(
 st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CARDS DE SETORES (CENTRALIZADOS)
+# BLOCO DE AUTENTICAÇÃO (LOGIN SIMPLES)
 # ──────────────────────────────────────────────────────────────────────────────
+if not st.session_state.auth_nivel:
+    st.warning("🔐 **Você precisa se autenticar para acessar os dashboards protegidos**")
+    with st.expander("🔑 Fazer Login", expanded=True):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            senha = st.text_input(
+                "Senha:",
+                type="password",
+                placeholder="Digite 0102 (usuário) ou adm0102 (admin)",
+                key="login_password",
+            )
+        with col2:
+            st.markdown("<div style='margin-top: 32px'></div>", unsafe_allow_html=True)
+            if st.button("Entrar", use_container_width=True):
+                if senha:
+                    nivel = verificar_acesso(senha)
+                    if nivel == "negado":
+                        st.error("❌ Senha incorreta! Tente novamente.")
+                    else:
+                        st.session_state.auth_nivel = nivel
+                        st.success(f"✅ Bem-vindo! Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}")
+                        st.rerun()
+                else:
+                    st.warning("Digite a senha")
+
+st.markdown('<div style="height:18px"></div>', unsafe_allow_html=True)
 st.markdown(
     """
     <div style="text-align: center; margin-top: 32px; margin-bottom: 8px;">
@@ -687,8 +711,12 @@ for row_sectors in rows:
             # Verifica se precisa de autenticação
             requires_auth = sector.get("requires_auth", False)
             
-            # Sem autenticação necessária - acesso direto
-            if not requires_auth:
+            # Se requer auth, verifica se o usuário tem permissão
+            if requires_auth and not pode_acessar(sector['key'], st.session_state.auth_nivel):
+                # Usuário não tem permissão
+                st.error("🔒 Acesso restrito (admin)")
+            else:
+                # Usuário tem permissão
                 if "external_url" in sector:
                     st.link_button(
                         f"Abrir {sector['title']}  →",
@@ -702,86 +730,11 @@ for row_sectors in rows:
                         use_container_width=True,
                     ):
                         _safe_switch(sector["page_path"])
-            
-            # Com autenticação necessária
-            else:
-                # Usuário já autenticado
-                if st.session_state.auth_nivel:
-                    # Verificar permissão
-                    if pode_acessar(sector['key'], st.session_state.auth_nivel):
-                        if "external_url" in sector:
-                            st.link_button(
-                                f"Abrir {sector['title']}  →",
-                                sector["external_url"],
-                                use_container_width=True,
-                            )
-                        else:
-                            if st.button(
-                                f"Abrir {sector['title']}  →",
-                                key=f"open_{sector['key']}",
-                                use_container_width=True,
-                            ):
-                                _safe_switch(sector["page_path"])
-                    else:
-                        # Acesso negado
-                        st.error("❌ Acesso negado! Requer privilégios de administrador.")
-                
-                # Usuário não autenticado - mostrar botão de autenticação
-                else:
-                    if st.button(
-                        f"🔒 Autenticar para acessar  →",
-                        key=f"open_{sector['key']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.auth_sector_key = sector['key']
-                        st.rerun()
 
     # Colunas de preenchimento (quando a última linha tem menos de COLS_PER_ROW)
     for i in range(padding):
         with cols[len(row_sectors) + i]:
             st.empty()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# DIÁLOGO DE AUTENTICAÇÃO
-# ──────────────────────────────────────────────────────────────────────────────
-if st.session_state.auth_sector_key:
-    # Encontrar o setor que está tentando acessar
-    sector_auth = None
-    for sector in SECTORS:
-        if sector['key'] == st.session_state.auth_sector_key:
-            sector_auth = sector
-            break
-    
-    if sector_auth:
-        st.markdown("---")
-        st.markdown(f"### 🔒 Autenticação Necessária")
-        st.markdown(f"**{sector_auth['title']}** requer autenticação.")
-        
-        col_pass, col_cancel = st.columns([3, 1])
-        
-        with col_pass:
-            senha = st.text_input(
-                "Digite a senha de acesso:",
-                type="password",
-                key="auth_password_input",
-                placeholder="Ex: 0102 ou adm0102"
-            )
-        
-        with col_cancel:
-            st.markdown("<div style='margin-top: 32px'></div>", unsafe_allow_html=True)
-            if st.button("Cancelar", use_container_width=True):
-                st.session_state.auth_sector_key = None
-                st.rerun()
-        
-        if senha:
-            nivel = verificar_acesso(senha)
-            if nivel == "negado":
-                st.error("❌ Senha incorreta! Tente novamente.")
-            else:
-                st.session_state.auth_nivel = nivel
-                st.session_state.auth_sector_key = None
-                st.success(f"✅ Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}!")
-                st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
