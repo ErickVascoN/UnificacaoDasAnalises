@@ -76,8 +76,6 @@ def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
 # Inicializar session_state de autenticação
 if "auth_nivel" not in st.session_state:
     st.session_state.auth_nivel = ""
-if "auth_sector_key" not in st.session_state:
-    st.session_state.auth_sector_key = None
 
 SECTORS = [
     {
@@ -645,28 +643,83 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Grid via st.columns — garante que botões fiquem alinhados aos cards.
-# Máximo de 3 colunas por linha; adapta automaticamente a qualquer nº de setores.
+# ──────────────────────────────────────────────────────────────────────────────
+# LOGIN GATE — bloqueia os cards até autenticação
+# ──────────────────────────────────────────────────────────────────────────────
+if not st.session_state.auth_nivel:
+    _, col_login, _ = st.columns([1, 2, 1])
+    with col_login:
+        st.markdown(
+            """
+            <div style="background:linear-gradient(135deg,#1C1C22,#28282E);
+                border:1px solid rgba(78,205,196,0.3);border-radius:16px;
+                padding:32px 28px;text-align:center;margin:8px 0 20px 0;">
+                <div style="font-size:2.4rem;margin-bottom:12px">🔐</div>
+                <h3 style="color:#FFFFFF;font-family:'Sora',sans-serif;
+                    font-size:1.4rem;margin:0 0 8px 0;font-weight:700">
+                    Acesso Restrito
+                </h3>
+                <p style="color:#A0AEC0;font-size:.88rem;margin:0;line-height:1.5">
+                    Digite sua senha para acessar os painéis da Central de Análise
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        senha_input = st.text_input(
+            "Senha",
+            type="password",
+            key="login_senha",
+            placeholder="Digite a senha de acesso...",
+            label_visibility="collapsed",
+        )
+        if st.button("Entrar  →", use_container_width=True, key="btn_login"):
+            if not senha_input:
+                st.warning("⚠️ Digite a senha antes de continuar.")
+            else:
+                nivel = verificar_acesso(senha_input)
+                if nivel == "negado":
+                    st.error("❌ Senha incorreta. Tente novamente.")
+                else:
+                    st.session_state.auth_nivel = nivel
+                    st.rerun()
+    st.stop()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CARDS DE SETORES (autenticado)
+# ──────────────────────────────────────────────────────────────────────────────
+nivel_acesso = st.session_state.auth_nivel
 COLS_PER_ROW = 3
 rows = [SECTORS[i : i + COLS_PER_ROW] for i in range(0, len(SECTORS), COLS_PER_ROW)]
 
 for row_sectors in rows:
-    # Preenche a última linha com colunas vazias se incompleta
     padding = COLS_PER_ROW - len(row_sectors)
     cols = st.columns(COLS_PER_ROW, gap="medium")
 
     for idx, (col, sector) in enumerate(zip(cols, row_sectors)):
         with col:
+            # Faturamento só para admin
+            locked = sector['key'] == 'faturados' and nivel_acesso != 'admin'
+
             tags_html = "".join(
                 f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
             )
+            lock_badge = (
+                '<div style="position:absolute;top:10px;right:12px;'
+                'background:rgba(231,111,81,0.18);border:1px solid rgba(231,111,81,0.45);'
+                'border-radius:6px;padding:2px 8px;font-size:.63rem;'
+                'color:#E76F51;font-weight:700;letter-spacing:.04em">🔒 ADMIN</div>'
+            ) if locked else ""
+
             st.markdown(
                 f"""
                 <div class="sector-card" style="
                     --card-a: {sector['color_a']};
                     --card-b: {sector['color_b']};
                     --card-accent: {sector['accent']};
+                    {'opacity:.45;pointer-events:none;' if locked else ''}
                 ">
+                    {lock_badge}
                     <div class="sector-card-inner">
                         <div class="sector-icon-wrap">{sector['icon']}</div>
                         <div class="sector-card-body">
@@ -680,106 +733,31 @@ for row_sectors in rows:
                 """,
                 unsafe_allow_html=True,
             )
-            
-            # Verifica se precisa de autenticação
-            requires_auth = sector.get("requires_auth", False)
-            
-            # Se requer auth mas usuário não está autenticado
-            if requires_auth and not st.session_state.auth_nivel:
-                # Mostrar botão que pede senha
+
+            if locked:
+                st.button(
+                    "🔒 Acesso restrito — Admin",
+                    key=f"open_{sector['key']}",
+                    use_container_width=True,
+                    disabled=True,
+                )
+            elif "external_url" in sector:
+                st.link_button(
+                    f"Abrir {sector['title']}  →",
+                    sector["external_url"],
+                    use_container_width=True,
+                )
+            else:
                 if st.button(
-                    f"🔒 Abrir {sector['title']}  →",
+                    f"Abrir {sector['title']}  →",
                     key=f"open_{sector['key']}",
                     use_container_width=True,
                 ):
-                    st.session_state.auth_sector_key = sector['key']
-            
-            # Se requer auth e usuário está autenticado, verifica permissão
-            elif requires_auth and st.session_state.auth_nivel:
-                if not pode_acessar(sector['key'], st.session_state.auth_nivel):
-                    # Usuário não tem permissão para este card específico
-                    st.error("🔒 Acesso restrito (admin)")
-                else:
-                    # Tem permissão, mostra botão normal
-                    if "external_url" in sector:
-                        st.link_button(
-                            f"Abrir {sector['title']}  →",
-                            sector["external_url"],
-                            use_container_width=True,
-                        )
-                    else:
-                        if st.button(
-                            f"Abrir {sector['title']}  →",
-                            key=f"open_{sector['key']}",
-                            use_container_width=True,
-                        ):
-                            _safe_switch(sector["page_path"])
-            
-            # Sem autenticação necessária - acesso direto
-            else:
-                if "external_url" in sector:
-                    st.link_button(
-                        f"Abrir {sector['title']}  →",
-                        sector["external_url"],
-                        use_container_width=True,
-                    )
-                else:
-                    if st.button(
-                        f"Abrir {sector['title']}  →",
-                        key=f"open_{sector['key']}",
-                        use_container_width=True,
-                    ):
-                        _safe_switch(sector["page_path"])
+                    _safe_switch(sector["page_path"])
 
-    # Colunas de preenchimento (quando a última linha tem menos de COLS_PER_ROW)
     for i in range(padding):
         with cols[len(row_sectors) + i]:
             st.empty()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# DIÁLOGO DE AUTENTICAÇÃO (QUANDO CLICA EM CARD PROTEGIDO)
-# ──────────────────────────────────────────────────────────────────────────────
-if st.session_state.auth_sector_key:
-    # Encontrar o setor que está pedindo autenticação
-    sector_auth = None
-    for sector in SECTORS:
-        if sector['key'] == st.session_state.auth_sector_key:
-            sector_auth = sector
-            break
-    
-    if sector_auth:
-        st.markdown("---")
-        with st.container(border=True):
-            st.markdown(f"### 🔐 Autenticação Necessária para: **{sector_auth['title']}**")
-            
-            col_input, col_btn = st.columns([3, 1])
-            
-            with col_input:
-                senha = st.text_input(
-                    "Digite a senha:",
-                    type="password",
-                    key="auth_dialog_password",
-                    placeholder="Ex: 0102 ou adm0102"
-                )
-            
-            with col_btn:
-                st.markdown("")
-                if st.button("✓ Entrar", use_container_width=True, key="btn_auth_submit"):
-                    if not senha:
-                        st.error("Você precisa digitar a senha!")
-                    else:
-                        nivel = verificar_acesso(senha)
-                        if nivel == "negado":
-                            st.error("❌ Senha incorreta!")
-                        else:
-                            st.session_state.auth_nivel = nivel
-                            st.session_state.auth_sector_key = None
-                            st.success(f"✅ Bem-vindo! Autenticado como {'Administrador' if nivel == 'admin' else 'Usuário'}!")
-                            st.balloons()
-            
-            if st.button("✕ Cancelar", use_container_width=True, key="btn_auth_cancel"):
-                st.session_state.auth_sector_key = None
-                st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # RODAPÉ
