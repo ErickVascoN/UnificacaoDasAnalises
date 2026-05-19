@@ -561,17 +561,26 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("**Navegação rápida**")
-    # Botões com st.switch_page evitam o bug do st.page_link em algumas
-    # versões do Streamlit quando os caminhos contêm emojis.
     st.link_button("⏱️ Central de Controle GUT", "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303#appName=ApontadorZanattex-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=GIATTEX&view=GIATTEX", use_container_width=True)
     st.link_button("📈 Análise de Dados GUT", "https://datastudio.google.com/u/0/reporting/720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd", use_container_width=True)
     st.markdown("---")
-    if st.button("📦 Faturamento", key="nav_faturados", use_container_width=True):
-        _safe_switch("pages/1_Produtos_Faturados.py")
-    if st.button("🏭  Produção", key="nav_producao", use_container_width=True):
-        _safe_switch("pages/2_Producao_Geral.py")
-    if st.button("✂️ Corte", key="nav_corte", use_container_width=True):
-        _safe_switch("pages/3_Controle_de_Corte.py")
+
+    _nav_nivel = st.session_state.auth_nivel
+    if _nav_nivel:
+        # Faturamento só para admin
+        if _nav_nivel == "admin":
+            if st.button("📦 Faturamento", key="nav_faturados", use_container_width=True):
+                _safe_switch("pages/1_Produtos_Faturados.py")
+        else:
+            st.button("📦 Faturamento 🔒", key="nav_faturados",
+                      use_container_width=True, disabled=True)
+        if st.button("🏭 Produção", key="nav_producao", use_container_width=True):
+            _safe_switch("pages/2_Producao_Geral.py")
+        if st.button("✂️ Corte", key="nav_corte", use_container_width=True):
+            _safe_switch("pages/3_Controle_de_Corte.py")
+    else:
+        st.caption("🔒 Faça login para acessar os dashboards.")
+
     st.markdown("---")
     st.caption(
         f"⏱️ Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
