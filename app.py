@@ -21,7 +21,7 @@ if ROOT_DIR not in sys.path:
 # CONFIGURAÇÃO DA PÁGINA
 # ──────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Dashboard de Análise Geral | Central de Setores",
+    page_title="Central de Análise Zanattex | Setores",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -509,8 +509,8 @@ def _safe_switch(page_path: str) -> None:
 # SIDEBAR
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🏢 Dashboard de Análise Geral")
-    st.caption("Central de setores — Grupo")
+    st.markdown("### 🏢 Central de Análise Zanattex")
+    st.caption("setores — Grupo")
     st.markdown("---")
     st.markdown("**Navegação rápida**")
     # Botões com st.switch_page evitam o bug do st.page_link em algumas
@@ -536,8 +536,8 @@ with st.sidebar:
 st.markdown(
     """
     <div class="hero">
-        <div class="hero-badge">Central de Análises</div>
-        <h1 class="hero-title">Dashboard de <span class="accent"> Análise Geral</span></h1>
+        <div class="hero-badge">Grupo Zanattex</div>
+        <h1 class="hero-title">Central de <span class="accent"> Análise Zanattex</span></h1>
         <p class="hero-subtitle">
             Acesse, em um só lugar, todos os painéis setoriais da operação.
             Escolha o setor para visualizar produção, faturamento e desempenho em tempo real.
