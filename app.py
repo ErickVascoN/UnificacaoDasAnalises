@@ -51,6 +51,36 @@ PALETTE = {
 
 SECTORS = [
     {
+        "key": "apontador_gut",
+        "title": "Central de Controle GUT",
+        "subtitle": "Apontador Zanattex — Controle de eficiência",
+        "description": (
+            "Painel de acompanhamento em tempo real do GUT (Giattex) com dados de "
+            "eficiência, horas, operadores e performance. Controle operacional integrado."
+        ),
+        "icon": "⏱️",
+        "external_url": "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303#appName=ApontadorZanattex-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=GIATTEX&view=GIATTEX",
+        "color_a": "#1F4A5A",
+        "color_b": "#2E8B9E",
+        "accent":  "#26D0CE",
+        "tags": ["GUT", "Eficiência", "Real-time"],
+    },
+    {
+        "key": "analise_dados_gut",
+        "title": "Análise de Dados GUT",
+        "subtitle": "Dashboard analítico — Insights e tendências",
+        "description": (
+            "Análise completa dos dados do GUT em formato de dashboard interativo. "
+            "Visualize tendências, indicadores de desempenho e insights estratégicos."
+        ),
+        "icon": "📈",
+        "external_url": "https://datastudio.google.com/u/0/reporting/720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd",
+        "color_a": "#3D2817",
+        "color_b": "#D97706",
+        "accent":  "#FBBF24",
+        "tags": ["Análise", "GUT", "Insights"],
+    },
+    {
         "key": "faturados",
         "title": "Análise de Faturamento",
         "subtitle": "Análise comercial e faturamento",
@@ -485,6 +515,9 @@ with st.sidebar:
     st.markdown("**Navegação rápida**")
     # Botões com st.switch_page evitam o bug do st.page_link em algumas
     # versões do Streamlit quando os caminhos contêm emojis.
+    st.link_button("⏱️ Central de Controle GUT", "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303#appName=ApontadorZanattex-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=GIATTEX&view=GIATTEX", use_container_width=True)
+    st.link_button("📈 Análise de Dados GUT", "https://datastudio.google.com/u/0/reporting/720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd", use_container_width=True)
+    st.markdown("---")
     if st.button("📦 Faturamento", key="nav_faturados", use_container_width=True):
         _safe_switch("pages/1_Produtos_Faturados.py")
     if st.button("🏭  Produção", key="nav_producao", use_container_width=True):
@@ -510,7 +543,7 @@ st.markdown(
             Escolha o setor para visualizar produção, faturamento e desempenho em tempo real.
         </p>
         <div class="hero-meta">
-            <span class="hero-pill"><b>3</b> &nbsp;Setores integrados</span>
+            <span class="hero-pill"><b>5</b> &nbsp;Painéis integrados</span>
             <span class="hero-pill"><b>Real-time</b> &nbsp;Atualização contínua</span>
             <span class="hero-pill"><b>Multi-empresa</b> &nbsp;Grupo consolidado</span>
         </div>
@@ -527,8 +560,8 @@ st.markdown(
     """
     <div class="kpi-row">
         <div class="kpi">
-            <div class="kpi-label">Setores</div>
-            <div class="kpi-value"><span class="kpi-accent">3</span> ativos</div>
+            <div class="kpi-label">Painéis</div>
+            <div class="kpi-value"><span class="kpi-accent">5</span> ativos</div>
         </div>
         <div class="kpi">
             <div class="kpi-label">Empresas Monitoradas</div>
@@ -602,12 +635,20 @@ for row_sectors in rows:
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button(
-                f"Abrir {sector['title']}  →",
-                key=f"open_{sector['key']}",
-                use_container_width=True,
-            ):
-                _safe_switch(sector["page_path"])
+            # Verifica se é um link externo ou página interna
+            if "external_url" in sector:
+                st.link_button(
+                    f"Abrir {sector['title']}  →",
+                    sector["external_url"],
+                    use_container_width=True,
+                )
+            else:
+                if st.button(
+                    f"Abrir {sector['title']}  →",
+                    key=f"open_{sector['key']}",
+                    use_container_width=True,
+                ):
+                    _safe_switch(sector["page_path"])
 
     # Colunas de preenchimento (quando a última linha tem menos de COLS_PER_ROW)
     for i in range(padding):
