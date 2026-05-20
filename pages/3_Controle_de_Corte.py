@@ -538,7 +538,8 @@ def carregar_dados_iacanga():
 # =====================================================================
 # LENÇOL — CONSTANTES E HELPERS
 # =====================================================================
-LENCOL_SPREADSHEET_ID = "15hviwiTl3o-EYl5BnbFC439LI4YaDPwF"
+LENCOL_SPREADSHEET_ID = "1BAbgM0zLWBHPn06LfzEvH4aPH84eZvAV"
+LENCOL_SPREADSHEET_GID = "1396046910"
 LENCOL_CACHE_TTL = 60
 
 LENCOL_CORES_EMPRESA = {
@@ -659,8 +660,8 @@ def lencol_delta_icon(v):
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_corte_lencol() -> pd.DataFrame:
     urls = [
+        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv&gid={LENCOL_SPREADSHEET_GID}",
         f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv",
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=CORTE+DIARIO",
     ]
     texto = None
     url_tentativa = 0
