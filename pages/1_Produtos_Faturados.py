@@ -453,6 +453,10 @@ def parse_best_date(series: pd.Series) -> pd.Series:
 
 
 
+def normalize_text(text: str) -> str:
+    return unicodedata.normalize("NFD", str(text)).encode("ascii", "ignore").decode("utf-8").lower()
+
+
 def categorize_size(product_name: str) -> str:
     """Extrai tamanho/dimensão do nome do produto."""
     if not product_name:
