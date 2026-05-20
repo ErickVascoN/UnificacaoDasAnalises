@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import os
 import re
-import time
 import unicodedata
 from datetime import date, timedelta
 from urllib.parse import parse_qs, urlparse
@@ -12,7 +11,6 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 
@@ -350,17 +348,6 @@ def inject_styles() -> None:
     )
 
 
-def normalize_text(value: str) -> str:
-    # Converter para string e remover NaN/None
-    value = str(value).strip() if pd.notna(value) else ""
-    normalized = unicodedata.normalize("NFKD", value)
-    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
-    ascii_text = ascii_text.lower().strip()
-    ascii_text = re.sub(r"[^a-z0-9]+", "_", ascii_text)
-    ascii_text = re.sub(r"_+", "_", ascii_text).strip("_")
-    return ascii_text
-
-
 def to_brl(value: float) -> str:
     """Formata valor em R$ com separadores de milhar (formato brasileiro)."""
     if pd.isna(value):
@@ -464,36 +451,6 @@ def parse_best_date(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce", dayfirst=True)
 
 
-def is_dimension(word: str) -> bool:
-    """Verifica se uma palavra é uma dimensão (ex: 1.40X2.00, 0.47X0.65)."""
-    word = str(word).strip().upper()
-    # Dimensões têm X e contêm números
-    return "X" in word and any(c.isdigit() for c in word)
-
-
-def is_valid_color_word(word: str) -> bool:
-    """Verifica se uma palavra é válida como cor (não é código/número)."""
-    if not word or len(word) <= 2:
-        return False
-    
-    word_upper = word.upper()
-    
-    # Pula abreviações comuns que não são cores
-    skip_words = {"SORT", "EST", "SHU", "LS", "MCF", "EL", "CL", "CS", "DIV", "ES", "GSM", "REAP", "PET", "DEC"}
-    if word_upper in skip_words:
-        return False
-    
-    # Pula palavras que são principalmente números/hífens (como "18-0", "17-0610")
-    digit_count = sum(1 for c in word if c.isdigit() or c == "-")
-    if digit_count > len(word) * 0.5:  # Se mais de 50% é número/hífen
-        return False
-    
-    # Deve ter pelo menos 3 caracteres e ser principalmente letras
-    letter_count = sum(1 for c in word if c.isalpha())
-    if letter_count < len(word) * 0.6:  # Menos de 60% de letras é suspeito
-        return False
-    
-    return True
 
 
 def categorize_size(product_name: str) -> str:
