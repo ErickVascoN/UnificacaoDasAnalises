@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
+import logging
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
@@ -429,7 +430,7 @@ def baixar_csv_google_sheets():
                 if conteudo.strip():
                     return io.StringIO(conteudo)
         except (HTTPError, URLError, TimeoutError) as erro:
-            st.debug(f"URL {tentativa_num}: {url[:60]}... falhou - {type(erro).__name__}")
+            logging.debug(f"URL {tentativa_num}: {url[:60]}... falhou - {type(erro).__name__}")
             ultimo_erro = erro
             continue
     st.error(f"❌ Falha ao baixar CSV do Google Sheets em {tentativa_num} tentativas. Último erro: {str(ultimo_erro)[:100]}")
@@ -459,7 +460,7 @@ def carregar_dados():
     df_corte = df_corte.dropna(subset=['DATA', 'OP'])
     removed_na = before_count - len(df_corte)
     if removed_na > 0:
-        st.debug(f"Removidos {removed_na} registros sem DATA ou OP")
+        logging.debug(f"Removidos {removed_na} registros sem DATA ou OP")
     df_corte = df_corte[df_corte['OP'].astype(str).str.strip() != '']
     df_corte['OP'] = df_corte['OP'].astype(str).str.strip()
     df_corte['COR'] = df_corte['COR'].astype(str).str.strip().str.upper()
@@ -469,7 +470,7 @@ def carregar_dados():
     df_corte['QUANTIDADE'] = pd.to_numeric(df_corte['QUANTIDADE'], errors='coerce').fillna(0).astype(int)
     errors_quant = (df_corte['QUANTIDADE'] == 0).sum()
     if errors_quant > 0:
-        st.debug(f"Convertidas {errors_quant} quantidades inválidas para 0 em carregar_dados()")
+        logging.debug(f"Convertidas {errors_quant} quantidades inválidas para 0 em carregar_dados()")
     df_corte['ESTACAO'] = df_corte['ESTAÇÃO DE CORTE'].astype(str).str.strip()
     df_corte['PRODUTO'] = df_corte['PRODUTO'].astype(str).str.strip()
     df_corte['SEMANA'] = df_corte['DATA'].dt.isocalendar().week.astype(int)
@@ -674,7 +675,7 @@ def load_corte_lencol() -> pd.DataFrame:
                 texto = r.text
                 break
         except Exception as e:
-            st.debug(f"URL Lençol {url_tentativa}: {url[:60]}... falhou - {str(e)[:50]}")
+            logging.debug(f"URL Lençol {url_tentativa}: {url[:60]}... falhou - {str(e)[:50]}")
             continue
     if not texto:
         st.error("❌ Não foi possível baixar dados da planilha de lençol após {url_tentativa} tentativas.")
@@ -699,7 +700,7 @@ def load_corte_lencol() -> pd.DataFrame:
     df = df[df["DATA"].notna()]
     removed_nat = before_count - len(df)
     if removed_nat > 0:
-        st.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
+        logging.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
     # Removed ambiguous timestamp filter - dates in future (next day) are now allowed
 
     df["QUANT"] = pd.to_numeric(
@@ -728,21 +729,21 @@ def load_corte_lencol() -> pd.DataFrame:
     df = df[~df["PRESTADOR"].str.upper().isin(invalidos)]
     removidos_prestador = registros_antes - len(df)
     if removidos_prestador > 0:
-        st.debug(f"Removidos {removidos_prestador} registros com PRESTADOR inválido em load_corte_lencol()")
+        logging.debug(f"Removidos {removidos_prestador} registros com PRESTADOR inválido em load_corte_lencol()")
     
     # Remover empresas inválidas
     registros_antes_empresa = len(df)
     df = df[~df["EMPRESA"].str.upper().isin(invalidos)]
     removidos_empresa = registros_antes_empresa - len(df)
     if removidos_empresa > 0:
-        st.debug(f"Removidos {removidos_empresa} registros com EMPRESA inválida em load_corte_lencol()")
+        logging.debug(f"Removidos {removidos_empresa} registros com EMPRESA inválida em load_corte_lencol()")
     
     # Remover quantidade zero
     registros_antes_quant = len(df)
     df = df[df["QUANT"] > 0]
     removidos_quant = registros_antes_quant - len(df)
     if removidos_quant > 0:
-        st.debug(f"Removidos {removidos_quant} registros com QUANT <= 0 em load_corte_lencol()")
+        logging.debug(f"Removidos {removidos_quant} registros com QUANT <= 0 em load_corte_lencol()")
     
     df = df.reset_index(drop=True)
 
@@ -783,7 +784,7 @@ def load_metas_lencol() -> pd.DataFrame:
         return df
     except Exception as e:
         st.error(f"❌ Erro ao carregar metas de lençol: {str(e)[:100]}")
-        st.debug(f"URL: {url}")
+        logging.debug(f"URL: {url}")
         return pd.DataFrame(columns=["PRESTADOR", "EMPRESA", "CATEGORIA", "META"])
 
 

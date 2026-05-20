@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
+import logging
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
@@ -211,7 +212,7 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
     meta_diaria_antes_fillna = meta_mensal["Meta Diaria"].isna().sum()
     meta_mensal["Meta Diaria"] = meta_mensal["Meta Diaria"].fillna(0)
     if meta_diaria_antes_fillna > 0:
-        st.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta()")
+        logging.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta()")
 
     if meta_mensal["Meta Diaria"].sum() == 0:
         empty = pd.DataFrame(columns=["Faccao", "Meta Periodo", "Meta Dia Min", "Meta Dia Max"])
@@ -244,7 +245,7 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
     meta_por_data_antes_fillna = meta_por_data.isna().sum()
     meta_por_data = meta_por_data.fillna(0)
     if meta_por_data_antes_fillna > 0:
-        st.debug(f"Preenchidas {meta_por_data_antes_fillna} metas diárias faltando por data em _calc_meta()")
+        logging.debug(f"Preenchidas {meta_por_data_antes_fillna} metas diárias faltando por data em _calc_meta()")
     meta_por_data = meta_por_data[~meta_por_data.index.duplicated(keep="first")]
 
     meta_por_faccao = (
@@ -282,7 +283,7 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
     meta_diaria_antes_fillna = meta_mensal["Meta Diaria"].isna().sum()
     meta_mensal["Meta Diaria"] = meta_mensal["Meta Diaria"].fillna(0)
     if meta_diaria_antes_fillna > 0:
-        st.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta_por_produto()")
+        logging.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta_por_produto()")
 
     dias_mes = (
         df_sel.groupby(["Ano", "Mes"])["Data"]
@@ -296,7 +297,7 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
     dias_uteis_antes_fillna = meta_mensal["DiasUteis"].isna().sum()
     meta_mensal["DiasUteis"] = meta_mensal["DiasUteis"].fillna(0)
     if dias_uteis_antes_fillna > 0:
-        st.debug(f"Preenchidos {dias_uteis_antes_fillna} dias úteis com 0 em _calc_meta_por_produto()")
+        logging.debug(f"Preenchidos {dias_uteis_antes_fillna} dias úteis com 0 em _calc_meta_por_produto()")
     meta_mensal["Meta Periodo Mes"] = meta_mensal["Meta Diaria"] * meta_mensal["DiasUteis"]
 
     result = (
