@@ -222,6 +222,7 @@ st.markdown(
 
         footer {{ visibility: hidden; }}
         #MainMenu {{ visibility: hidden; }}
+        [data-testid="stSidebarNav"] {{ display: none !important; }}
 
         .stApp {{
             background:

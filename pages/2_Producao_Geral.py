@@ -132,50 +132,64 @@ def fmt_br(v, decimals=0):
 
 
 def dias_uteis(datas):
-    """Calcula dias úteis (segunda a sexta) sem considerar sábados."""
+    """
+    CONSOLIDADO MÉDIO #16: Calcula dias úteis de seg-sex no período.
+    
+    Uso:
+    - Contar dias trabalháveis (segunda a sexta) em um período
+    - Base para cálculos de meta (não inclui sábados)
+    
+    Args:
+        datas: Lista/Series de datas
+        
+    Returns:
+        int: Quantidade de dias de segunda a sexta (sem duplicatas)
+    
+    Exemplo:
+        >>> dias_uteis(['2026-05-04', '2026-05-05', '2026-05-09'])  # seg, ter, sab
+        2  # Retorna apenas segunda e terça (2 dias úteis)
+    """
     d = pd.to_datetime(datas).dropna().dt.normalize().drop_duplicates()
     return int((d.dt.weekday <= 4).sum())
 
 
-def dias_uteis_com_sabados_trabalhados(df_completo, faccao, produto=None):
+def calcular_dias_com_sabados_trabalhados(datas_grupo):
     """
-    Calcula dias para uma facção/produto:
-    - TODOS os dias úteis (seg-sex) do período (mesmo sem produção)
-    - MAIS os sábados onde houve produção naquele dia
+    CONSOLIDADO MÉDIO #16: Calcula dias úteis MAIS sábados onde houve produção.
+    
+    Uso:
+    - Contar dias efetivos trabalhados (seg-sex + sábados com produção)
+    - Para cálculo de meta considerando sábados trabalhados
+    
+    Args:
+        datas_grupo: Series de datas onde houve produção
+        
+    Returns:
+        int: Dias úteis (seg-sex) + sábados com produção
+    
+    Lógica:
+    - Extrai TODOS os dias seg-sex do período
+    - Conta APENAS os sábados (weekday=5) presentes nos dados
+    - Retorna a soma: seg-sex + sábados_com_trabalho
+    
+    Exemplo:
+        >>> # dados de 4º a 8º maio (seg-sex) + 11º e 15º (sab)
+        >>> calcular_dias_com_sabados_trabalhados([...datas...])
+        7  # 5 dias úteis (4-8) + 2 sábados (11, 15)
     """
-    # Dias úteis do período completo (seg-sex)
-    dias_seg_sex_periodo = dias_uteis(df_completo["Data"])
+    d = pd.to_datetime(datas_grupo).dropna().dt.normalize().drop_duplicates()
     
-    # Sábados com produção para esta facção/produto
-    if produto is not None:
-        grupo = df_completo[(df_completo["Faccao"] == faccao) & 
-                            (df_completo["Produto"] == produto) & 
-                            (df_completo["Quantidade"] > 0)]
-    else:
-        grupo = df_completo[(df_completo["Faccao"] == faccao) & 
-                            (df_completo["Quantidade"] > 0)]
-    
-    datas_grupo = pd.to_datetime(grupo["Data"]).dropna().dt.normalize().drop_duplicates()
-    sabados_com_trabalho = (datas_grupo.dt.weekday == 5).sum()
-    
-    return dias_seg_sex_periodo + sabados_com_trabalho
-
-
-def dias_uteis_com_trabalho(datas):
-    """
-    Calcula dias úteis exclusivamente de segunda a sexta,
-    mas inclui sábados APENAS se houve produção naquele dia.
-    Sábados sem produção não são contados.
-    """
-    d = pd.to_datetime(datas).dropna().dt.normalize().drop_duplicates()
-    
-    # Contar dias de segunda a sexta (weekday 0-4)
+    # Dias de segunda a sexta no período
     dias_seg_sex = (d.dt.weekday <= 4).sum()
     
-    # Contar sábados (weekday 5) que têm produção
-    dias_sabado_com_prod = (d.dt.weekday == 5).sum()
+    # Sábados onde houve produção (weekday 5)
+    sabados_com_prod = (d.dt.weekday == 5).sum()
     
-    return int(dias_seg_sex + dias_sabado_com_prod)
+    return int(dias_seg_sex + sabados_com_prod)
+
+
+# REMOVIDO: dias_uteis_com_sabados_trabalhados() - ver replacement abaixo
+# REMOVIDO: dias_uteis_com_trabalho() - consolidada em calcular_dias_com_sabados_trabalhados()
 
 
 def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
@@ -272,7 +286,7 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
 
     dias_mes = (
         df_sel.groupby(["Ano", "Mes"])["Data"]
-        .apply(dias_uteis_com_trabalho)
+        .apply(calcular_dias_com_sabados_trabalhados)
         .reset_index()
         .rename(columns={"Data": "DiasUteis"})
     )
