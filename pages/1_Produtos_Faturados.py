@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 
@@ -455,6 +456,17 @@ def parse_best_date(series: pd.Series) -> pd.Series:
 
 def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFD", str(text)).encode("ascii", "ignore").decode("utf-8").lower()
+
+
+def is_dimension(text: str) -> bool:
+    """Verifica se o texto é uma dimensão (ex: 1.40X2.00, 140X200, 0.47X0.65)."""
+    return bool(re.match(r"^\d+[.,]?\d*[xX]\d+[.,]?\d*$", text.strip()))
+
+
+def is_valid_color_word(text: str) -> bool:
+    """Verifica se a palavra pode ser um nome de cor (alfabética, mínimo 3 letras)."""
+    cleaned = text.strip()
+    return bool(cleaned) and cleaned.isalpha() and len(cleaned) >= 3 and not is_dimension(cleaned)
 
 
 def categorize_size(product_name: str) -> str:
