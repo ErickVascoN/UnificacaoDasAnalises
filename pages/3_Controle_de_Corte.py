@@ -419,7 +419,9 @@ def baixar_csv_google_sheets():
         ])
     todas_urls = urls_padrao + urls_fallback
     ultimo_erro = None
+    tentativa_num = 0
     for url in todas_urls:
+        tentativa_num += 1
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -427,8 +429,10 @@ def baixar_csv_google_sheets():
                 if conteudo.strip():
                     return io.StringIO(conteudo)
         except (HTTPError, URLError, TimeoutError) as erro:
+            st.debug(f"URL {tentativa_num}: {url[:60]}... falhou - {type(erro).__name__}")
             ultimo_erro = erro
             continue
+    st.error(f"❌ Falha ao baixar CSV do Google Sheets em {tentativa_num} tentativas. Último erro: {str(ultimo_erro)[:100]}")
     raise RuntimeError(f"Falha ao baixar CSV do Google Sheets. Último erro: {ultimo_erro}")
 
 
@@ -459,7 +463,13 @@ def carregar_dados():
     df_corte = df_corte[df_corte['OP'].astype(str).str.strip() != '']
     df_corte['OP'] = df_corte['OP'].astype(str).str.strip()
     df_corte['COR'] = df_corte['COR'].astype(str).str.strip().str.upper()
+    
+    # Log quantity conversion errors
+    before_quant = len(df_corte)
     df_corte['QUANTIDADE'] = pd.to_numeric(df_corte['QUANTIDADE'], errors='coerce').fillna(0).astype(int)
+    errors_quant = (df_corte['QUANTIDADE'] == 0).sum()
+    if errors_quant > 0:
+        st.debug(f"Convertidas {errors_quant} quantidades inválidas para 0 em carregar_dados()")
     df_corte['ESTACAO'] = df_corte['ESTAÇÃO DE CORTE'].astype(str).str.strip()
     df_corte['PRODUTO'] = df_corte['PRODUTO'].astype(str).str.strip()
     df_corte['SEMANA'] = df_corte['DATA'].dt.isocalendar().week.astype(int)
@@ -655,15 +665,19 @@ def load_corte_lencol() -> pd.DataFrame:
         f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=CORTE+DIARIO",
     ]
     texto = None
+    url_tentativa = 0
     for url in urls:
+        url_tentativa += 1
         try:
             r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
             if r.status_code == 200 and len(r.text) > 200:
                 texto = r.text
                 break
-        except Exception:
+        except Exception as e:
+            st.debug(f"URL Lençol {url_tentativa}: {url[:60]}... falhou - {str(e)[:50]}")
             continue
     if not texto:
+        st.error("❌ Não foi possível baixar dados da planilha de lençol após {url_tentativa} tentativas.")
         raise ConnectionError("Não foi possível baixar dados da planilha de lençol.")
 
     linhas = texto.splitlines()
@@ -747,6 +761,8 @@ def load_metas_lencol() -> pd.DataFrame:
         df = df[df["META"].notna() & (df["META"] > 0)].reset_index(drop=True)
         return df
     except Exception as e:
+        st.error(f"❌ Erro ao carregar metas de lençol: {str(e)[:100]}")
+        st.debug(f"URL: {url}")
         return pd.DataFrame(columns=["PRESTADOR", "EMPRESA", "CATEGORIA", "META"])
 
 
