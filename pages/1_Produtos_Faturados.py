@@ -459,11 +459,9 @@ def parse_br_number(series: pd.Series) -> pd.Series:
 
 
 def parse_best_date(series: pd.Series) -> pd.Series:
-    first = pd.to_datetime(series, errors="coerce", dayfirst=False)
-    second = pd.to_datetime(series, errors="coerce", dayfirst=True)
-    if first.notna().sum() >= second.notna().sum():
-        return first
-    return second
+    # Fixed: Use dayfirst=True (Brazilian format DD/MM/YYYY) only
+    # Removed ambiguous dual-parsing logic that could invert 50% of dates
+    return pd.to_datetime(series, errors="coerce", dayfirst=True)
 
 
 def is_dimension(word: str) -> bool:

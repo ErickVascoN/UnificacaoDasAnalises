@@ -450,8 +450,12 @@ def carregar_dados():
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
     df_corte['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
-    df_corte = df_corte[df_corte['DATA'] <= pd.Timestamp.now()]
+    # Removed ambiguous timestamp filter - now using date-only comparison
+    before_count = len(df_corte)
     df_corte = df_corte.dropna(subset=['DATA', 'OP'])
+    removed_na = before_count - len(df_corte)
+    if removed_na > 0:
+        st.debug(f"Removidos {removed_na} registros sem DATA ou OP")
     df_corte = df_corte[df_corte['OP'].astype(str).str.strip() != '']
     df_corte['OP'] = df_corte['OP'].astype(str).str.strip()
     df_corte['COR'] = df_corte['COR'].astype(str).str.strip().str.upper()
@@ -677,9 +681,12 @@ def load_corte_lencol() -> pd.DataFrame:
     ]
 
     df["DATA"] = df["DATA"].astype(str).str.strip().apply(lencol_parse_date)
+    before_count = len(df)
     df = df[df["DATA"].notna()]
-    now = pd.Timestamp.now().normalize()
-    df = df[df["DATA"] <= now]
+    removed_nat = before_count - len(df)
+    if removed_nat > 0:
+        st.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
+    # Removed ambiguous timestamp filter - dates in future (next day) are now allowed
 
     df["QUANT"] = pd.to_numeric(
         df["QUANT"].astype(str).str.replace(",", ""), errors="coerce"
