@@ -164,37 +164,37 @@ SECTORS = [
         "requires_auth": True,
     },
 
-    {
-        "key": "Almoxarifado",
-        "title": "Análise de Almoxarife",
-        "subtitle": "Insumos/ Materiais — controle e desempenho",
-        "description": (
-            "Em Breve..."
-        ),
-        "icon": "📦",
-        "page_path": "EM BREVE!",
-        "color_a": "#1F3A93",
-        "color_b": "#3974E2",
-        "accent":  "#74C4BE",
-        "tags": ["Operação", "Almoxarifado", "Controle"],
-        "requires_auth": False,
-    },
+    # {
+    #     "key": "Almoxarifado",
+    #     "title": "Análise de Almoxarife",
+    #     "subtitle": "Insumos/ Materiais — controle e desempenho",
+    #     "description": (
+    #         "Em Breve..."
+    #     ),
+    #     "icon": "📦",
+    #     "page_path": "EM BREVE!",
+    #     "color_a": "#1F3A93",
+    #     "color_b": "#3974E2",
+    #     "accent":  "#74C4BE",
+    #     "tags": ["Operação", "Almoxarifado", "Controle"],
+    #     "requires_auth": False,
+    # },
 
-    {
-        "key": "Inventario",
-        "title": "Análise de Inventário",
-        "subtitle": "Inventário — controle e desempenho de consumo",
-        "description": (
-            "Em Breve..."
-        ),
-        "icon": "📦",
-        "page_path": "EM BREVE!",
-        "color_a": "#1F3A93",
-        "color_b": "#4EB9C3",
-        "accent":  "#74C4BE",
-        "tags": ["Mapa", "Inventário", "Estoque"],
-        "requires_auth": False,
-    },
+    # {
+    #     "key": "Inventario",
+    #     "title": "Análise de Inventário",
+    #     "subtitle": "Inventário — controle e desempenho de consumo",
+    #     "description": (
+    #         "Em Breve..."
+    #     ),
+    #     "icon": "📦",
+    #     "page_path": "EM BREVE!",
+    #     "color_a": "#1F3A93",
+    #     "color_b": "#4EB9C3",
+    #     "accent":  "#74C4BE",
+    #     "tags": ["Mapa", "Inventário", "Estoque"],
+    #     "requires_auth": False,
+    # },
 ]
 
 # ──────────────────────────────────────────────────────────────────────────────
