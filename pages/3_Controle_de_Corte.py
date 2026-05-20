@@ -407,10 +407,17 @@ st.markdown("""
 def baixar_csv_google_sheets():
     headers = {'User-Agent': 'Mozilla/5.0'}
     urls_padrao = [
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv",
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=CORTE+DIARIO",
+        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv",
+        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv",
     ]
-    todas_urls = urls_padrao
+    gids_fallback = ["206085601", "0"]
+    urls_fallback = []
+    for gid in gids_fallback:
+        urls_fallback.extend([
+            f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv&gid={gid}",
+            f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv&gid={gid}",
+        ])
+    todas_urls = urls_padrao + urls_fallback
     ultimo_erro = None
     for url in todas_urls:
         try:
