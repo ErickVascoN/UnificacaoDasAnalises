@@ -1001,7 +1001,16 @@ def render_company(empresa, df, all_data):
 
     # ─── Tab 1 ────────────────────────────────────────────────────
     with tab_vis:
-        serie = df_f.groupby("Data", as_index=False)["Quantidade"].sum().sort_values("Data")
+        # Criar série com TODOS os dias do período, mesmo que alguns não tenham produção
+        if not df_f.empty:
+            date_range = pd.date_range(start=df_f["Data"].min(), end=df_f["Data"].max(), freq="D")
+            serie = df_f.groupby("Data", as_index=False)["Quantidade"].sum()
+            serie = serie.set_index("Data").reindex(date_range, fill_value=0).reset_index()
+            serie.columns = ["Data", "Quantidade"]
+            serie = serie.sort_values("Data")
+        else:
+            serie = pd.DataFrame(columns=["Data", "Quantidade"])
+        
         serie["Meta Dia"] = serie["Data"].map(meta_por_data).fillna(0)
         serie["Acum. Produzido"] = serie["Quantidade"].cumsum()
         serie["Acum. Meta"] = serie["Meta Dia"].cumsum()
