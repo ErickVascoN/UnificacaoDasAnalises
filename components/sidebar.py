@@ -21,7 +21,7 @@ def render_sidebar() -> None:
                 st.session_state.auth_nivel = ""
                 st.rerun()
         else:
-            st.info("🔓 Não autenticado")
+            st.info("🔒 Não autenticado")
 
         st.markdown("---")
         st.markdown("**Navegação rápida**")

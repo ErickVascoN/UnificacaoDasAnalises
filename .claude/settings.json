@@ -6,14 +6,10 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados - Ambiente de teste\" -Recurse -Force)",
-      "Bash(Select-Object FullName, PSIsContainer)",
-      "Bash(Sort-Object FullName)",
-      "Bash(Format-Table -AutoSize -Wrap)",
-      "Read(//c/Users/erick/OneDrive/�rea de Trabalho/Trabalho/**)"
-    ],
-    "additionalDirectories": [
-      "c:\\Users\\erick\\.claude\\projects\\c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados---Ambiente-de-teste\\memory"
+      "Bash(git restore *)",
+      "Bash(git pull *)",
+      "Bash(venv\\\\Scripts\\\\pip install *)",
+      "Bash(venv\\\\Scripts\\\\pip show *)"
     ]
   }
 }
