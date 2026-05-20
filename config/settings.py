@@ -1,0 +1,34 @@
+# -*- coding: utf-8 -*-
+"""Configurações centralizadas de todos os dashboards."""
+
+# ── Página principal ───────────────────────────────────────────────────────────
+PAGE_CONFIG = dict(
+    page_title="Central de Análise Zanattex | Setores",
+    page_icon="🏢",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ── Autenticação ───────────────────────────────────────────────────────────────
+SENHA_USUARIO = "0102"
+SENHA_ADMIN = "adm0102"
+
+# ── Corte (Setor 1 — Giattex / Mantas) ────────────────────────────────────────
+CORTE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
+CORTE_SHEETS_GID = "1544210185"
+CORTE_CACHE_TTL = 60             # segundos
+CORTE_METAS = {"MAQUINA": 7000, "MESA 1": 4000, "MESA 2": 3000}
+CORTE_META_TOTAL = sum(CORTE_METAS.values())
+
+# ── Corte Iacanga (Setor 2 — Mantas Giattex) ──────────────────────────────────
+IACANGA_SHEETS_ID = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
+IACANGA_SHEETS_GID = "1362699684"
+
+# ── Faturamento ────────────────────────────────────────────────────────────────
+FATURAMENTO_SHEETS_ID = "1tpQmqkinlA4AscPI8kIkmm5DGD9Jw_wHb-5sy5itSGg"
+FATURAMENTO_SHEETS_GID = "1255712550"
+FATURAMENTO_CACHE_TTL = 300      # segundos
+
+# ── Produção ───────────────────────────────────────────────────────────────────
+PRODUCAO_SHEETS_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
+PRODUCAO_CACHE_TTL = 120         # segundos

@@ -24,7 +24,7 @@ try:
     from config import GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID, METAS, META_TOTAL, CACHE_TTL
 except ImportError:
     GOOGLE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
-    GOOGLE_SHEETS_GID = None
+    GOOGLE_SHEETS_GID = "1544210185"
     METAS = {'MAQUINA': 7000, 'MESA 1': 4000, 'MESA 2': 3000}
     META_TOTAL = sum(METAS.values())
     CACHE_TTL = 60
@@ -407,9 +407,10 @@ st.markdown("""
 # =====================================================================
 def baixar_csv_google_sheets():
     headers = {'User-Agent': 'Mozilla/5.0'}
+    gid_param = f"&gid={GOOGLE_SHEETS_GID}" if GOOGLE_SHEETS_GID else ""
     urls_padrao = [
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv",
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv",
+        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv{gid_param}",
+        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv{gid_param}",
     ]
     gids_fallback = ["206085601", "0"]
     urls_fallback = []
@@ -455,14 +456,10 @@ def carregar_dados():
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
     df_corte['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
-    # Removed ambiguous timestamp filter - now using date-only comparison
-    before_count = len(df_corte)
-    df_corte = df_corte.dropna(subset=['DATA', 'OP'])
-    removed_na = before_count - len(df_corte)
-    if removed_na > 0:
-        logging.debug(f"Removidos {removed_na} registros sem DATA ou OP")
-    df_corte = df_corte[df_corte['OP'].astype(str).str.strip() != '']
-    df_corte['OP'] = df_corte['OP'].astype(str).str.strip()
+    df_corte = df_corte[df_corte['DATA'] <= pd.Timestamp.now()]
+    df_corte = df_corte.dropna(subset=['DATA'])
+    df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
+    df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
     df_corte['COR'] = df_corte['COR'].astype(str).str.strip().str.upper()
     
     # Log quantity conversion errors
@@ -523,9 +520,9 @@ def carregar_dados_iacanga():
     data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
     df['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
     df = df[df['DATA'] <= pd.Timestamp.now()]
-    df = df.dropna(subset=['DATA', 'OP'], how='any')
-    df = df[df['OP'].astype(str).str.strip() != '']
-    df['OP'] = df['OP'].astype(str).str.strip()
+    df = df.dropna(subset=['DATA'])
+    df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
+    df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
     df['COR'] = df['COR'].astype(str).str.strip().str.upper()
     df['QUANTIDADE'] = pd.to_numeric(df['QUANTIDADE'], errors='coerce').fillna(0).astype(int)
     df['ESTACAO'] = df['ESTAÇÃO DE CORTE'].astype(str).str.strip()
