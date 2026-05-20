@@ -37,6 +37,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Guarda de autenticação — somente Admin pode acessar esta página ──
+if st.session_state.get("auth_nivel") != "admin":
+    st.error("🔒 Acesso restrito. Esta página requer autenticação de **Administrador**.")
+    st.info("Volte à página inicial e faça login com a senha de Admin.")
+    if st.button("← Voltar à página inicial"):
+        st.switch_page("app.py")
+    st.stop()
+
 
 def inject_styles() -> None:
     st.markdown(
