@@ -193,7 +193,11 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
             "Meta Diaria": "first"  # Pega apenas uma meta por (Faccao, Mes) - não duplica
         })
     )
+    # Log fillna para Meta Diaria
+    meta_diaria_antes_fillna = meta_mensal["Meta Diaria"].isna().sum()
     meta_mensal["Meta Diaria"] = meta_mensal["Meta Diaria"].fillna(0)
+    if meta_diaria_antes_fillna > 0:
+        st.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta()")
 
     if meta_mensal["Meta Diaria"].sum() == 0:
         empty = pd.DataFrame(columns=["Faccao", "Meta Periodo", "Meta Dia Min", "Meta Dia Max"])
@@ -221,8 +225,12 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
         .merge(meta_por_anomes, on=["Ano", "Mes"], how="left")
         .sort_values("Data")
         .set_index("Data")["Meta Diaria"]
-        .fillna(0)
     )
+    # Log fillna para Meta por Data
+    meta_por_data_antes_fillna = meta_por_data.isna().sum()
+    meta_por_data = meta_por_data.fillna(0)
+    if meta_por_data_antes_fillna > 0:
+        st.debug(f"Preenchidas {meta_por_data_antes_fillna} metas diárias faltando por data em _calc_meta()")
     meta_por_data = meta_por_data[~meta_por_data.index.duplicated(keep="first")]
 
     meta_por_faccao = (
@@ -256,7 +264,11 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
         [["Faccao", "Produto", "Ano", "Mes", "Meta Diaria"]]
         .copy()
     )
+    # Log fillna para Meta Diaria (por produto)
+    meta_diaria_antes_fillna = meta_mensal["Meta Diaria"].isna().sum()
     meta_mensal["Meta Diaria"] = meta_mensal["Meta Diaria"].fillna(0)
+    if meta_diaria_antes_fillna > 0:
+        st.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta_por_produto()")
 
     dias_mes = (
         df_sel.groupby(["Ano", "Mes"])["Data"]
@@ -266,7 +278,11 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
     )
 
     meta_mensal = meta_mensal.merge(dias_mes, on=["Ano", "Mes"], how="left")
+    # Log fillna para DiasUteis (por produto)
+    dias_uteis_antes_fillna = meta_mensal["DiasUteis"].isna().sum()
     meta_mensal["DiasUteis"] = meta_mensal["DiasUteis"].fillna(0)
+    if dias_uteis_antes_fillna > 0:
+        st.debug(f"Preenchidos {dias_uteis_antes_fillna} dias úteis com 0 em _calc_meta_por_produto()")
     meta_mensal["Meta Periodo Mes"] = meta_mensal["Meta Diaria"] * meta_mensal["DiasUteis"]
 
     result = (
@@ -1001,16 +1017,7 @@ def render_company(empresa, df, all_data):
 
     # ─── Tab 1 ────────────────────────────────────────────────────
     with tab_vis:
-        # Criar série com TODOS os dias do período, mesmo que alguns não tenham produção
-        if not df_f.empty:
-            date_range = pd.date_range(start=df_f["Data"].min(), end=df_f["Data"].max(), freq="D")
-            serie = df_f.groupby("Data", as_index=False)["Quantidade"].sum()
-            serie = serie.set_index("Data").reindex(date_range, fill_value=0).reset_index()
-            serie.columns = ["Data", "Quantidade"]
-            serie = serie.sort_values("Data")
-        else:
-            serie = pd.DataFrame(columns=["Data", "Quantidade"])
-        
+        serie = df_f.groupby("Data", as_index=False)["Quantidade"].sum().sort_values("Data")
         serie["Meta Dia"] = serie["Data"].map(meta_por_data).fillna(0)
         serie["Acum. Produzido"] = serie["Quantidade"].cumsum()
         serie["Acum. Meta"] = serie["Meta Dia"].cumsum()
