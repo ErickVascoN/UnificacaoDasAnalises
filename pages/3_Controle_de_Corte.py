@@ -720,9 +720,30 @@ def load_corte_lencol() -> pd.DataFrame:
     df["OP"] = df["OP"].astype(str).str.strip()
 
     invalidos = {"", "NAN", "NONE", "N/A", "NAO", "NAO INFORMADO"}
+    
+    # Log antes das remoções
+    registros_antes = len(df)
+    
+    # Remover prestadores inválidos
     df = df[~df["PRESTADOR"].str.upper().isin(invalidos)]
+    removidos_prestador = registros_antes - len(df)
+    if removidos_prestador > 0:
+        st.debug(f"Removidos {removidos_prestador} registros com PRESTADOR inválido em load_corte_lencol()")
+    
+    # Remover empresas inválidas
+    registros_antes_empresa = len(df)
     df = df[~df["EMPRESA"].str.upper().isin(invalidos)]
+    removidos_empresa = registros_antes_empresa - len(df)
+    if removidos_empresa > 0:
+        st.debug(f"Removidos {removidos_empresa} registros com EMPRESA inválida em load_corte_lencol()")
+    
+    # Remover quantidade zero
+    registros_antes_quant = len(df)
     df = df[df["QUANT"] > 0]
+    removidos_quant = registros_antes_quant - len(df)
+    if removidos_quant > 0:
+        st.debug(f"Removidos {removidos_quant} registros com QUANT <= 0 em load_corte_lencol()")
+    
     df = df.reset_index(drop=True)
 
     mask0 = df["VALOR_RECEBER"] == 0
