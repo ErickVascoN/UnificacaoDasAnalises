@@ -150,6 +150,8 @@ def dias_uteis(datas):
         >>> dias_uteis(['2026-05-04', '2026-05-05', '2026-05-09'])  # seg, ter, sab
         2  # Retorna apenas segunda e terça (2 dias úteis)
     """
+    # MÉDIO #17: drop_duplicates after normalize to count unique calendar dates
+    # This ensures timestamps with different times (e.g., 14:30 vs 14:45) count as 1 day
     d = pd.to_datetime(datas).dropna().dt.normalize().drop_duplicates()
     return int((d.dt.weekday <= 4).sum())
 
@@ -178,6 +180,8 @@ def calcular_dias_com_sabados_trabalhados(datas_grupo):
         >>> calcular_dias_com_sabados_trabalhados([...datas...])
         7  # 5 dias úteis (4-8) + 2 sábados (11, 15)
     """
+    # MÉDIO #17: drop_duplicates after normalize - counts unique calendar dates
+    # Handles multiple timestamps per day (e.g., morning/afternoon batches)
     d = pd.to_datetime(datas_grupo).dropna().dt.normalize().drop_duplicates()
     
     # Dias de segunda a sexta no período
@@ -202,6 +206,8 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
 
     meta_mensal = (
         df_sel
+        # MÉDIO #17: Remove duplicate (Faccao, Produto, Year, Month) entries
+        # Keep first occurrence of each (Fac, Prod, Year, Month) to avoid duplicate metas
         .drop_duplicates(subset=["Faccao", "Produto", "Ano", "Mes"])
         .groupby(["Faccao", "Ano", "Mes"], as_index=False)
         .agg({
@@ -235,6 +241,8 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
         meta_mensal.groupby(["Ano", "Mes"], as_index=False)["Meta Diaria"].sum()
     )
     datas_unicas = df_sel[["Data", "Ano", "Mes"]].drop_duplicates()
+    # MÉDIO #17: Select unique (Data, Ano, Mes) combinations
+    # This creates a mapping of each date to its year/month for meta lookups
     meta_por_data = (
         datas_unicas
         .merge(meta_por_anomes, on=["Ano", "Mes"], how="left")
@@ -275,6 +283,8 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
 
     meta_mensal = (
         df_sel
+        # MÉDIO #17: Remove duplicate (Faccao, Produto, Year, Month) entries
+        # Keep first occurrence to avoid duplicate meta calculations
         .drop_duplicates(subset=["Faccao", "Produto", "Ano", "Mes"])
         [["Faccao", "Produto", "Ano", "Mes", "Meta Diaria"]]
         .copy()
@@ -1244,6 +1254,8 @@ def render_company(empresa, df, all_data):
             )
 
         # Usar meta diária somada por facção (não média)
+        # MÉDIO #17: Keep one (Faccao, Produto) pair to calculate meta sum per facção
+        # This ensures each product's meta is counted only once in the sum
         meta_por_f = (
             df_f.drop_duplicates(subset=["Faccao", "Produto"])
             .groupby("Faccao")["Meta Diaria"].sum()
