@@ -793,8 +793,9 @@ def load_metas_lencol() -> pd.DataFrame:
 # =====================================================================
 # NAVIGATION HELPERS
 # =====================================================================
-if 'corte_screen' not in st.session_state:
+if st.session_state.get('_active_page') != 'corte':
     st.session_state.corte_screen = 'analysis_type'
+st.session_state._active_page = 'corte'
 
 
 def _go(screen: str):

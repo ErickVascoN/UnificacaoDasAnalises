@@ -25,6 +25,7 @@ from components.sector_tabs import render_sector_tabs
 st.set_page_config(**PAGE_CONFIG)
 st.markdown(get_home_css(), unsafe_allow_html=True)
 init_session_state()
+st.session_state._active_page = 'home'
 
 # ── Página ─────────────────────────────────────────────────────────────────────
 render_sidebar()
