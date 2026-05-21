@@ -669,6 +669,7 @@ def load_corte_lencol() -> pd.DataFrame:
         url_tentativa += 1
         try:
             r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
+            r.encoding = "utf-8"
             if r.status_code == 200 and len(r.text) > 200:
                 texto = r.text
                 break
@@ -767,6 +768,7 @@ def load_metas_lencol() -> pd.DataFrame:
     )
     try:
         r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        r.encoding = "utf-8"
         r.raise_for_status()
         df = pd.read_csv(io.StringIO(r.text), header=0, dtype=str)
         df.columns = df.columns.str.strip().str.upper()
