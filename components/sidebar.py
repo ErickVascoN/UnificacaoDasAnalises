@@ -60,6 +60,7 @@ def render_sidebar() -> None:
             if st.button("🏭 Produção", key="nav_producao", use_container_width=True):
                 safe_switch("pages/2_Producao_Geral.py")
             if st.button("✂️ Corte", key="nav_corte", use_container_width=True):
+                st.session_state.corte_screen = 'analysis_type'
                 safe_switch("pages/3_Controle_de_Corte.py")
         else:
             st.caption("🔒 Faça login para acessar os dashboards.")

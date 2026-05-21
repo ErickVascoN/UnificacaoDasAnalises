@@ -809,6 +809,7 @@ with st.sidebar:
     st.markdown("### ✂️ Controle de Corte")
     st.markdown("---")
     if st.button("🏢  Início", key="sb_home", use_container_width=True):
+        st.session_state.corte_screen = 'analysis_type'
         st.switch_page("app.py")
 
     screen = st.session_state.corte_screen
@@ -900,6 +901,7 @@ if screen == 'analysis_type':
     col_back_inicio, *_ = st.columns([2, 5])
     with col_back_inicio:
         if st.button("🏢 Voltar ao Início", key="back_to_home", use_container_width=True):
+            st.session_state.corte_screen = 'analysis_type'
             st.switch_page("app.py")
 
 # =====================================================================
