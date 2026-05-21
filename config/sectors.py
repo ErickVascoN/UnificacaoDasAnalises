@@ -3,6 +3,57 @@
 
 SECTORS_ANALISE = [
     {
+        "key": "corte",
+        "title": "Análise de Corte",
+        "subtitle": "Mantas/ Lençol — estações e desempenho",
+        "description": (
+            "Painel operacional dos setores de corte com metas "
+            "diárias por estação, produção, "
+            "OPs, Cores, indicadores por operador "
+            "e Ranking de desempenho."
+        ),
+        "icon": "✂️",
+        "page_path": "pages/3_Controle_de_Corte.py",
+        "color_a": "#1F3A93",
+        "color_b": "#45B7D1",
+        "accent":  "#4ECDC4",
+        "tags": ["Operação", "Corte", "Metas diárias"],
+        "requires_auth": True,
+    },
+    {
+        "key": "producao",
+        "title": "Análise de Produção",
+        "subtitle": "Multi-empresas em tempo real",
+        "description": (
+            "Acompanhamento da produção de todas as empresas do grupo "
+            "(Burdays, Camesa, Niazitex, Cortex, Sultan, Decor, Marcelino) "
+            "com metas e evolução diária."
+        ),
+        "icon": "🏭",
+        "page_path": "pages/2_Producao_Geral.py",
+        "color_a": "#0F4C5C",
+        "color_b": "#4ECDC4",
+        "accent":  "#FFA726",
+        "tags": ["Produção", "Multi-empresa", "Metas"],
+        "requires_auth": True,
+    },
+    {
+        "key": "faturados",
+        "title": "Análise de Faturamento",
+        "subtitle": "Análise comercial e faturamento",
+        "description": (
+            "Visão completa de produtos faturados, ranking de clientes, "
+            "evolução de receita, Acompanhamento comercial para tomada de decisões estratégicas."
+        ),
+        "icon": "📊",
+        "page_path": "pages/1_Produtos_Faturados.py",
+        "color_a": "#1D3557",
+        "color_b": "#0C6E74",
+        "accent":  "#E76F51",
+        "tags": ["Comercial", "Receita", "Clientes"],
+        "requires_auth": True,
+    },
+    {
         "key": "apontador_gut",
         "title": "Central de Controle GUT",
         "subtitle": "Apontador Zanattex — Controle de eficiência",
@@ -40,57 +91,6 @@ SECTORS_ANALISE = [
         "color_b": "#D97706",
         "accent":  "#FBBF24",
         "tags": ["Análise", "GUT", "Insights"],
-        "requires_auth": True,
-    },
-    {
-        "key": "faturados",
-        "title": "Análise de Faturamento",
-        "subtitle": "Análise comercial e faturamento",
-        "description": (
-            "Visão completa de produtos faturados, ranking de clientes, "
-            "evolução de receita, Acompanhamento comercial para tomada de decisões estratégicas."
-        ),
-        "icon": "📊",
-        "page_path": "pages/1_Produtos_Faturados.py",
-        "color_a": "#1D3557",
-        "color_b": "#0C6E74",
-        "accent":  "#E76F51",
-        "tags": ["Comercial", "Receita", "Clientes"],
-        "requires_auth": True,
-    },
-    {
-        "key": "producao",
-        "title": "Análise de Produção",
-        "subtitle": "Multi-empresas em tempo real",
-        "description": (
-            "Acompanhamento da produção de todas as empresas do grupo "
-            "(Burdays, Camesa, Niazitex, Cortex, Sultan, Decor, Marcelino) "
-            "com metas e evolução diária."
-        ),
-        "icon": "🏭",
-        "page_path": "pages/2_Producao_Geral.py",
-        "color_a": "#0F4C5C",
-        "color_b": "#4ECDC4",
-        "accent":  "#FFA726",
-        "tags": ["Produção", "Multi-empresa", "Metas"],
-        "requires_auth": True,
-    },
-    {
-        "key": "corte",
-        "title": "Análise de Corte",
-        "subtitle": "Mantas/ Lençol — estações e desempenho",
-        "description": (
-            "Painel operacional dos setores de corte com metas "
-            "diárias por estação, produção, "
-            "OPs, Cores, indicadores por operador "
-            "e Ranking de desempenho."
-        ),
-        "icon": "✂️",
-        "page_path": "pages/3_Controle_de_Corte.py",
-        "color_a": "#1F3A93",
-        "color_b": "#45B7D1",
-        "accent":  "#4ECDC4",
-        "tags": ["Operação", "Corte", "Metas diárias"],
         "requires_auth": True,
     },
 ]
