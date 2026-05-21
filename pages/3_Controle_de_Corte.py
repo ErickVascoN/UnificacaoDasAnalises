@@ -830,15 +830,8 @@ with st.sidebar:
             _go('arealva_products')
         if st.button("← Regiões", key="sb_back6", use_container_width=True):
             _go('regions')
-    elif screen == 'iacanga_type_selection':
-        if st.button("← Regiões", key="sb_back7", use_container_width=True):
-            _go('regions')
-        if st.button("← Tipo de Análise", key="sb_back_type2", use_container_width=True):
-            _go('analysis_type')
     elif screen in ('iacanga_rendimento', 'iacanga_eficiencia'):
-        if st.button("← Tipo de Análise (Iacanga)", key="sb_back8", use_container_width=True):
-            _go('iacanga_type_selection')
-        if st.button("← Regiões", key="sb_back9", use_container_width=True):
+        if st.button("← Regiões", key="sb_back8", use_container_width=True):
             _go('regions')
 
     # Filters injected below only for the dashboard screens
@@ -970,7 +963,7 @@ elif screen == 'regions':
         </div>
         """, unsafe_allow_html=True)
         if st.button("Abrir Iacanga  →", key="btn_iacanga", use_container_width=True):
-            _go('iacanga_type_selection')
+            _go('iacanga_rendimento')
 
     st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
     col_back, *_ = st.columns([2, 5])
@@ -1048,79 +1041,6 @@ elif screen == 'arealva_products':
     col_back, *_ = st.columns([2, 5])
     with col_back:
         if st.button("← Voltar às Regiões", key="back_to_regions", use_container_width=True):
-            _go('regions')
-
-
-# =====================================================================
-# SCREEN — IACANGA TYPE SELECTION (Rendimento vs Eficiência)
-# =====================================================================
-elif screen == 'iacanga_type_selection':
-    st.markdown("""
-    <div class="breadcrumb">
-        <span class="bc-link">Controle de Corte</span>
-        <span class="bc-sep">›</span>
-        <span class="bc-link">Rendimento de Corte</span>
-        <span class="bc-sep">›</span>
-        <span class="bc-link">Iacanga</span>
-        <span class="bc-sep">›</span>
-        <span class="bc-active">Tipo de Análise</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="page-header" style="padding-top:20px;">
-        <div class="page-badge">✂️ Iacanga</div>
-        <h1 class="page-title">Selecione o Tipo de <span class="accent">Análise</span></h1>
-        <p class="page-subtitle">Escolha o tipo de análise de corte específica para Iacanga</p>
-    </div>
-    <div class="page-divider"></div>
-    """, unsafe_allow_html=True)
-
-    _, col_rendimento, col_eficiencia, _ = st.columns([0.5, 3, 3, 0.5])
-
-    with col_rendimento:
-        st.markdown("""
-        <div class="region-card" style="--rc-a:#2F5F6F; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
-            <div class="rc-icon">📊</div>
-            <div class="rc-label">Análise · Iacanga</div>
-            <div class="rc-title">Rendimento de Corte</div>
-            <div class="rc-desc">
-                Análise do rendimento dos cortadores. Acompanhamento de produção por OP, estação e tamanho de manta com metas diárias.
-            </div>
-            <div class="rc-tags">
-                <span class="rc-tag">Cortadores</span>
-                <span class="rc-tag">Produção</span>
-                <span class="rc-tag">Metas</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Abrir Dashboard  →", key="btn_rendimento", use_container_width=True):
-            _go('iacanga_rendimento')
-
-    with col_eficiencia:
-        st.markdown("""
-        <div class="region-card disabled" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC; opacity: 0.6;">
-            <div class="rc-icon">⚡</div>
-            <div class="rc-label">Análise · Iacanga</div>
-            <div class="rc-title">Eficiência de Corte</div>
-            <div class="rc-desc">
-                Análise de eficiência por OP em kgs, rendimento operacional e índices de produtividade. Dashboard em desenvolvimento.
-            </div>
-            <div class="rc-tags">
-                <span class="rc-tag">Eficiência</span>
-                <span class="rc-tag">Kgs</span>
-                <span class="rc-tag">Em Breve</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Abrir Dashboard  →", key="btn_eficiencia", use_container_width=True, disabled=True):
-            _go('iacanga_eficiencia')
-        st.caption("🔜 Este painel será disponibilizado em breve")
-
-    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
-    col_back_ia, *_ = st.columns([2, 5])
-    with col_back_ia:
-        if st.button("← Voltar às Regiões", key="back_to_regions_ia", use_container_width=True):
             _go('regions')
 
 
