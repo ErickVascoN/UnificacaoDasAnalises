@@ -64,6 +64,15 @@ def _find_col(df: pd.DataFrame, *substrings: str) -> str | None:
     return None
 
 
+def _find_col_exact(df: pd.DataFrame, name: str) -> str | None:
+    """Encontra coluna cujo nome ASCII é exatamente `name` (ignora acentos e encoding)."""
+    target = name.upper()
+    for col in df.columns:
+        if col.encode("ascii", errors="ignore").decode().upper().strip() == target:
+            return col
+    return None
+
+
 def _baixar_csv(sheet_id: str, gid: str | None = None) -> pd.DataFrame | None:
     urls = [f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"]
     if gid:
@@ -112,7 +121,7 @@ def _raw_manta_arealva() -> pd.DataFrame:
         quant_col   = _find_col(df, "QUANTIDADE")
         estacao_col = _find_col(df, "ESTA", "CORTE")
         op_col      = _find_col(df, "OP")
-        cor_col     = _find_col(df, "COR")
+        cor_col     = _find_col_exact(df, "COR")
         prod_col    = _find_col(df, "PRODUTO")
         tam_col     = _find_col(df, "TAMANHO")
         obs_col     = _find_col(df, "OBSERVA")
@@ -156,7 +165,7 @@ def _raw_manta_iacanga() -> pd.DataFrame:
         quant_col   = _find_col(df, "QUANTIDADE")
         estacao_col = _find_col(df, "ESTA", "CORTE")
         op_col      = _find_col(df, "OP")
-        cor_col     = _find_col(df, "COR")
+        cor_col     = _find_col_exact(df, "COR")
         prod_col    = _find_col(df, "PRODUTO")
         tam_col     = _find_col(df, "TAMANHO")
         cliente_col = _find_col(df, "CLIENTE")
@@ -1100,30 +1109,33 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
 
 
 # ── Envio de e-mail ───────────────────────────────────────────────────────────
-def _corpo_resumo(dia: date, totais: dict[str, int]) -> str:
-    """Corpo simples do e-mail — o relatório completo vem no anexo HTML."""
+def _corpo_resumo(dia: date, totais: dict[str, int], com_consolidado: bool = False) -> str:
     data_fmt = dia.strftime("%d/%m/%Y")
     total_geral = sum(totais.values())
-    linhas = "\n".join(f"  • {setor}: {qtd:,} peças" for setor, qtd in totais.items())
+    linhas_tabela = "".join(
+        f'<tr>'
+        f'<td style="padding:6px 10px;color:#555;">{s}</td>'
+        f'<td style="padding:6px 10px;font-weight:bold;text-align:right;">{q:,} peças</td>'
+        f'</tr>'
+        for s, q in totais.items()
+    )
+    anexos_txt = "📎 <strong>Anexo 1:</strong> Relatório diário detalhado (PDF)."
+    if com_consolidado:
+        anexos_txt += "<br>📎 <strong>Anexo 2:</strong> Relatório consolidado — dia, mês atual e últimos 2 meses (PDF)."
     return f"""
-<div style="font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;max-width:500px;">
+<div style="font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;max-width:520px;">
   <h2 style="color:#1a237e;margin-bottom:4px;">✂️ Relatório de Corte — {data_fmt}</h2>
   <p style="color:#555;margin-top:0;">Produção do dia anterior · Sistema Zanattex</p>
-  <hr style="border:1px solid #e0e0e0;">
+  <hr style="border:1px solid #e0e0e0;margin:8px 0;">
   <table style="width:100%;border-collapse:collapse;font-size:13px;">
-    <tr><td style="padding:6px;color:#555;">Total geral</td>
-        <td style="padding:6px;font-weight:bold;color:#1a237e;text-align:right;">{total_geral:,} peças</td></tr>
-    {"".join(
-        f'<tr><td style="padding:6px;color:#555;">{s}</td>'
-        f'<td style="padding:6px;font-weight:bold;text-align:right;">{q:,} peças</td></tr>'
-        for s, q in totais.items()
-    )}
+    <tr style="background:#f0f4ff;">
+      <td style="padding:8px 10px;color:#555;font-weight:bold;">Total geral</td>
+      <td style="padding:8px 10px;font-size:16px;font-weight:bold;color:#1a237e;text-align:right;">{total_geral:,} peças</td>
+    </tr>
+    {linhas_tabela}
   </table>
-  <hr style="border:1px solid #e0e0e0;">
-  <p style="color:#888;font-size:11px;">
-    📎 O relatório detalhado está em anexo (<strong>relatorio_corte.html</strong>).<br>
-    Abra o arquivo no Chrome e use <strong>Ctrl+P</strong> para imprimir em A4.
-  </p>
+  <hr style="border:1px solid #e0e0e0;margin:8px 0;">
+  <p style="color:#888;font-size:11px;margin:0;">{anexos_txt}</p>
 </div>
 """.strip()
 
@@ -1142,7 +1154,7 @@ def enviar_email(pdf_bytes: bytes, dia: date, totais: dict[str, int], pdf_consol
     msg["To"]      = ", ".join(EMAIL_DESTINATARIOS)
 
     corpo = MIMEMultipart("alternative")
-    corpo.attach(MIMEText(_corpo_resumo(dia, totais), "html", "utf-8"))
+    corpo.attach(MIMEText(_corpo_resumo(dia, totais, com_consolidado=bool(pdf_consolidado)), "html", "utf-8"))
     msg.attach(corpo)
 
     nome_diario = f"relatorio_corte_{dia.strftime('%d-%m-%Y')}.pdf"
