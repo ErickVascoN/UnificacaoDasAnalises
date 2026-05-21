@@ -220,7 +220,7 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
 
     dias_mes = (
         df_sel.groupby(["Ano", "Mes"])["Data"]
-        .apply(dias_uteis_com_trabalho)
+        .apply(calcular_dias_com_sabados_trabalhados)
         .reset_index()
         .rename(columns={"Data": "DiasUteis"})
     )
@@ -1001,7 +1001,7 @@ def render_company(empresa, df, all_data):
         return
 
     prod_total = df_f["Quantidade"].sum()
-    d_uteis = dias_uteis_com_trabalho(df_f["Data"])
+    d_uteis = calcular_dias_com_sabados_trabalhados(df_f["Data"])
     media_dia = prod_total / d_uteis if d_uteis else 0
 
     meta_periodo, meta_por_data, meta_por_faccao = _calc_meta(df_f, sel_facs)
@@ -1096,7 +1096,10 @@ def render_company(empresa, df, all_data):
         # ── Contar dias: TODOS úteis + sábados trabalhados ──
         dias_list = []
         for (fac, prod), group in df_f.groupby(["Faccao", "Produto"]):
-            dias_calc = dias_uteis_com_sabados_trabalhados(df_f, fac, prod)
+            # Consolidado MÉDIO #16: Usar função única para dias com sábados
+            datas_fac_prod = df_f[(df_f["Faccao"] == fac) & 
+                                   (df_f["Produto"] == prod)]["Data"]
+            dias_calc = calcular_dias_com_sabados_trabalhados(datas_fac_prod)
             dias_list.append({"Faccao": fac, "Produto": prod, "Dias": dias_calc})
         dias_por_faccao_produto = pd.DataFrame(dias_list)
         
@@ -1133,7 +1136,9 @@ def render_company(empresa, df, all_data):
         # ── Contar dias: TODOS úteis + sábados trabalhados (por facção) ──
         dias_fac_list = []
         for fac, group in df_f.groupby("Faccao"):
-            dias_calc = dias_uteis_com_sabados_trabalhados(df_f, fac)
+            # Consolidado MÉDIO #16: Usar função única para dias com sábados
+            datas_fac = df_f[df_f["Faccao"] == fac]["Data"]
+            dias_calc = calcular_dias_com_sabados_trabalhados(datas_fac)
             dias_fac_list.append({"Faccao": fac, "Dias": dias_calc})
         dias_por_faccao = pd.DataFrame(dias_fac_list)
         
