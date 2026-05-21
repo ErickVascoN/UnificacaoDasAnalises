@@ -297,7 +297,7 @@ def _bloco_manta_arealva(df: pd.DataFrame) -> str:
         blocos += (
             f'<div class="colaborador-header">📍 {estacao}</div>'
             f'<table><thead><tr>'
-            f'<th>OP</th><th>Produto</th><th>Tamanho</th><th>Cor / Material</th><th>Qtd</th><th>Observação</th>'
+            f'<th>OP</th><th>Produto</th><th>Tamanho</th><th>Estacao / Material</th><th>Qtd</th><th>Observação</th>'
             f'</tr></thead><tbody>{linhas}</tbody></table>'
             f'<div class="subtotal">Subtotal {estacao}: <strong>{subtotal:,} peças</strong></div>'
         )

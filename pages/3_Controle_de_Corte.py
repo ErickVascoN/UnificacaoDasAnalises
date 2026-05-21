@@ -2325,8 +2325,8 @@ elif screen == 'arealva_lencol':
     if sel_cat_ln:   df_ant_ln = df_ant_ln[df_ant_ln["CAT_BASE"].isin(sel_cat_ln)]
     pecas_ant_ln = int(df_ant_ln["QUANT"].sum()) if not df_ant_ln.empty else 0
     valor_ant_ln = df_ant_ln["VALOR_RECEBER"].sum() if not df_ant_ln.empty else 0
-    delta_pecas_ln = ((total_pecas_ln - pecas_ant_ln) / pecas_ant_ln * 100) if pecas_ant_ln else None
-    delta_valor_ln = ((total_valor_ln - valor_ant_ln) / valor_ant_ln * 100) if valor_ant_ln else None
+    delta_pecas_ln = ((total_pecas_ln - pecas_ant_ln) / pecas_ant_ln * 100) if (pecas_ant_ln and periodo_opt_ln != "Todo o período") else None
+    delta_valor_ln = ((total_valor_ln - valor_ant_ln) / valor_ant_ln * 100) if (valor_ant_ln and periodo_opt_ln != "Todo o período") else None
 
     status_pg_ln = "Pago" if p_fim_ln < data_max_ln else "A Pagar"
 
@@ -2343,9 +2343,9 @@ elif screen == 'arealva_lencol':
 
     # ── Abas ──────────────────────────────────────────────────────────
     tabs_ln = st.tabs([
-        "📊 Visão Geral", "👥 Prestadores", "🏭 Empresas",
-        "📦 Categorias", "📅 Temporal", "💰 Financeiro",
-        "🎯 Metas", "🏆 Ranking",
+        "📊 Visão Geral", "👥 Prestadores", "📋 OPs",
+        "🏭 Empresas", "📦 Categorias", "📅 Temporal",
+        "💰 Financeiro", "🎯 Metas", "🏆 Ranking",
     ])
 
     # ── TAB 1 — VISÃO GERAL ───────────────────────────────────────────
@@ -2531,8 +2531,8 @@ elif screen == 'arealva_lencol':
         fig_hm_ln.update_layout(**lencol_layout_dark(height=300, title="Distribuição prestador × empresa"))
         st.plotly_chart(fig_hm_ln, use_container_width=True)
 
-    # ── TAB 3 — EMPRESAS ──────────────────────────────────────────────
-    with tabs_ln[2]:
+    # ── TAB 4 — EMPRESAS ──────────────────────────────────────────────
+    with tabs_ln[3]:
         df_emp_tab_ln = (
             df_ln.groupby("EMPRESA")
             .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"),
@@ -2603,8 +2603,8 @@ elif screen == 'arealva_lencol':
         st.dataframe(df_emp_show_ln.rename(columns={"EMPRESA":"Empresa"}),
                      use_container_width=True, hide_index=True)
 
-    # ── TAB 4 — CATEGORIAS ────────────────────────────────────────────
-    with tabs_ln[3]:
+    # ── TAB 5 — CATEGORIAS ────────────────────────────────────────────
+    with tabs_ln[4]:
         df_cat_tab_ln = (
             df_ln.groupby("CAT_BASE")
             .agg(Peças=("QUANT","sum"), Valor=("VALOR_RECEBER","sum"),
@@ -2664,8 +2664,8 @@ elif screen == 'arealva_lencol':
         fig_hmec_ln.update_layout(**lencol_layout_dark(height=300, title="Peças: empresa vs categoria"))
         st.plotly_chart(fig_hmec_ln, use_container_width=True)
 
-    # ── TAB 5 — TEMPORAL ──────────────────────────────────────────────
-    with tabs_ln[4]:
+    # ── TAB 6 — TEMPORAL ──────────────────────────────────────────────
+    with tabs_ln[5]:
         col_t1_ln, col_t2_ln = st.columns(2)
         with col_t1_ln:
             st.markdown("<div class='ln-sec'>Produção Diária</div>", unsafe_allow_html=True)
@@ -2736,8 +2736,8 @@ elif screen == 'arealva_lencol':
         fig_ds_ln.update_layout(**lencol_layout_dark(height=260, title="Média de peças por dia da semana"))
         st.plotly_chart(fig_ds_ln, use_container_width=True)
 
-    # ── TAB 6 — FINANCEIRO ────────────────────────────────────────────
-    with tabs_ln[5]:
+    # ── TAB 7 — FINANCEIRO ────────────────────────────────────────────
+    with tabs_ln[6]:
         total_r_ln = df_ln["VALOR_RECEBER"].sum()
         media_dia_r_ln = total_r_ln / dias_trab_ln if dias_trab_ln else 0
         media_peca_r_ln = total_r_ln / df_ln["QUANT"].sum() if df_ln["QUANT"].sum() else 0
@@ -2799,8 +2799,8 @@ elif screen == 'arealva_lencol':
         fig_sc_ln.update_layout(**lencol_layout_dark(height=320))
         st.plotly_chart(fig_sc_ln, use_container_width=True)
 
-    # ── TAB 7 — METAS ─────────────────────────────────────────────────
-    with tabs_ln[6]:
+    # ── TAB 8 — METAS ─────────────────────────────────────────────────
+    with tabs_ln[7]:
         if df_metas_ln.empty:
             st.info("Nenhuma meta encontrada na planilha METAS.")
         else:
@@ -2874,8 +2874,8 @@ elif screen == 'arealva_lencol':
             )
             st.dataframe(df_meta_show_ln, use_container_width=True, hide_index=True)
 
-    # ── TAB 8 — RANKING ───────────────────────────────────────────────
-    with tabs_ln[7]:
+    # ── TAB 9 — RANKING ───────────────────────────────────────────────
+    with tabs_ln[8]:
         st.markdown("<div class='ln-sec'>🏆 Ranking Geral de Prestadores</div>", unsafe_allow_html=True)
         df_rank_ln = (
             df_ln.groupby("PRESTADOR")
@@ -2942,6 +2942,162 @@ elif screen == 'arealva_lencol':
             st.plotly_chart(fig_radar_ln, use_container_width=True)
         else:
             st.info("Radar disponível com 2 ou mais prestadores.")
+
+    # ── TAB 3 — OPs ───────────────────────────────────────────────────
+    with tabs_ln[2]:
+        st.markdown("<div class='ln-sec'>📋 Resumo por OP</div>", unsafe_allow_html=True)
+
+        resumo_op_ln = (
+            df_ln.groupby("OP")
+            .agg(
+                Peças=("QUANT", "sum"),
+                Valor=("VALOR_RECEBER", "sum"),
+                Prestadores=("PRESTADOR", "nunique"),
+                Empresas=("EMPRESA", "nunique"),
+                Tecido=("TECIDO", "first"),
+                Categoria=("CATEGORIA", "first"),
+                Data_Inicio=("DATA", "min"),
+                Ultimo_Corte=("DATA", "max"),
+                Registros=("QUANT", "count"),
+            )
+            .reset_index()
+            .sort_values("Peças", ascending=False)
+        )
+
+        resumo_op_show_ln = resumo_op_ln.copy()
+        resumo_op_show_ln["Peças"] = resumo_op_show_ln["Peças"].apply(lencol_fmt_num)
+        resumo_op_show_ln["Valor"] = resumo_op_show_ln["Valor"].apply(lencol_fmt_brl)
+        resumo_op_show_ln["Data_Inicio"] = resumo_op_show_ln["Data_Inicio"].dt.strftime("%d/%m/%Y")
+        resumo_op_show_ln["Ultimo_Corte"] = resumo_op_show_ln["Ultimo_Corte"].dt.strftime("%d/%m/%Y")
+        st.dataframe(
+            resumo_op_show_ln.rename(columns={
+                "OP": "OP", "Peças": "Peças", "Valor": "Valor R$",
+                "Prestadores": "Prestadores", "Empresas": "Empresas",
+                "Tecido": "Tecido", "Categoria": "Categoria",
+                "Data_Inicio": "Início", "Ultimo_Corte": "Último Corte",
+                "Registros": "Registros",
+            }),
+            use_container_width=True, height=380, hide_index=True,
+        )
+
+        st.divider()
+
+        if not resumo_op_ln.empty:
+            op_sel_ln = st.selectbox(
+                "🔎 Selecione uma OP para detalhar:",
+                options=resumo_op_ln["OP"].tolist(),
+                key="ln_sel_op",
+            )
+            if op_sel_ln:
+                df_op_ln = df_ln[df_ln["OP"] == op_sel_ln]
+
+                col_o1, col_o2, col_o3, col_o4 = st.columns(4)
+                col_o1.metric("🧵 Total de Peças", lencol_fmt_num(df_op_ln["QUANT"].sum()))
+                col_o2.metric("💰 Total R$", lencol_fmt_brl(df_op_ln["VALOR_RECEBER"].sum()))
+                col_o3.metric("👷 Prestadores", str(df_op_ln["PRESTADOR"].nunique()))
+                col_o4.metric("📅 Dias em Produção", str(df_op_ln["DATA"].dt.date.nunique()))
+
+                col_oa, col_ob = st.columns(2)
+                with col_oa:
+                    st.markdown("<div class='ln-sec'>Peças por Prestador</div>", unsafe_allow_html=True)
+                    df_op_prest_ln = (
+                        df_op_ln.groupby("PRESTADOR")["QUANT"].sum()
+                        .reset_index().sort_values("QUANT", ascending=True)
+                    )
+                    fig_op_p_ln = go.Figure(go.Bar(
+                        x=df_op_prest_ln["QUANT"], y=df_op_prest_ln["PRESTADOR"],
+                        orientation="h",
+                        text=[lencol_fmt_num(v) for v in df_op_prest_ln["QUANT"]],
+                        textposition="outside", textfont=dict(color="#CBD5E0"),
+                        marker_color="#4ECDC4",
+                    ))
+                    fig_op_p_ln.update_layout(**lencol_layout_dark(
+                        height=max(240, len(df_op_prest_ln) * 42),
+                        title=f"Peças por prestador — OP {op_sel_ln}",
+                    ))
+                    st.plotly_chart(fig_op_p_ln, use_container_width=True)
+
+                with col_ob:
+                    st.markdown("<div class='ln-sec'>Peças por Empresa</div>", unsafe_allow_html=True)
+                    df_op_emp_ln = (
+                        df_op_ln.groupby("EMPRESA")["QUANT"].sum()
+                        .reset_index().sort_values("QUANT", ascending=True)
+                    )
+                    fig_op_e_ln = go.Figure(go.Bar(
+                        x=df_op_emp_ln["QUANT"], y=df_op_emp_ln["EMPRESA"],
+                        orientation="h",
+                        text=[lencol_fmt_num(v) for v in df_op_emp_ln["QUANT"]],
+                        textposition="outside", textfont=dict(color="#CBD5E0"),
+                        marker=dict(color=[lencol_cor_empresa(e) for e in df_op_emp_ln["EMPRESA"]]),
+                    ))
+                    fig_op_e_ln.update_layout(**lencol_layout_dark(
+                        height=max(240, len(df_op_emp_ln) * 42),
+                        title=f"Peças por empresa — OP {op_sel_ln}",
+                    ))
+                    st.plotly_chart(fig_op_e_ln, use_container_width=True)
+
+                col_oc, col_od = st.columns(2)
+                with col_oc:
+                    st.markdown("<div class='ln-sec'>Peças por Categoria</div>", unsafe_allow_html=True)
+                    df_op_cat_ln = (
+                        df_op_ln.groupby("CAT_BASE")["QUANT"].sum()
+                        .reset_index().sort_values("QUANT", ascending=True)
+                    )
+                    if df_op_cat_ln.empty or df_op_cat_ln["CAT_BASE"].str.strip().eq("").all():
+                        df_op_cat_ln = (
+                            df_op_ln.groupby("CATEGORIA")["QUANT"].sum()
+                            .reset_index().sort_values("QUANT", ascending=True)
+                        )
+                        df_op_cat_ln.columns = ["CAT_BASE", "QUANT"]
+                    fig_op_c_ln = go.Figure(go.Bar(
+                        x=df_op_cat_ln["QUANT"], y=df_op_cat_ln["CAT_BASE"],
+                        orientation="h",
+                        text=[lencol_fmt_num(v) for v in df_op_cat_ln["QUANT"]],
+                        textposition="outside", textfont=dict(color="#CBD5E0"),
+                        marker_color="#FF6B6B",
+                    ))
+                    fig_op_c_ln.update_layout(**lencol_layout_dark(
+                        height=max(240, len(df_op_cat_ln) * 42),
+                        title=f"Peças por categoria — OP {op_sel_ln}",
+                    ))
+                    st.plotly_chart(fig_op_c_ln, use_container_width=True)
+
+                with col_od:
+                    st.markdown("<div class='ln-sec'>Produção Diária desta OP</div>", unsafe_allow_html=True)
+                    df_op_dia_ln = (
+                        df_op_ln.groupby("DATA")["QUANT"].sum()
+                        .reset_index().sort_values("DATA")
+                    )
+                    fig_op_dia_ln = go.Figure(go.Bar(
+                        x=df_op_dia_ln["DATA"], y=df_op_dia_ln["QUANT"],
+                        text=[lencol_fmt_num(v) for v in df_op_dia_ln["QUANT"]],
+                        textposition="outside", textfont=dict(color="#CBD5E0"),
+                        marker_color="rgba(78,205,196,0.5)",
+                    ))
+                    fig_op_dia_ln.update_layout(**lencol_layout_dark(
+                        height=max(240, len(df_op_dia_ln) * 30),
+                        title=f"Evolução diária — OP {op_sel_ln}",
+                    ))
+                    fig_op_dia_ln.update_xaxes(tickformat="%d/%m/%Y")
+                    st.plotly_chart(fig_op_dia_ln, use_container_width=True)
+
+                st.markdown("<div class='ln-sec'>Registros Detalhados</div>", unsafe_allow_html=True)
+                df_op_det_ln = df_op_ln[[
+                    "DATA", "PRESTADOR", "EMPRESA", "CATEGORIA",
+                    "TECIDO", "QUANT", "VALOR_PECA", "VALOR_RECEBER", "OBS",
+                ]].copy().sort_values("DATA")
+                df_op_det_ln["DATA"] = df_op_det_ln["DATA"].dt.strftime("%d/%m/%Y")
+                df_op_det_ln["VALOR_PECA"] = df_op_det_ln["VALOR_PECA"].apply(lencol_fmt_brl)
+                df_op_det_ln["VALOR_RECEBER"] = df_op_det_ln["VALOR_RECEBER"].apply(lencol_fmt_brl)
+                df_op_det_ln["QUANT"] = df_op_det_ln["QUANT"].apply(lencol_fmt_num)
+                st.dataframe(
+                    df_op_det_ln.rename(columns={
+                        "DATA": "Data", "PRESTADOR": "Prestador", "EMPRESA": "Empresa",
+                        "CATEGORIA": "Categoria", "TECIDO": "Tecido", "QUANT": "Peças",
+                        "VALOR_PECA": "R$/Peça", "VALOR_RECEBER": "Total R$", "OBS": "OBS",
+                    }),
+                    use_container_width=True, height=320, hide_index=True,
+                )
 
     # Footer
     st.markdown("---")
