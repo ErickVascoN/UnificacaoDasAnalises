@@ -455,8 +455,9 @@ def carregar_dados():
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    df_corte['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
-    df_corte = df_corte[df_corte['DATA'] <= pd.Timestamp.now()]
+    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
+    # Removed timestamp filter - preserves all valid dates (no future date loss)
+    df_corte['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
     df_corte = df_corte.dropna(subset=['DATA'])
     df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
     df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
@@ -518,8 +519,9 @@ def carregar_dados_iacanga():
     df = df_full[COLUNAS_USADAS_IACANGA].copy()
 
     data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    df['DATA'] = pd.to_datetime(data_raw, format='mixed', dayfirst=True, errors='coerce')
-    df = df[df['DATA'] <= pd.Timestamp.now()]
+    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
+    # Removed timestamp filter - preserves all valid dates (no future date loss)
+    df['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
     df = df.dropna(subset=['DATA'])
     df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
@@ -792,7 +794,7 @@ def load_metas_lencol() -> pd.DataFrame:
 # NAVIGATION HELPERS
 # =====================================================================
 if 'corte_screen' not in st.session_state:
-    st.session_state.corte_screen = 'regions'
+    st.session_state.corte_screen = 'analysis_type'
 
 
 def _go(screen: str):
@@ -810,9 +812,14 @@ with st.sidebar:
         st.switch_page("app.py")
 
     screen = st.session_state.corte_screen
-    if screen == 'arealva_products':
+    if screen == 'regions':
+        if st.button("← Tipo de Análise", key="sb_back_regions", use_container_width=True):
+            _go('analysis_type')
+    elif screen == 'arealva_products':
         if st.button("← Regiões", key="sb_back1", use_container_width=True):
             _go('regions')
+        if st.button("← Tipo de Análise", key="sb_back_type1", use_container_width=True):
+            _go('analysis_type')
     elif screen == 'arealva_manta':
         if st.button("← Produtos", key="sb_back2", use_container_width=True):
             _go('arealva_products')
@@ -823,25 +830,102 @@ with st.sidebar:
             _go('arealva_products')
         if st.button("← Regiões", key="sb_back6", use_container_width=True):
             _go('regions')
-    elif screen == 'iacanga':
-        if st.button("← Regiões", key="sb_back4", use_container_width=True):
+    elif screen == 'iacanga_type_selection':
+        if st.button("← Regiões", key="sb_back7", use_container_width=True):
+            _go('regions')
+        if st.button("← Tipo de Análise", key="sb_back_type2", use_container_width=True):
+            _go('analysis_type')
+    elif screen in ('iacanga_rendimento', 'iacanga_eficiencia'):
+        if st.button("← Tipo de Análise (Iacanga)", key="sb_back8", use_container_width=True):
+            _go('iacanga_type_selection')
+        if st.button("← Regiões", key="sb_back9", use_container_width=True):
             _go('regions')
 
     # Filters injected below only for the dashboard screens
-    if screen in ('arealva_manta', 'iacanga', 'arealva_lencol'):
+    if screen in ('arealva_manta', 'iacanga_rendimento', 'arealva_lencol', 'iacanga_eficiencia'):
         st.markdown("---")
         st.header("🔍 Filtros")
 
 
 # =====================================================================
-# SCREEN — REGION SELECTOR
+# SCREEN — ANALYSIS TYPE SELECTION (Rendimento vs Eficiência Geral)
 # =====================================================================
 screen = st.session_state.corte_screen
 
-if screen == 'regions':
+if screen == 'analysis_type':
     st.markdown("""
     <div class="page-header">
         <div class="page-badge">✂️ Controle de Corte</div>
+        <h1 class="page-title">Selecione o Tipo de <span class="accent">Análise</span></h1>
+        <p class="page-subtitle">Escolha o tipo de análise de corte para acessar o painel</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, col_rendimento_main, col_eficiencia_main, _ = st.columns([0.5, 3, 3, 0.5])
+
+    with col_rendimento_main:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#2F5F6F; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">📊</div>
+            <div class="rc-label">Análise · Geral</div>
+            <div class="rc-title">Rendimento de Corte</div>
+            <div class="rc-desc">
+                Análise completa do rendimento de corte. Acompanhamento de produção por região, estação e operadores com metas diárias.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Arealva</span>
+                <span class="rc-tag">Iacanga</span>
+                <span class="rc-tag">Metas</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_rendimento_main", use_container_width=True):
+            _go('regions')
+
+    with col_eficiencia_main:
+        st.markdown("""
+        <div class="region-card disabled" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC; opacity: 0.6;">
+            <div class="rc-icon">⚡</div>
+            <div class="rc-label">Análise · Geral</div>
+            <div class="rc-title">Eficiência de Corte</div>
+            <div class="rc-desc">
+                Análise de eficiência geral de corte com métricas de produtividade, kgs e índices de desempenho. Dashboard em desenvolvimento.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Eficiência</span>
+                <span class="rc-tag">KPIs</span>
+                <span class="rc-tag">Em Breve</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True, disabled=True):
+            _go('general_eficiencia')
+        st.caption("🔜 Este painel será disponibilizado em breve")
+
+    st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
+    col_back_inicio, *_ = st.columns([2, 5])
+    with col_back_inicio:
+        if st.button("🏢 Voltar ao Início", key="back_to_home", use_container_width=True):
+            st.switch_page("app.py")
+
+# =====================================================================
+# SCREEN — REGION SELECTOR
+# =====================================================================
+elif screen == 'regions':
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Rendimento de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Regiões</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:20px;">
+        <div class="page-badge">🏭 Regiões</div>
         <h1 class="page-title">Selecione a <span class="accent">Região</span></h1>
         <p class="page-subtitle">Escolha a unidade de corte para acessar o painel de produção</p>
     </div>
@@ -886,7 +970,13 @@ if screen == 'regions':
         </div>
         """, unsafe_allow_html=True)
         if st.button("Abrir Iacanga  →", key="btn_iacanga", use_container_width=True):
-            _go('iacanga')
+            _go('iacanga_type_selection')
+
+    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("← Voltar ao Tipo de Análise", key="back_to_analysis_type", use_container_width=True):
+            _go('analysis_type')
 
 
 # =====================================================================
@@ -962,9 +1052,82 @@ elif screen == 'arealva_products':
 
 
 # =====================================================================
-# SCREEN — IACANGA — DASHBOARD MANTAS GIATTEX
+# SCREEN — IACANGA TYPE SELECTION (Rendimento vs Eficiência)
 # =====================================================================
-elif screen == 'iacanga':
+elif screen == 'iacanga_type_selection':
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Rendimento de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Iacanga</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Tipo de Análise</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:20px;">
+        <div class="page-badge">✂️ Iacanga</div>
+        <h1 class="page-title">Selecione o Tipo de <span class="accent">Análise</span></h1>
+        <p class="page-subtitle">Escolha o tipo de análise de corte específica para Iacanga</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, col_rendimento, col_eficiencia, _ = st.columns([0.5, 3, 3, 0.5])
+
+    with col_rendimento:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#2F5F6F; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">📊</div>
+            <div class="rc-label">Análise · Iacanga</div>
+            <div class="rc-title">Rendimento de Corte</div>
+            <div class="rc-desc">
+                Análise do rendimento dos cortadores. Acompanhamento de produção por OP, estação e tamanho de manta com metas diárias.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Cortadores</span>
+                <span class="rc-tag">Produção</span>
+                <span class="rc-tag">Metas</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_rendimento", use_container_width=True):
+            _go('iacanga_rendimento')
+
+    with col_eficiencia:
+        st.markdown("""
+        <div class="region-card disabled" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC; opacity: 0.6;">
+            <div class="rc-icon">⚡</div>
+            <div class="rc-label">Análise · Iacanga</div>
+            <div class="rc-title">Eficiência de Corte</div>
+            <div class="rc-desc">
+                Análise de eficiência por OP em kgs, rendimento operacional e índices de produtividade. Dashboard em desenvolvimento.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Eficiência</span>
+                <span class="rc-tag">Kgs</span>
+                <span class="rc-tag">Em Breve</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_eficiencia", use_container_width=True, disabled=True):
+            _go('iacanga_eficiencia')
+        st.caption("🔜 Este painel será disponibilizado em breve")
+
+    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+    col_back_ia, *_ = st.columns([2, 5])
+    with col_back_ia:
+        if st.button("← Voltar às Regiões", key="back_to_regions_ia", use_container_width=True):
+            _go('regions')
+
+
+# =====================================================================
+# SCREEN — IACANGA RENDIMENTO — DASHBOARD MANTAS GIATTEX
+# =====================================================================
+elif screen == 'iacanga_rendimento':
 
     # --- Breadcrumb ---
     st.markdown("""
@@ -2140,6 +2303,78 @@ elif screen == 'arealva_manta':
         "</div>",
         unsafe_allow_html=True,
     )
+
+
+# =====================================================================
+# SCREEN — IACANGA EFICIÊNCIA — PLACEHOLDER (EM BREVE)
+# =====================================================================
+elif screen == 'iacanga_eficiencia':
+    
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Iacanga</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Eficiência de Corte</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:20px;">
+        <div class="page-badge">⚡ Iacanga</div>
+        <h1 class="page-title">Eficiência de <span class="accent">Corte</span></h1>
+        <p class="page-subtitle">Análise de rendimento e eficiência operacional</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    # Placeholder - Em breve
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style="
+            background: linear-gradient(160deg, rgba(171,71,188,0.1) 0%, rgba(123,47,190,0.1) 100%);
+            border: 2px solid rgba(171,71,188,0.3);
+            border-radius: 20px;
+            padding: 60px 40px;
+            text-align: center;
+            margin-top: 40px;
+        ">
+            <div style="font-size: 3.5rem; margin-bottom: 20px;">🔜</div>
+            <h2 style="color: #FFFFFF; font-size: 1.8rem; margin-bottom: 10px;">Dashboard em Desenvolvimento</h2>
+            <p style="color: #B0B0B0; font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px;">
+                Este painel de Eficiência de Corte está sendo construído e trará análises detalhadas sobre:
+            </p>
+            <div style="
+                background: rgba(171,71,188,0.1);
+                border-left: 4px solid #AB47BC;
+                border-radius: 8px;
+                padding: 20px;
+                text-align: left;
+                margin: 20px 0;
+                color: #E0E0E0;
+                font-size: 0.95rem;
+                line-height: 1.8;
+            ">
+                <strong>📊 Métricas Planejadas:</strong><br>
+                • Rendimento por OP em quilogramas (kgs)<br>
+                • Taxa de eficiência operacional<br>
+                • Produtividade média por cortador<br>
+                • Comparativos e tendências<br>
+                • Análise de rejeição e qualidade
+            </div>
+            <p style="color: #888; font-size: 0.9rem; margin-top: 30px;">
+                ⏰ Voltaremos em breve com uma experiência completa e robusta!
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
+    col_back_ef, *_ = st.columns([2, 5])
+    with col_back_ef:
+        if st.button("← Voltar à Seleção de Análise", key="back_to_type_selection", use_container_width=True):
+            _go('iacanga_type_selection')
 
 
 # =====================================================================
