@@ -44,6 +44,11 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
         f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
     )
 
+    note = sector.get("note")
+    note_html = (
+        f'<div class="sector-note">⚠️ OBS: {note}</div>' if note else ""
+    )
+
     if locked:
         badge_html = (
             '<div style="position:absolute;top:10px;right:12px;'
@@ -77,6 +82,7 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
         f'<h3 class="sector-title">{sector["title"]}</h3>'
         f'<p class="sector-desc">{sector["description"]}</p>'
         f'<div class="sector-tags">{tags_html}</div>'
+        f"{note_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
     )

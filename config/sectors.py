@@ -19,6 +19,7 @@ SECTORS_ANALISE = [
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
         "requires_auth": True,
+        "note": "Falta Carline",
     },
     {
         "key": "producao",
@@ -36,6 +37,7 @@ SECTORS_ANALISE = [
         "accent":  "#FFA726",
         "tags": ["Produção", "Multi-empresa", "Metas"],
         "requires_auth": True,
+        "note": "Em Construção",
     },
     {
         "key": "faturados",
@@ -52,6 +54,7 @@ SECTORS_ANALISE = [
         "accent":  "#E76F51",
         "tags": ["Comercial", "Receita", "Clientes"],
         "requires_auth": True,
+        "note": "Em Construção",
     },
     {
         "key": "apontador_gut",
@@ -76,6 +79,7 @@ SECTORS_ANALISE = [
         "accent":  "#26D0CE",
         "tags": ["GUT", "Eficiência", "Real-time"],
         "requires_auth": True,
+        "note": "Falta Alguns Setores",
     },
     {
         "key": "analise_dados_gut",

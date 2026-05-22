@@ -73,3 +73,27 @@
 2026-05-20 17:21:02,512 INFO Gerando PDF consolidado (dia + mes + historico)...
 2026-05-20 17:21:08,822 INFO E-mail enviado para ['erickviniciusvas@gmail.com', 'lcc@horusconsulting.com.br'] (relatorio_corte_19-05-2026.pdf + relatorio_consolidado_19-05-2026.pdf)
 2026-05-20 17:21:08,822 INFO Concluído.
+2026-05-21 10:18:46,959 INFO === Relatório de Corte — 20/05/2026 ===
+2026-05-21 10:18:55,154 INFO Manta Arealva : 32 registros | 10633 peças
+2026-05-21 10:18:55,154 INFO Manta Iacanga : 24 registros | 17779 peças
+2026-05-21 10:18:55,154 INFO Lençol Arealva: 8 registros | 48781 peças
+2026-05-21 10:18:55,155 INFO Gerando PDF diario...
+2026-05-21 10:18:58,032 INFO Gerando PDF consolidado (dia + mes + historico)...
+2026-05-21 10:19:04,724 INFO E-mail enviado para ['erickviniciusvas@gmail.com', 'lcc@horusconsulting.com.br'] (relatorio_corte_20-05-2026.pdf + relatorio_consolidado_20-05-2026.pdf)
+2026-05-21 10:19:04,724 INFO Concluído.
+2026-05-21 10:29:10,551 INFO === Relatório de Corte — 20/05/2026 ===
+2026-05-21 10:29:18,085 INFO Manta Arealva : 32 registros | 10633 peças
+2026-05-21 10:29:18,086 INFO Manta Iacanga : 24 registros | 17779 peças
+2026-05-21 10:29:18,086 INFO Lençol Arealva: 8 registros | 48781 peças
+2026-05-21 10:29:18,086 INFO Gerando PDF diario...
+2026-05-21 10:29:20,749 INFO Gerando PDF consolidado (dia + mes + historico)...
+2026-05-21 10:29:26,947 INFO E-mail enviado para ['erickviniciusvas@gmail.com', 'lcc@horusconsulting.com.br'] (relatorio_corte_20-05-2026.pdf + relatorio_consolidado_20-05-2026.pdf)
+2026-05-21 10:29:26,947 INFO Concluído.
+2026-05-22 12:27:42,659 INFO === Relatório de Corte — 21/05/2026 ===
+2026-05-22 12:27:53,325 INFO Manta Arealva : 26 registros | 10766 peças
+2026-05-22 12:27:53,325 INFO Manta Iacanga : 22 registros | 15051 peças
+2026-05-22 12:27:53,326 INFO Lençol Arealva: 5 registros | 23908 peças
+2026-05-22 12:27:53,326 INFO Gerando PDF diario...
+2026-05-22 12:27:56,513 INFO Gerando PDF consolidado (dia + mes + historico)...
+2026-05-22 12:28:02,422 INFO E-mail enviado para ['erickviniciusvas@gmail.com', 'lcc@horusconsulting.com.br'] (relatorio_corte_21-05-2026.pdf + relatorio_consolidado_21-05-2026.pdf)
+2026-05-22 12:28:02,422 INFO Concluído.

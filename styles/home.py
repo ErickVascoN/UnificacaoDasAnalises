@@ -221,6 +221,17 @@ def get_home_css() -> str:
             margin-bottom: 8px;
         }}
         .sector-tags {{ display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 0; }}
+        .sector-note {{
+            margin-top: 8px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(251,191,36,0.10);
+            border: 1px solid rgba(251,191,36,0.35);
+            color: #FBBF24;
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }}
         .sector-tag {{
             font-size: 0.65rem;
             padding: 2px 8px;
