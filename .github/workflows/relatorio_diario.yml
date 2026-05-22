@@ -2,7 +2,7 @@ name: Relatório Diário de Corte
 
 on:
   schedule:
-    - cron: '0 13 * * *'   # 10:00 BRT (UTC-3) todos os dias
+    - cron: '0 13 * * 1-6'  # 10:00 BRT (UTC-3) segunda a sábado
   workflow_dispatch:        # permite disparo manual
 
 jobs:
