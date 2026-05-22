@@ -29,5 +29,11 @@ jobs:
       - name: Instalar dependências
         run: pip install -r scripts/requirements_relatorio.txt
 
+      - name: Verificar secrets
+        run: |
+          if [ -z "$EMAIL_REMETENTE" ]; then echo "ERRO: EMAIL_REMETENTE vazio"; else echo "EMAIL_REMETENTE: OK"; fi
+          if [ -z "$EMAIL_SENHA_APP" ]; then echo "ERRO: EMAIL_SENHA_APP vazio"; else echo "EMAIL_SENHA_APP: OK"; fi
+          if [ -z "$EMAIL_DESTINATARIOS" ]; then echo "ERRO: EMAIL_DESTINATARIOS vazio"; else echo "EMAIL_DESTINATARIOS: OK"; fi
+
       - name: Enviar relatório
         run: python scripts/relatorio_diario_corte.py
