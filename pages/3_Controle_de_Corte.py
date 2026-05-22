@@ -639,10 +639,15 @@ def lencol_parse_date(data_str):
     if pd.isna(data_str) or not str(data_str).strip():
         return pd.NaT
     data_str = str(data_str).strip()
+    _limite_futuro = pd.Timestamp.now().normalize() + pd.Timedelta(days=60)
     formatos = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"]
     for fmt in formatos:
         try:
-            return pd.to_datetime(data_str, format=fmt)
+            dt = pd.to_datetime(data_str, format=fmt)
+            # Se o formato DD/MM gerar data muito no futuro, tenta o próximo (provável MM/DD)
+            if dt > _limite_futuro:
+                continue
+            return dt
         except Exception:
             continue
     try:
