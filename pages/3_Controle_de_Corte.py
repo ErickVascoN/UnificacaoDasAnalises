@@ -405,6 +405,20 @@ st.markdown("""
 # =====================================================================
 # DATA LOADING
 # =====================================================================
+def _parse_date_sheets(data_str) -> "pd.Timestamp":
+    """Parse date de export CSV do Google Sheets (formato MM/DD/YYYY).
+    Tenta MM/DD/YYYY primeiro; fallback para outros formatos comuns."""
+    if pd.isna(data_str) or not str(data_str).strip():
+        return pd.NaT
+    s = str(data_str).strip()
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"):
+        try:
+            return pd.to_datetime(s, format=fmt)
+        except Exception:
+            continue
+    return pd.to_datetime(s, errors="coerce")
+
+
 def baixar_csv_google_sheets():
     headers = {'User-Agent': 'Mozilla/5.0'}
     gid_param = f"&gid={GOOGLE_SHEETS_GID}" if GOOGLE_SHEETS_GID else ""
@@ -455,9 +469,7 @@ def carregar_dados():
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # Google Sheets exporta datas em MM/DD/YYYY; lencol_parse_date tenta DD/MM
-    # mas descarta resultados >60 dias no futuro e retorna MM/DD nesse caso.
-    df_corte['DATA'] = data_raw.apply(lencol_parse_date)
+    df_corte['DATA'] = data_raw.apply(_parse_date_sheets)
     df_corte = df_corte.dropna(subset=['DATA'])
     df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
     df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
@@ -519,9 +531,7 @@ def carregar_dados_iacanga():
     df = df_full[COLUNAS_USADAS_IACANGA].copy()
 
     data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # Google Sheets exporta datas em MM/DD/YYYY; lencol_parse_date tenta DD/MM
-    # mas descarta resultados >60 dias no futuro e retorna MM/DD nesse caso.
-    df['DATA'] = data_raw.apply(lencol_parse_date)
+    df['DATA'] = data_raw.apply(_parse_date_sheets)
     df = df.dropna(subset=['DATA'])
     df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
@@ -636,24 +646,7 @@ def lencol_cor_empresa(emp):
 
 
 def lencol_parse_date(data_str):
-    if pd.isna(data_str) or not str(data_str).strip():
-        return pd.NaT
-    data_str = str(data_str).strip()
-    _limite_futuro = pd.Timestamp.now().normalize() + pd.Timedelta(days=60)
-    formatos = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"]
-    for fmt in formatos:
-        try:
-            dt = pd.to_datetime(data_str, format=fmt)
-            # Se o formato DD/MM gerar data muito no futuro, tenta o próximo (provável MM/DD)
-            if dt > _limite_futuro:
-                continue
-            return dt
-        except Exception:
-            continue
-    try:
-        return pd.to_datetime(data_str, errors="coerce")
-    except Exception:
-        return pd.NaT
+    return _parse_date_sheets(data_str)
 
 
 def lencol_delta_icon(v):
