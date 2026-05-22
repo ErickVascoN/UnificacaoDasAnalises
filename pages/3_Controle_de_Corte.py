@@ -455,9 +455,9 @@ def carregar_dados():
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
-    # Removed timestamp filter - preserves all valid dates (no future date loss)
-    df_corte['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
+    # Google Sheets exporta datas em MM/DD/YYYY; lencol_parse_date tenta DD/MM
+    # mas descarta resultados >60 dias no futuro e retorna MM/DD nesse caso.
+    df_corte['DATA'] = data_raw.apply(lencol_parse_date)
     df_corte = df_corte.dropna(subset=['DATA'])
     df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
     df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
@@ -519,9 +519,9 @@ def carregar_dados_iacanga():
     df = df_full[COLUNAS_USADAS_IACANGA].copy()
 
     data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
-    # Removed timestamp filter - preserves all valid dates (no future date loss)
-    df['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
+    # Google Sheets exporta datas em MM/DD/YYYY; lencol_parse_date tenta DD/MM
+    # mas descarta resultados >60 dias no futuro e retorna MM/DD nesse caso.
+    df['DATA'] = data_raw.apply(lencol_parse_date)
     df = df.dropna(subset=['DATA'])
     df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
