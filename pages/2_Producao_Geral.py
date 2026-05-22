@@ -436,7 +436,7 @@ def load_all_data():
         xlsx_data = io.BytesIO(r.content)
     except Exception as e:
         st.warning(f"Não foi possível carregar do Google Sheets: {e}. Tentando arquivo local...")
-        xlsx_data = "planilha_producao.xlsx"
+        xlsx_data = "data/planilha_producao.xlsx"
 
     all_data: dict[str, pd.DataFrame] = {}
     xls = pd.ExcelFile(xlsx_data, engine="openpyxl")
