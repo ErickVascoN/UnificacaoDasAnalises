@@ -1,0 +1,30 @@
+name: Relatório Diário de Corte
+
+on:
+  schedule:
+    - cron: '0 13 * * *'   # 10:00 BRT (UTC-3) todos os dias
+  workflow_dispatch:        # permite disparo manual
+
+jobs:
+  enviar-relatorio:
+    runs-on: ubuntu-latest
+
+    env:
+      EMAIL_REMETENTE: ${{ secrets.EMAIL_REMETENTE }}
+      EMAIL_SENHA_APP: ${{ secrets.EMAIL_SENHA_APP }}
+      EMAIL_DESTINATARIOS: ${{ secrets.EMAIL_DESTINATARIOS }}
+
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements_relatorio.txt
+
+      - name: Enviar relatório
+        run: python scripts/relatorio_diario_corte.py

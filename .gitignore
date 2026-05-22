@@ -1,0 +1,22 @@
+# Credenciais — nunca commitar
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Gerados pelo relatório
+scripts/*.pdf
+scripts/*.html
+scripts/*.log
+
+# OS
+.DS_Store
+Thumbs.db
