@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Instalar bibliotecas do sistema
+        run: sudo apt-get install -y libcairo2-dev pkg-config python3-dev
+
       - name: Instalar dependências
         run: pip install -r scripts/requirements_relatorio.txt
 
