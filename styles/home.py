@@ -156,8 +156,8 @@ def get_home_css() -> str:
             padding: 14px 16px 12px 16px;
             background: linear-gradient(160deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.015) 100%);
             border: 1px solid var(--border);
-            overflow: hidden;
-            height: 280px;
+            overflow: visible;
+            min-height: 280px;
             box-sizing: border-box;
             transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
         }}
