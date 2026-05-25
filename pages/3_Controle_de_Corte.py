@@ -405,6 +405,19 @@ st.markdown("""
 # =====================================================================
 # DATA LOADING
 # =====================================================================
+def parse_date_safe(data_str):
+    """Parse date from Google Sheets (exports MM/DD/YYYY by default)."""
+    if pd.isna(data_str) or not str(data_str).strip():
+        return pd.NaT
+    data_str = str(data_str).strip()
+    for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"]:
+        try:
+            return pd.to_datetime(data_str, format=fmt)
+        except Exception:
+            continue
+    return pd.to_datetime(data_str, errors="coerce")
+
+
 def baixar_csv_google_sheets():
     headers = {'User-Agent': 'Mozilla/5.0'}
     gid_param = f"&gid={GOOGLE_SHEETS_GID}" if GOOGLE_SHEETS_GID else ""
@@ -455,9 +468,7 @@ def carregar_dados():
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
     data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
-    # Removed timestamp filter - preserves all valid dates (no future date loss)
-    df_corte['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
+    df_corte['DATA'] = data_raw.apply(parse_date_safe)
     df_corte = df_corte.dropna(subset=['DATA'])
     df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
     df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
@@ -519,9 +530,7 @@ def carregar_dados_iacanga():
     df = df_full[COLUNAS_USADAS_IACANGA].copy()
 
     data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    # MÉDIO #14: Use dayfirst=True only (format='mixed' is redundant)
-    # Removed timestamp filter - preserves all valid dates (no future date loss)
-    df['DATA'] = pd.to_datetime(data_raw, dayfirst=True, errors='coerce')
+    df['DATA'] = data_raw.apply(parse_date_safe)
     df = df.dropna(subset=['DATA'])
     df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'

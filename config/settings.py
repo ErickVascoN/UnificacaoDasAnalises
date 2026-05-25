@@ -32,7 +32,3 @@ FATURAMENTO_CACHE_TTL = 300      # segundos
 # ── Produção ───────────────────────────────────────────────────────────────────
 PRODUCAO_SHEETS_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 PRODUCAO_CACHE_TTL = 120         # segundos
-# ── Controladoria ───────────────────────────────────────────────────────────
-PROGRAMACAO_CORTE_SHEETS_ID = "1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA"
-PROGRAMACAO_CORTE_SHEETS_GID = "708887209"
-PROGRAMACAO_CACHE_TTL = 300      # segundos

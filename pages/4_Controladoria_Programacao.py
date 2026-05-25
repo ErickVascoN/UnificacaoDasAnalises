@@ -77,7 +77,7 @@ section[data-testid="stSidebar"] *{color:#E0E0E0!important;font-family:'Space Gr
     background:linear-gradient(90deg,#818CF8,#A5B4FC 45%,#6366F1 100%);
     -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
 }
-.page-subtitle{font-size:1rem;color:#A0A0A0;max-width:580px;margin:0 auto 10px auto;}
+.page-subtitle{font-size:1rem;color:#A0A0A0;max-width:580px;margin:0 auto 10px auto;text-align:center;}
 .page-divider{
     height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent);
     margin:28px 0 36px 0;
@@ -158,7 +158,16 @@ def load_programacao() -> pd.DataFrame:
     if not texto:
         raise ConnectionError("Não foi possível baixar a planilha de programação.")
 
-    df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
+    # Detecta linha real do cabeçalho (pode haver título antes)
+    linhas = texto.splitlines()
+    header_row = 0
+    for i, linha in enumerate(linhas[:10]):
+        linha_up = linha.upper()
+        if "SEMANA" in linha_up and "CLIENTE" in linha_up:
+            header_row = i
+            break
+
+    df = pd.read_csv(io.StringIO(texto), skiprows=header_row, header=0, dtype=str)
     df.columns = df.columns.str.strip()
 
     # Normaliza nomes de colunas para encontrar variações de encoding
@@ -229,7 +238,8 @@ def load_cortes() -> pd.DataFrame:
 def _status_corte(cortada: int, prog_total: int) -> str:
     if cortada <= 0:
         return "Pendente"
-    if cortada >= prog_total:
+    eficiencia = cortada / prog_total if prog_total > 0 else 0
+    if eficiencia >= 0.98:
         return "Concluído"
     return "Parcial"
 
@@ -239,7 +249,7 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     total_prog_op = df_prog.groupby("PED. CLIENTE")["QNT. PROG"].transform("sum")
 
     df = df_prog.copy()
-    df["QNT_PROG_TOTAL"] = total_prog_op.astype(int)
+    df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
     df["QNT_CORTADA"]    = df["PED. CLIENTE"].map(cortes_por_op).fillna(0).astype(int)
     df["STATUS_PROD"]    = df["QNT_CORTADA"].apply(
         lambda x: "Liberado" if x > 0 else "Não Iniciado"
@@ -327,6 +337,17 @@ with st.sidebar:
     st.caption(f"✂️ Cortes: {len(df_cortes_raw):,} registros")
     if _erro_cortes:
         st.warning(f"⚠️ Cortes: {_erro_cortes[:60]}")
+
+    st.markdown("---")
+    st.markdown("**🔍 Rastrear OP**")
+    op_busca = st.text_input("OP / PED. CLIENTE", key="op_rastreio", placeholder="ex: 254333")
+    if op_busca.strip():
+        resultado = df_cortes_raw[df_cortes_raw["OP"].astype(str).str.strip() == op_busca.strip()]
+        if resultado.empty:
+            st.info("Nenhum corte encontrado para essa OP.")
+        else:
+            st.success(f"**{resultado['QUANTIDADE'].apply(pd.to_numeric, errors='coerce').fillna(0).sum():,.0f}** peças cortadas")
+            st.dataframe(resultado[["FONTE", "OP", "QUANTIDADE"]], use_container_width=True, hide_index=True)
 
 
 # ── Aplicar filtros ────────────────────────────────────────────────────────────
