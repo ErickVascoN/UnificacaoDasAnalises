@@ -103,19 +103,19 @@ SECTORS_CONTROLADORIA = [
     {
         "key": "programacao_corte",
         "title": "Programação de Corte",
-        "subtitle": "Planejamento — ordens e sequenciamento",
+        "subtitle": "Análise — Planejado vs Realizado",
         "description": (
-            "Gestão das ordens de programação de corte com sequenciamento por prioridade, "
-            "volume planejado, datas e status de execução por setor."
+            "Dashboard que cruza a programação semanal de corte com o que foi "
+            "realmente cortado. Monitora andamento por OP com status "
+            "Pendente, Parcial e Concluído em tempo real."
         ),
         "icon": "📋",
-        "page_path": "pages/4_Programacao_Corte.py",
+        "page_path": "pages/4_Controladoria_Programacao.py",
         "color_a": "#2D1B69",
         "color_b": "#7C3AED",
         "accent":  "#A78BFA",
-        "tags": ["Programação", "Corte", "Planejamento"],
+        "tags": ["Programação", "Corte", "Planejado vs Realizado"],
         "requires_auth": True,
-        "coming_soon": True,
     },
     {
         "key": "enderecamento_corte",
