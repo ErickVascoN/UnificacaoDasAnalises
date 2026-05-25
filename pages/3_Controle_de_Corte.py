@@ -639,7 +639,8 @@ def lencol_parse_date(data_str):
     if pd.isna(data_str) or not str(data_str).strip():
         return pd.NaT
     data_str = str(data_str).strip()
-    _limite_futuro = pd.Timestamp.now().normalize() + pd.Timedelta(days=60)
+    # Apenas dados até hoje (sem dias futuros)
+    _limite_futuro = pd.Timestamp.now().normalize()
     formatos = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"]
     for fmt in formatos:
         try:
