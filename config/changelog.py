@@ -8,6 +8,16 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "25/05/2026",
+        "tag": "melhoria",
+        "title": "Limpeza de código morto e arquivos obsoletos",
+        "description": (
+            "Removidos arquivos sem uso: utils/google_sheets.py, utils/column_standards.py, "
+            "components/EFICIENCIA_README.md, pasta docs/ e _backup_anterior_2026-05-14/. "
+            "Função morta get_google_sheets_urls() removida de config/__init__.py."
+        ),
+    },
+    {
+        "date": "25/05/2026",
         "tag": "novo",
         "title": "Análise de Eficiência — Lençol Arealva",
         "description": (

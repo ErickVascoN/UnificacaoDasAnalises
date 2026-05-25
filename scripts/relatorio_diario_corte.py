@@ -1182,7 +1182,23 @@ def enviar_email(pdf_bytes: bytes, dia: date, totais: dict[str, int], pdf_consol
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    dia = _dia_ref()
+    dia = _dia_ref()  # dia anterior por padrão
+    
+    hoje = date.today()
+    weekday = hoje.weekday()  # 0=seg, 1=ter, 2=qua, 3=qui, 4=sex, 5=sab, 6=dom
+    
+    # Sábado e domingo: não envia
+    if weekday in (5, 6):
+        logging.info(f"Fim de semana ({['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'][weekday]}). Nenhum relatório será enviado.")
+        exit(0)
+    
+    # Segunda: envia sexta anterior (que não foi enviada no fim de semana)
+    if weekday == 0:
+        dia = hoje - timedelta(days=3)
+        logging.info(f"Segunda. Será enviado relatório de sexta ({dia.strftime('%d/%m/%Y')}).")
+    else:
+        logging.info(f"Será enviado relatório de {dia.strftime('%d/%m/%Y')}.")
+    
     logging.info(f"=== Relatório de Corte — {dia.strftime('%d/%m/%Y')} ===")
 
     df_manta_are = carregar_manta_arealva(dia)

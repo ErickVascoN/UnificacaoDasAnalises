@@ -1,3 +1,0 @@
-"""
-Páginas do Dashboard
-"""
