@@ -10,9 +10,11 @@ import os
 import sys
 from datetime import datetime
 
+import urllib.request
+from urllib.error import HTTPError, URLError
+
 import pandas as pd
 import plotly.graph_objects as go
-import requests
 import streamlit as st
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,16 +134,20 @@ with st.sidebar:
 
 # ── Data loading ───────────────────────────────────────────────────────────────
 def _fetch(sheet_id: str, gid: str) -> str | None:
-    for url in [
+    _HEADERS = {"User-Agent": "Mozilla/5.0"}
+    urls = [
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}",
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}",
-    ]:
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv",
+    ]
+    for url in urls:
         try:
-            r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
-            r.encoding = "utf-8"
-            if r.status_code == 200 and len(r.text) > 100:
-                return r.text
-        except Exception as e:
+            req = urllib.request.Request(url, headers=_HEADERS)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                conteudo = resp.read().decode("utf-8")
+                if conteudo.strip():
+                    return conteudo
+        except (HTTPError, URLError, TimeoutError) as e:
             logging.debug(f"fetch {url[:60]}: {e}")
     return None
 
@@ -150,27 +156,43 @@ def _fetch(sheet_id: str, gid: str) -> str | None:
 def load_programacao() -> pd.DataFrame:
     texto = _fetch(PROG_ID, PROG_GID)
     if not texto:
-        raise ConnectionError("Não foi possível carregar a planilha de programação.")
+        raise ConnectionError("Não foi possível baixar a planilha de programação.")
 
     df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
     df.columns = df.columns.str.strip()
 
-    # Garantir colunas essenciais
-    for col in ["PED. CLIENTE", "SEMANA", "CLIENTE", "LOCAL", "PRODUTO",
-                "PED. INT", "OP INTERNA", "OC", "DESCRIÇÃO DO PRODUTO",
-                "REPRO./INCLUIDO(S/N)", "MOTIVO REPRO./INCLUSÃO",
-                "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO"]:
-        if col not in df.columns:
+    # Normaliza nomes de colunas para encontrar variações de encoding
+    col_map = {c.upper().strip(): c for c in df.columns}
+
+    def _col(nome: str) -> str:
+        """Retorna o nome real da coluna, case-insensitive."""
+        return col_map.get(nome.upper().strip(), nome)
+
+    # Garante colunas essenciais
+    essenciais = [
+        "PED. CLIENTE", "SEMANA", "CLIENTE", "LOCAL", "PRODUTO",
+        "PED. INT", "OP INTERNA", "OC", "DESCRIÇÃO DO PRODUTO",
+        "QNT. PROG", "REPRO./INCLUIDO(S/N)", "MOTIVO REPRO./INCLUSÃO",
+        "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO",
+    ]
+    for col in essenciais:
+        real = _col(col)
+        if real not in df.columns:
             df[col] = ""
+        elif real != col:
+            df[col] = df[real]
 
     df["PED. CLIENTE"] = df["PED. CLIENTE"].astype(str).str.strip()
-    df["QNT. PROG"]    = pd.to_numeric(df.get("QNT. PROG", pd.Series(dtype=str)), errors="coerce").fillna(0).astype(int)
+    df["QNT. PROG"]    = pd.to_numeric(df["QNT. PROG"], errors="coerce").fillna(0).astype(int)
     df["SEMANA"]       = df["SEMANA"].astype(str).str.strip()
     df["CLIENTE"]      = df["CLIENTE"].astype(str).str.strip()
     df["LOCAL"]        = df["LOCAL"].astype(str).str.strip()
 
-    invalidos = {"", "NAN", "NONE", "N/A"}
-    df = df[~df["PED. CLIENTE"].str.upper().isin(invalidos)].reset_index(drop=True)
+    invalidos = {"NAN", "NONE", "N/A"}
+    df = df[
+        df["PED. CLIENTE"].str.strip().ne("") &
+        ~df["PED. CLIENTE"].str.upper().isin(invalidos)
+    ].reset_index(drop=True)
     return df
 
 
@@ -251,19 +273,33 @@ def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-# ── Carregamento com spinner ───────────────────────────────────────────────────
-with st.spinner("Carregando dados..."):
+# ── Carregamento ──────────────────────────────────────────────────────────────
+_erro_prog   = None
+_erro_cortes = None
+
+with st.spinner("Carregando dados da programação..."):
     try:
         df_prog_raw = load_programacao()
     except Exception as e:
-        st.error(f"❌ Erro ao carregar programação: {e}")
-        st.stop()
+        _erro_prog = str(e)
+        df_prog_raw = pd.DataFrame()
 
+with st.spinner("Carregando dados de corte..."):
     try:
         df_cortes_raw = load_cortes()
     except Exception as e:
-        st.warning(f"⚠️ Não foi possível carregar dados de corte: {e}")
+        _erro_cortes = str(e)
         df_cortes_raw = pd.DataFrame(columns=["OP", "QUANTIDADE", "FONTE"])
+
+if _erro_prog:
+    st.error(f"❌ Erro ao carregar programação: {_erro_prog}")
+    st.info("Verifique se a planilha está compartilhada como 'Qualquer pessoa com o link pode visualizar'.")
+    st.stop()
+
+if df_prog_raw.empty:
+    st.error("❌ A planilha de programação foi carregada mas não retornou dados válidos.")
+    st.info("Verifique se a planilha contém dados e se a coluna 'PED. CLIENTE' existe.")
+    st.stop()
 
 df_enriched = enriquecer(df_prog_raw, df_cortes_raw)
 
@@ -287,7 +323,10 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
     st.caption(f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    st.caption(f"Registros: {len(df_enriched):,}")
+    st.caption(f"📋 Prog.: {len(df_prog_raw):,} linhas")
+    st.caption(f"✂️ Cortes: {len(df_cortes_raw):,} registros")
+    if _erro_cortes:
+        st.warning(f"⚠️ Cortes: {_erro_cortes[:60]}")
 
 
 # ── Aplicar filtros ────────────────────────────────────────────────────────────
