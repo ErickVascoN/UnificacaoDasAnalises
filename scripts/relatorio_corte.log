@@ -97,3 +97,9 @@
 2026-05-22 12:27:56,513 INFO Gerando PDF consolidado (dia + mes + historico)...
 2026-05-22 12:28:02,422 INFO E-mail enviado para ['erickviniciusvas@gmail.com', 'lcc@horusconsulting.com.br'] (relatorio_corte_21-05-2026.pdf + relatorio_consolidado_21-05-2026.pdf)
 2026-05-22 12:28:02,422 INFO Concluído.
+2026-05-25 10:00:07,718 INFO === Relatório de Corte — 24/05/2026 ===
+2026-05-25 10:00:13,899 INFO Manta Arealva : 0 registros | 0 peças
+2026-05-25 10:00:13,899 INFO Manta Iacanga : 0 registros | 0 peças
+2026-05-25 10:00:13,900 INFO Lençol Arealva: 0 registros | 0 peças
+2026-05-25 10:00:13,900 INFO Gerando PDF diario...
+2026-05-25 10:00:16,275 INFO Gerando PDF consolidado (dia + mes + historico)...

@@ -333,8 +333,8 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
     st.caption(f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    st.caption(f"📋 Prog.: {len(df_prog_raw):,} linhas")
-    st.caption(f"✂️ Cortes: {len(df_cortes_raw):,} registros")
+    st.caption(f"📋 Prog.: {len(df_prog_raw):,} linhas".replace(",", "."))
+    st.caption(f"✂️ Cortes: {len(df_cortes_raw):,} registros".replace(",", "."))
     if _erro_cortes:
         st.warning(f"⚠️ Cortes: {_erro_cortes[:60]}")
 
@@ -346,7 +346,7 @@ with st.sidebar:
         if resultado.empty:
             st.info("Nenhum corte encontrado para essa OP.")
         else:
-            st.success(f"**{resultado['QUANTIDADE'].apply(pd.to_numeric, errors='coerce').fillna(0).sum():,.0f}** peças cortadas")
+            st.success(f"**{resultado['QUANTIDADE'].apply(pd.to_numeric, errors='coerce').fillna(0).sum():,.0f}** peças cortadas".replace(",", "."))
             st.dataframe(resultado[["FONTE", "OP", "QUANTIDADE"]], use_container_width=True, hide_index=True)
 
 

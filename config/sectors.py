@@ -19,7 +19,7 @@ SECTORS_ANALISE = [
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
         "requires_auth": True,
-        "note": "Falta Análise de Rendimento por OP",
+        "note": "Em Melhoria",
     },
     {
         "key": "producao",

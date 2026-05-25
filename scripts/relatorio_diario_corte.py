@@ -1055,7 +1055,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
 
 {sec_header(f"1. DIA — {data_fmt} (producao de ontem)")}
 <table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
-  <tr>{kpi(f"{t_dia:,}", "Total Geral")}{kpi(f"{t_are_dia:,}", "Manta Arealva")}{kpi(f"{t_iac_dia:,}", "Manta Iacanga")}{kpi(f"{t_len_dia:,}", "Lencol Arealva")}</tr>
+  <tr>{kpi(f"{t_dia:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_dia:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_dia:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_dia:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
 {_bloco_pdf_manta("MANTA AREALVA", are_dia)}
 {_bloco_pdf_manta("MANTA IACANGA", iac_dia)}
@@ -1064,7 +1064,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
 <div style="page-break-before:always;"></div>
 {sec_header(f"2. MES ATUAL — {_nome_mes(dia)}  (01/{dia.strftime('%m/%Y')} ate {data_fmt})", "#1565c0")}
 <table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
-  <tr>{kpi(f"{t_mes:,}", "Total Geral")}{kpi(f"{t_are_mes:,}", "Manta Arealva")}{kpi(f"{t_iac_mes:,}", "Manta Iacanga")}{kpi(f"{t_len_mes:,}", "Lencol Arealva")}</tr>
+  <tr>{kpi(f"{t_mes:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_mes:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_mes:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_mes:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
 {_bloco_resumo_manta("MANTA AREALVA", are_mes)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_mes)}
@@ -1079,7 +1079,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
   </td></tr>
 </table>
 <table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
-  <tr>{kpi(f"{t_are_m1:,}", "Manta Arealva")}{kpi(f"{t_iac_m1:,}", "Manta Iacanga")}{kpi(f"{t_len_m1:,}", "Lencol Arealva")}</tr>
+  <tr>{kpi(f"{t_are_m1:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m1:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m1:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
 {_bloco_resumo_manta("MANTA AREALVA", are_m1)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m1)}
@@ -1091,7 +1091,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
   </td></tr>
 </table>
 <table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
-  <tr>{kpi(f"{t_are_m2:,}", "Manta Arealva")}{kpi(f"{t_iac_m2:,}", "Manta Iacanga")}{kpi(f"{t_len_m2:,}", "Lencol Arealva")}</tr>
+  <tr>{kpi(f"{t_are_m2:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m2:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m2:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
 {_bloco_resumo_manta("MANTA AREALVA", are_m2)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m2)}

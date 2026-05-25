@@ -1128,7 +1128,7 @@ def render_company(empresa, df, all_data):
             if row["Meta Dia Min"] == row["Meta Dia Max"]:
                 return f"{row['Meta Dia Max']:,.0f}".replace(",", ".")
             return (
-                f"{row['Meta Dia Min']:,.0f} — {row['Meta Dia Max']:,.0f}"
+                f"{row['Meta Dia Min']:,.0f} — {row['Meta Dia Max']:,.0f}".replace(",", ".")
                 .replace(",", ".")
             )
         tbl["Meta Dia"] = tbl.apply(_fmt_meta_dia, axis=1)

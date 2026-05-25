@@ -32,3 +32,15 @@ FATURAMENTO_CACHE_TTL = 300      # segundos
 # ── Produção ───────────────────────────────────────────────────────────────────
 PRODUCAO_SHEETS_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 PRODUCAO_CACHE_TTL = 120         # segundos
+
+# ── Eficiência de Corte ────────────────────────────────────────────────────────
+# Manta Arealva
+EFICIENCIA_MANTA_AREALVA_ID = "17ido41trF22ks7HgoJz9XHcJU0oA4SYK"
+EFICIENCIA_MANTA_AREALVA_GID = "874592526"
+
+# Lençol Arealva
+EFICIENCIA_LENCOL_AREALVA_ID = "1PBb_XS9dsiRMBQt6cnILzUnANTaN9stQ"
+EFICIENCIA_LENCOL_AREALVA_GID = "1424027835"
+
+# Cache
+EFICIENCIA_CACHE_TTL = 300       # segundos

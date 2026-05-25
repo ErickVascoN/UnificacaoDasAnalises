@@ -847,6 +847,9 @@ with st.sidebar:
             _go('arealva_products')
         if st.button("← Regiões", key="sb_back6", use_container_width=True):
             _go('regions')
+    elif screen == 'eficiencia_dashboard':
+        if st.button("← Tipo de Análise", key="sb_back_efic", use_container_width=True):
+            _go('analysis_type')
     elif screen in ('iacanga_rendimento', 'iacanga_eficiencia'):
         if st.button("← Regiões", key="sb_back8", use_container_width=True):
             _go('regions')
@@ -895,23 +898,23 @@ if screen == 'analysis_type':
 
     with col_eficiencia_main:
         st.markdown("""
-        <div class="region-card disabled" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC; opacity: 0.6;">
+        <div class="region-card" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC;">
             <div class="rc-icon">⚡</div>
             <div class="rc-label">Análise · Geral</div>
             <div class="rc-title">Eficiência de Corte</div>
             <div class="rc-desc">
-                Análise de eficiência geral de corte com métricas de produtividade, kgs e índices de desempenho. Dashboard em desenvolvimento.
+                Análise de eficiência geral de corte com métricas de produtividade, kgs e índices de desempenho.
             </div>
             <div class="rc-tags">
                 <span class="rc-tag">Eficiência</span>
                 <span class="rc-tag">KPIs</span>
-                <span class="rc-tag">Em Breve</span>
+                <span class="rc-tag">Arealva</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True, disabled=True):
-            _go('general_eficiencia')
-        st.caption("🔜 Este painel será disponibilizado em breve")
+        if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True):
+            _go('eficiencia_dashboard')
+        st.caption("💡 Análise de eficiência de corte com 3 abas: Manta, Lençol e GIattex")
 
     st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
     col_back_inicio, *_ = st.columns([2, 5])
@@ -919,6 +922,27 @@ if screen == 'analysis_type':
         if st.button("🏢 Voltar ao Início", key="back_to_home", use_container_width=True):
             st.session_state.corte_screen = 'analysis_type'
             st.switch_page("app.py")
+
+# =====================================================================
+# SCREEN — EFICIÊNCIA DASHBOARD (UNIFIED WITH 3 TABS)
+# =====================================================================
+elif screen == 'eficiencia_dashboard':
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Eficiência de Corte</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    from components.eficiencia_corte import render_dashboard_eficiencia
+    render_dashboard_eficiencia()
+    
+    st.markdown("---")
+    col_back_efic, *_ = st.columns([2, 5])
+    with col_back_efic:
+        if st.button("← Voltar ao Tipo de Análise", key="back_efic_analysis", use_container_width=True):
+            _go('analysis_type')
 
 # =====================================================================
 # SCREEN — REGION SELECTOR
@@ -1099,7 +1123,7 @@ elif screen == 'iacanga_rendimento':
         if st.sidebar.button("🔄 Limpar Cache", key="iac_clear_cache", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        st.sidebar.metric("📊 Registros", f"{len(df_corte_iac):,}")
+        st.sidebar.metric("📊 Registros", f"{len(df_corte_iac):,}".replace(",", "."))
 
     df_trabalho_iac = df_corte_iac.copy()
 
@@ -1197,7 +1221,7 @@ elif screen == 'iacanga_rendimento':
 
     st.sidebar.markdown("---")
     st.sidebar.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    st.sidebar.caption(f"Registros carregados: {len(df_trabalho_iac):,}")
+    st.sidebar.caption(f"Registros carregados: {len(df_trabalho_iac):,}".replace(",", "."))
 
     # --- Apply filters ---
     df_filtrado_iac = df_trabalho_iac.copy()
@@ -1250,7 +1274,7 @@ elif screen == 'iacanga_rendimento':
         delta_media_iac = ((media_dia_iac / META_TOTAL_IAC) - 1) * 100 if META_TOTAL_IAC > 0 else 0
 
         cols_kpi = st.columns(4)
-        cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas_iac:,.0f}")
+        cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas_iac:,.0f}".replace(",", "."))
         cols_kpi[1].metric("📋 Total de OPs", f"{total_ops_iac}")
         cols_kpi[2].metric("🎨 Cores Diferentes", f"{total_cores_iac}")
         cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trab_iac}")
@@ -1258,12 +1282,12 @@ elif screen == 'iacanga_rendimento':
         cols_kpi2 = st.columns(4)
         cols_kpi2[0].metric(
             "⚡ Média Peças/Dia",
-            f"{media_dia_iac:,.0f}",
-            delta=f"{delta_media_iac:+.1f}% vs Meta {META_TOTAL_IAC:,.0f}",
+            f"{media_dia_iac:,.0f}".replace(",", "."),
+            delta=f"{delta_media_iac:+.1f}% vs Meta {META_TOTAL_IAC:,.0f}".replace(",", "."),
         )
-        cols_kpi2[1].metric("🔧 Máquina", f"{pecas_maq_iac:,.0f}")
-        cols_kpi2[2].metric("📐 Mesa", f"{pecas_mesa_iac:,.0f}")
-        cols_kpi2[3].metric("🛠️ Burday's", f"{pecas_burday_iac:,.0f}")
+        cols_kpi2[1].metric("🔧 Máquina", f"{pecas_maq_iac:,.0f}".replace(",", "."))
+        cols_kpi2[2].metric("📐 Mesa", f"{pecas_mesa_iac:,.0f}".replace(",", "."))
+        cols_kpi2[3].metric("🛠️ Burday's", f"{pecas_burday_iac:,.0f}".replace(",", "."))
 
         st.markdown("---")
         st.markdown("#### 📈 Produção Diária (Peças)")
@@ -1423,7 +1447,7 @@ elif screen == 'iacanga_rendimento':
         st.markdown("#### Resumo das OPs")
         st.dataframe(
             resumo_op_iac.style.format({
-                'Total_Pecas': '{:,.0f}',
+                'Total_Pecas': lambda v: f"{int(v):,}".replace(",", "."),
                 'Data_Inicio': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '',
                 'Ultimo_corte': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '',
             }),
@@ -1441,7 +1465,7 @@ elif screen == 'iacanga_rendimento':
                 df_op_iac = df_filtrado_iac[df_filtrado_iac['OP'] == op_det_iac]
 
                 col_op1, col_op2, col_op3, col_op4 = st.columns(4)
-                col_op1.metric("Peças Total", f"{df_op_iac['QUANTIDADE'].sum():,.0f}")
+                col_op1.metric("Peças Total", f"{df_op_iac['QUANTIDADE'].sum():,.0f}".replace(",", "."))
                 col_op2.metric("Cores Cortadas", f"{df_op_iac['COR'].nunique()}")
                 col_op3.metric(
                     "Produto",
@@ -1517,6 +1541,7 @@ elif screen == 'iacanga_rendimento':
                     status = '❌ ABAIXO DA META'
 
                 pct_bar = min(pct, 100)
+                _fn = lambda v: f"{int(v):,}".replace(",", ".")
                 with cols_meta[i % n_cols]:
                     card_html = (
                         '<div style="background:#1a1a2e; border-radius:14px; padding:20px; color:white; '
@@ -1524,9 +1549,9 @@ elif screen == 'iacanga_rendimento':
                         f'<div style="font-size:0.8rem; letter-spacing:1px; color:#aaa; '
                         f'text-transform:uppercase; margin-bottom:4px;">{estacao}</div>'
                         f'<div style="font-size:2.2rem; font-weight:800; color:white; margin:4px 0;">'
-                        f'{media_b:,.0f}</div>'
+                        f'{_fn(media_b)}</div>'
                         f'<div style="font-size:0.85rem; color:#bbb; margin-bottom:10px;">'
-                        f'Meta: {meta_b:,.0f} pçs/dia</div>'
+                        f'Meta: {_fn(meta_b)} pçs/dia</div>'
                         '<div style="background:#333; border-radius:8px; height:14px; '
                         'overflow:hidden; margin:8px 0;">'
                         f'<div style="width:{pct_bar:.0f}%; height:100%; background:{cor_prog}; '
@@ -1534,12 +1559,12 @@ elif screen == 'iacanga_rendimento':
                         '</div>'
                         '<div style="display:flex; justify-content:space-between; '
                         'font-size:0.78rem; color:#999; margin-bottom:8px;">'
-                        f'<span>0</span><span>{meta_b:,.0f}</span>'
+                        f'<span>0</span><span>{_fn(meta_b)}</span>'
                         '</div>'
                         f'<div style="font-size:1.1rem; font-weight:700; color:{cor_prog};">'
                         f'{pct:.0f}%</div>'
                         f'<div style="font-size:0.78rem; color:{cor_prog}; margin-top:2px;">'
-                        f'{status} ({diff:+,.0f})</div>'
+                        f'{status} ({("+" if diff >= 0 else "")}{_fn(diff)})</div>'
                         '</div>'
                     )
                     st.markdown(card_html, unsafe_allow_html=True)
@@ -1560,11 +1585,11 @@ elif screen == 'iacanga_rendimento':
                     meta_e = meta_diaria_por_estacao_iacanga(df_filtrado_iac, estacao)
                     pct_meta = (media_pe / meta_e * 100) if meta_e > 0 else 0
                     delta_e = media_pe - meta_e
-                    st.metric("Total Peças", f"{pecas_est:,.0f}")
+                    st.metric("Total Peças", f"{pecas_est:,.0f}".replace(",", "."))
                     st.metric("Dias Trabalhados", f"{dias_est}")
                     st.metric(
-                        "Média Peças/Dia", f"{media_pe:,.0f}",
-                        delta=f"{delta_e:+,.0f} vs Meta {meta_e:,.0f}",
+                        "Média Peças/Dia", f"{media_pe:,.0f}".replace(",", "."),
+                        delta=f"{delta_e:+,.0f} vs Meta {meta_e:,.0f}".replace(",", "."),
                     )
                     st.metric("% da Meta", f"{pct_meta:.1f}%")
 
@@ -1639,7 +1664,7 @@ elif screen == 'iacanga_rendimento':
                         media_est = prod_dia_est['QUANTIDADE'].mean()
                         fig_tend.add_hline(
                             y=media_est, line_dash="dash", line_color="gray",
-                            annotation_text=f"Média: {media_est:,.0f}",
+                            annotation_text=f"Média: {media_est:,.0f}".replace(",", "."),
                         )
                         fig_tend.add_trace(go.Scatter(
                             x=prod_dia_est['DATA'], y=prod_dia_est['META_DIA'],
@@ -1667,7 +1692,7 @@ elif screen == 'iacanga_rendimento':
                     if meta_estacao_iac > 0:
                         fig_box_iac.add_hline(
                             y=meta_estacao_iac, line_dash="dot", line_color="#2ca02c",
-                            line_width=2, annotation_text=f"🎯 Meta: {meta_estacao_iac:,.0f}",
+                            line_width=2, annotation_text=f"🎯 Meta: {meta_estacao_iac:,.0f}".replace(",", "."),
                             annotation_position="top left",
                         )
                     fig_box_iac.update_layout(
@@ -1697,17 +1722,17 @@ elif screen == 'iacanga_rendimento':
                         'Mínimo/Dia', 'Máximo/Dia', 'Coef. Variação (%)', 'Total Peças',
                     ],
                     'Valor': [
-                        f"{meta_estacao_iac:,.0f} peças",
-                        f"{prod_dia_stats.mean():,.0f}",
+                        f"{meta_estacao_iac:,.0f} peças".replace(",", "."),
+                        f"{prod_dia_stats.mean():,.0f}".replace(",", "."),
                         f"{pct_meta_est:.1f}%",
                         f"{dias_acima} de {dias_total_est} ({(dias_acima/max(dias_total_est,1)*100):.0f}%)",
-                        f"{prod_dia_stats.median():,.0f}",
-                        f"{prod_dia_stats.std():,.0f}" if len(prod_dia_stats) > 1 else "N/A",
-                        f"{prod_dia_stats.min():,.0f}",
-                        f"{prod_dia_stats.max():,.0f}",
-                        f"{(prod_dia_stats.std()/prod_dia_stats.mean()*100):,.1f}%"
+                        f"{prod_dia_stats.median():,.0f}".replace(",", "."),
+                        f"{prod_dia_stats.std():,.0f}".replace(",", ".") if len(prod_dia_stats) > 1 else "N/A",
+                        f"{prod_dia_stats.min():,.0f}".replace(",", "."),
+                        f"{prod_dia_stats.max():,.0f}".replace(",", "."),
+                        f"{(prod_dia_stats.std()/prod_dia_stats.mean()*100):,.1f}%".replace(",", ".")
                         if prod_dia_stats.mean() > 0 and len(prod_dia_stats) > 1 else "N/A",
-                        f"{df_est['QUANTIDADE'].sum():,.0f}",
+                        f"{df_est['QUANTIDADE'].sum():,.0f}".replace(",", "."),
                     ],
                 })
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -1806,7 +1831,7 @@ elif screen == 'arealva_manta':
         if st.sidebar.button("🔄 Limpar Cache", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-        st.sidebar.metric("📊 Registros", f"{len(df_corte):,}")
+        st.sidebar.metric("📊 Registros", f"{len(df_corte):,}".replace(",", "."))
 
     df_trabalho = df_corte.copy()
 
@@ -1877,7 +1902,7 @@ elif screen == 'arealva_manta':
 
     st.sidebar.markdown("---")
     st.sidebar.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    st.sidebar.caption(f"Registros filtrados: {len(df_trabalho):,}")
+    st.sidebar.caption(f"Registros filtrados: {len(df_trabalho):,}".replace(",", "."))
 
     # --- Apply filters ---
     df_filtrado = df_trabalho.copy()
@@ -1914,16 +1939,16 @@ elif screen == 'arealva_manta':
         delta_media = ((media_dia / META_TOTAL) - 1) * 100 if META_TOTAL > 0 else 0
 
         cols_kpi = st.columns(4)
-        cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas:,.0f}")
+        cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas:,.0f}".replace(",", "."))
         cols_kpi[1].metric("📋 Total de OPs", f"{total_ops}")
         cols_kpi[2].metric("🎨 Cores Diferentes", f"{total_cores}")
         cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trabalhados}")
 
         cols_kpi2 = st.columns(4)
-        cols_kpi2[0].metric("⚡ Média Peças/Dia", f"{media_dia:,.0f}", delta=f"{delta_media:+.1f}% vs Meta {META_TOTAL:,}")
-        cols_kpi2[1].metric("🔧 Máquina", f"{pecas_maquina:,.0f}")
-        cols_kpi2[2].metric("📐 Mesa 1", f"{pecas_mesa1:,.0f}")
-        cols_kpi2[3].metric("📐 Mesa 2", f"{pecas_mesa2:,.0f}")
+        cols_kpi2[0].metric("⚡ Média Peças/Dia", f"{media_dia:,.0f}".replace(",", "."), delta=f"{delta_media:+.1f}% vs Meta {META_TOTAL:,}".replace(",", "."))
+        cols_kpi2[1].metric("🔧 Máquina", f"{pecas_maquina:,.0f}".replace(",", "."))
+        cols_kpi2[2].metric("📐 Mesa 1", f"{pecas_mesa1:,.0f}".replace(",", "."))
+        cols_kpi2[3].metric("📐 Mesa 2", f"{pecas_mesa2:,.0f}".replace(",", "."))
 
         st.markdown("---")
         st.markdown("#### 📈 Produção Diária (Peças)")
@@ -1942,7 +1967,7 @@ elif screen == 'arealva_manta':
             fig1.add_trace(go.Scatter(x=prod_diaria['DATA'], y=prod_diaria['MM5'],
                                       name='Tendência (5d)', line=dict(color='#ff7f0e', width=3), mode='lines'))
         fig1.add_hline(y=META_TOTAL, line_dash="dash", line_color="#aaa", line_width=2,
-                       annotation_text=f"Meta: {META_TOTAL:,}", annotation_font_size=12,
+                       annotation_text=f"Meta: {META_TOTAL:,}".replace(",", "."), annotation_font_size=12,
                        annotation_font_color="#aaa")
         fig1.update_layout(height=420, margin=dict(l=20, r=20, t=30, b=20),
                            legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0.5, xanchor='center'),
@@ -2014,7 +2039,7 @@ elif screen == 'arealva_manta':
         st.markdown("#### Resumo das OPs")
         st.dataframe(
             resumo_op.style.format({
-                'Total_Pecas': '{:,.0f}',
+                'Total_Pecas': lambda v: f"{int(v):,}".replace(",", "."),
                 'Data_Inicio': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '',
                 'Ultimo_corte': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '',
             }),
@@ -2025,7 +2050,7 @@ elif screen == 'arealva_manta':
         if op_detalhe:
             df_op = df_filtrado[df_filtrado['OP'] == op_detalhe]
             col_op1, col_op2, col_op3 = st.columns(3)
-            col_op1.metric("Peças Total", f"{df_op['QUANTIDADE'].sum():,.0f}")
+            col_op1.metric("Peças Total", f"{df_op['QUANTIDADE'].sum():,.0f}".replace(",", "."))
             col_op2.metric("Cores Cortadas", f"{df_op['COR'].nunique()}")
             col_op3.metric("Produto", df_op['PRODUTO'].iloc[0] if not df_op.empty else "N/A")
 
@@ -2065,6 +2090,7 @@ elif screen == 'arealva_manta':
             cor_prog = '#2ca02c' if pct >= 100 else ('#ff7f0e' if pct >= 80 else '#d62728')
             status = '✅ META ATINGIDA' if pct >= 100 else ('⚠️ PRÓXIMO DA META' if pct >= 80 else '❌ ABAIXO DA META')
             pct_bar = min(pct, 100)
+            _fn = lambda v: f"{int(v):,}".replace(",", ".")
             with cols_meta[i]:
                 card_html = (
                     '<div style="background:#1a1a2e; border-radius:14px; padding:20px; color:white; '
@@ -2072,9 +2098,9 @@ elif screen == 'arealva_manta':
                     f'<div style="font-size:0.8rem; letter-spacing:1px; color:#aaa; '
                     f'text-transform:uppercase; margin-bottom:4px;">{estacao}</div>'
                     f'<div style="font-size:2.2rem; font-weight:800; color:white; margin:4px 0;">'
-                    f'{media_b:,.0f}</div>'
+                    f'{_fn(media_b)}</div>'
                     f'<div style="font-size:0.85rem; color:#bbb; margin-bottom:10px;">'
-                    f'Meta: {meta_b:,} pçs/dia</div>'
+                    f'Meta: {_fn(meta_b)} pçs/dia</div>'
                     '<div style="background:#333; border-radius:8px; height:14px; '
                     'overflow:hidden; margin:8px 0;">'
                     f'<div style="width:{pct_bar:.0f}%; height:100%; background:{cor_prog}; '
@@ -2082,11 +2108,11 @@ elif screen == 'arealva_manta':
                     '</div>'
                     '<div style="display:flex; justify-content:space-between; '
                     'font-size:0.78rem; color:#999; margin-bottom:8px;">'
-                    f'<span>0</span><span>{meta_b:,}</span>'
+                    f'<span>0</span><span>{_fn(meta_b)}</span>'
                     '</div>'
                     f'<div style="font-size:1.1rem; font-weight:700; color:{cor_prog};">{pct:.0f}%</div>'
                     f'<div style="font-size:0.78rem; color:{cor_prog}; margin-top:2px;">'
-                    f'{status} ({diff:+,.0f})</div>'
+                    f'{status} ({("+" if diff >= 0 else "")}{_fn(diff)})</div>'
                     '</div>'
                 )
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -2103,10 +2129,10 @@ elif screen == 'arealva_manta':
                 meta_est = METAS[estacao]
                 pct_meta = (media_pecas_est / meta_est * 100) if meta_est > 0 else 0
                 delta_meta = media_pecas_est - meta_est
-                st.metric("Total Peças", f"{pecas_est:,.0f}")
+                st.metric("Total Peças", f"{pecas_est:,.0f}".replace(",", "."))
                 st.metric("Dias Trabalhados", f"{dias_est}")
-                st.metric("Média Peças/Dia", f"{media_pecas_est:,.0f}",
-                          delta=f"{delta_meta:+,.0f} vs Meta {meta_est:,}")
+                st.metric("Média Peças/Dia", f"{media_pecas_est:,.0f}".replace(",", "."),
+                          delta=f"{delta_meta:+,.0f} vs Meta {meta_est:,}".replace(",", "."))
                 st.metric("% da Meta", f"{pct_meta:.1f}%")
 
         st.markdown("---")
@@ -2118,7 +2144,7 @@ elif screen == 'arealva_manta':
         for est_nome, meta_val in METAS.items():
             fig_est1.add_hline(y=meta_val, line_dash="dot", line_width=1.5,
                                line_color=cores_estacao[est_nome],
-                               annotation_text=f"Meta {est_nome}: {meta_val:,}",
+                               annotation_text=f"Meta {est_nome}: {meta_val:,}".replace(",", "."),
                                annotation_position="top left",
                                annotation_font_size=10,
                                annotation_font_color=cores_estacao[est_nome],
@@ -2148,11 +2174,11 @@ elif screen == 'arealva_manta':
                                                       name='Média Móvel (5d)', line=dict(color='red', width=2)))
                     media_est_val = prod_dia_est['QUANTIDADE'].mean()
                     fig_tend.add_hline(y=media_est_val, line_dash="dash", line_color="gray",
-                                       annotation_text=f"Média: {media_est_val:,.0f}")
+                                       annotation_text=f"Média: {media_est_val:,.0f}".replace(",", "."))
                     meta_estacao = METAS.get(estacao, 0)
                     if meta_estacao > 0:
                         fig_tend.add_hline(y=meta_estacao, line_dash="dot", line_color="green",
-                                           line_width=2, annotation_text=f"🎯 Meta: {meta_estacao:,}",
+                                           line_width=2, annotation_text=f"🎯 Meta: {meta_estacao:,}".replace(",", "."),
                                            annotation_position="top left")
                     fig_tend.update_layout(title=f"Produção Diária — {estacao}", height=400,
                                            margin=dict(l=20, r=20, t=40, b=20),
@@ -2170,7 +2196,7 @@ elif screen == 'arealva_manta':
                     meta_box = METAS.get(estacao, 0)
                     if meta_box > 0:
                         fig_box.add_hline(y=meta_box, line_dash="dot", line_color="green",
-                                          line_width=2, annotation_text=f"🎯 Meta: {meta_box:,}",
+                                          line_width=2, annotation_text=f"🎯 Meta: {meta_box:,}".replace(",", "."),
                                           annotation_position="top left")
                     fig_box.update_layout(title=f"Consistência — {estacao}", height=400,
                                           margin=dict(l=20, r=20, t=40, b=20),
@@ -2188,17 +2214,17 @@ elif screen == 'arealva_manta':
                                     'Dias Acima da Meta', 'Mediana/Dia', 'Desvio Padrão',
                                     'Mínimo/Dia', 'Máximo/Dia', 'Coef. Variação (%)', 'Total Peças'],
                     'Valor': [
-                        f"{meta_est_v:,} peças",
-                        f"{prod_dia_stats.mean():,.0f}",
+                        f"{meta_est_v:,} peças".replace(",", "."),
+                        f"{prod_dia_stats.mean():,.0f}".replace(",", "."),
                         f"{pct_meta_est:.1f}%",
                         f"{dias_acima} de {dias_total_est} ({(dias_acima / max(dias_total_est, 1) * 100):.0f}%)",
-                        f"{prod_dia_stats.median():,.0f}",
-                        f"{prod_dia_stats.std():,.0f}" if len(prod_dia_stats) > 1 else "N/A",
-                        f"{prod_dia_stats.min():,.0f}",
-                        f"{prod_dia_stats.max():,.0f}",
-                        f"{(prod_dia_stats.std() / prod_dia_stats.mean() * 100):,.1f}%"
+                        f"{prod_dia_stats.median():,.0f}".replace(",", "."),
+                        f"{prod_dia_stats.std():,.0f}".replace(",", ".") if len(prod_dia_stats) > 1 else "N/A",
+                        f"{prod_dia_stats.min():,.0f}".replace(",", "."),
+                        f"{prod_dia_stats.max():,.0f}".replace(",", "."),
+                        f"{(prod_dia_stats.std() / prod_dia_stats.mean() * 100):,.1f}%".replace(",", ".")
                         if prod_dia_stats.mean() > 0 and len(prod_dia_stats) > 1 else "N/A",
-                        f"{df_est['QUANTIDADE'].sum():,.0f}",
+                        f"{df_est['QUANTIDADE'].sum():,.0f}".replace(",", "."),
                     ]
                 })
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -2458,7 +2484,7 @@ elif screen == 'arealva_lencol':
         todas_cats_ln = sorted([x for x in df_raw_ln["CAT_BASE"].unique() if pd.notna(x) and str(x).strip()])
         sel_cat_ln = st.multiselect("Categoria", todas_cats_ln, placeholder="Todas", key="ln_cat")
 
-        st.caption(f"📊 {len(df_raw_ln):,} registros totais")
+        st.caption(f"📊 {len(df_raw_ln):,} registros totais".replace(",", "."))
 
     # ── Aplicar filtros ───────────────────────────────────────────────
     df_ln = df_raw_ln[
@@ -2511,7 +2537,7 @@ elif screen == 'arealva_lencol':
         f"font-weight:800;margin-bottom:2px'>✂️ Dashboard Corte · Lençol</h1>"
         f"<p style='text-align:center;color:#718096;font-size:.9rem;margin-bottom:0'>"
         f"{p_ini_ln.strftime('%d/%m/%Y')} — {p_fim_ln.strftime('%d/%m/%Y')} · "
-        f"{total_pecas_ln:,} peças · {dias_trab_ln} dias no período</p>",
+        f"{total_pecas_ln:,} peças · {dias_trab_ln} dias no período</p>".replace(",", "."),
         unsafe_allow_html=True,
     )
     st.divider()

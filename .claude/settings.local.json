@@ -4,7 +4,11 @@
       "PowerShell(Get-Process -Name \"python\", \"streamlit\" -ErrorAction SilentlyContinue)",
       "PowerShell(Stop-Process -Force -ErrorAction SilentlyContinue)",
       "Bash(git -C \"c:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados\" add scripts/relatorio_diario_corte.py)",
-      "Bash(git -C 'c:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados' commit -m ' *)"
+      "Bash(git -C 'c:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados' commit -m ' *)",
+      "Read(//c/Users/erick/.claude/projects/c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados/memory/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\erick\\.claude\\projects\\c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados\\memory"
     ]
   }
 }
