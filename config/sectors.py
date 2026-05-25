@@ -19,7 +19,7 @@ SECTORS_ANALISE = [
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
         "requires_auth": True,
-        "note": "Falta Carline",
+        "note": "Falta Análise de Rendimento por OP",
     },
     {
         "key": "producao",
@@ -37,7 +37,7 @@ SECTORS_ANALISE = [
         "accent":  "#FFA726",
         "tags": ["Produção", "Multi-empresa", "Metas"],
         "requires_auth": True,
-        "note": "Em Construção",
+        "note": "Em Melhoria",
     },
     {
         "key": "faturados",
@@ -54,7 +54,7 @@ SECTORS_ANALISE = [
         "accent":  "#E76F51",
         "tags": ["Comercial", "Receita", "Clientes"],
         "requires_auth": True,
-        "note": "Em Construção",
+        "note": "Em Melhoria",
     },
     {
         "key": "apontador_gut",
