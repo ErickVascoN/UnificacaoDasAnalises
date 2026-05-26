@@ -19,7 +19,6 @@ SECTORS_ANALISE = [
         "accent":  "#4ECDC4",
         "tags": ["Operação", "Corte", "Metas diárias"],
         "requires_auth": True,
-        "note": "Em Melhoria",
     },
     {
         "key": "producao",
@@ -37,7 +36,23 @@ SECTORS_ANALISE = [
         "accent":  "#FFA726",
         "tags": ["Produção", "Multi-empresa", "Metas"],
         "requires_auth": True,
-        "note": "Em Melhoria",
+    },
+    {
+        "key": "metas_previsao",
+        "title": "Análise de Metas / Previsão de Custos",
+        "subtitle": "Progresso automático vs. metas e projeção",
+        "description": (
+            "Acompanhamento automático do plano de metas por prestador e unidade, "
+            "com previsão de atingimento até o fim do mês e projeção de custos "
+            "e receita baseada no rendimento diário real."
+        ),
+        "icon": "🎯",
+        "page_path": "pages/7_Plano_de_Metas.py",
+        "color_a": "#1A3A2A",
+        "color_b": "#2A9D5C",
+        "accent":  "#F4A261",
+        "tags": ["Metas", "Previsão", "Custos"],
+        "requires_auth": True,
     },
     {
         "key": "faturados",
@@ -54,7 +69,6 @@ SECTORS_ANALISE = [
         "accent":  "#E76F51",
         "tags": ["Comercial", "Receita", "Clientes"],
         "requires_auth": True,
-        "note": "Em Melhoria",
     },
     {
         "key": "apontador_gut",
@@ -79,7 +93,6 @@ SECTORS_ANALISE = [
         "accent":  "#26D0CE",
         "tags": ["GUT", "Eficiência", "Real-time"],
         "requires_auth": True,
-        "note": "Falta Alguns Setores",
     },
     {
         "key": "analise_dados_gut",

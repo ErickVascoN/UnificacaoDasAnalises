@@ -31,6 +31,8 @@ MANTA_ID    = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
 MANTA_GID   = "1544210185"
 IACANGA_ID  = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
 IACANGA_GID = "1362699684"
+LENCOL_ID   = "1BAbgM0zLWBHPn06LfzEvH4aPH84eZvAV"
+LENCOL_GID  = "1396046910"
 CACHE_TTL   = 300
 
 _COR_STATUS = {"Concluído": "#22c55e", "Parcial": "#f59e0b", "Pendente": "#ef4444"}
@@ -205,32 +207,93 @@ def load_programacao() -> pd.DataFrame:
     return df
 
 
+def _parse_data_corte(s: str) -> "pd.Timestamp":
+    """Parse datas exportadas pelo Google Sheets (MM/DD/YYYY por padrão)."""
+    if not s or str(s).strip() in ("", "nan", "None"):
+        return pd.NaT
+    s = str(s).strip().split(" ")[0]
+    for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return pd.to_datetime(s, format=fmt)
+        except Exception:
+            continue
+    return pd.to_datetime(s, errors="coerce")
+
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_cortes() -> pd.DataFrame:
+    """
+    Carrega dados de corte de três fontes:
+      - Arealva/Manta  (QUANTIDADE, header simples)
+      - Iacanga        (QUANTIDADE, header simples)
+      - Lençol Arealva (QUANT, pode ter linha de título → header detection)
+
+    Retorna colunas [OP, QUANTIDADE, FONTE, SEMANA].
+    SEMANA é o nº ISO da semana derivado da coluna DATA — essencial para que
+    o join não some cortes de semanas anteriores para OPs reutilizadas (ex: PROG 81).
+    """
     frames = []
-    for sid, gid, fonte in [
-        (MANTA_ID, MANTA_GID, "Arealva"),
-        (IACANGA_ID, IACANGA_GID, "Iacanga"),
-    ]:
+
+    # (sheet_id, gid, nome, coluna_quantidade, detectar_header)
+    _SOURCES = [
+        (MANTA_ID,   MANTA_GID,   "Arealva",  "QUANTIDADE", False),
+        (IACANGA_ID, IACANGA_GID, "Iacanga",  "QUANTIDADE", False),
+        (LENCOL_ID,  LENCOL_GID,  "Lençol",   "QUANT",      True),
+    ]
+
+    for sid, gid, fonte, col_qtd, detect_hdr in _SOURCES:
         texto = _fetch(sid, gid)
         if not texto:
+            logging.debug(f"load_cortes: sem texto para {fonte}")
             continue
         try:
-            df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
+            skiprows = 0
+            if detect_hdr:
+                for i, linha in enumerate(texto.splitlines()[:8]):
+                    lu = linha.upper()
+                    if ("DATA" in lu and "PRESTADOR" in lu) or ("DATA" in lu and ",OP," in lu):
+                        skiprows = i
+                        break
+
+            df = pd.read_csv(io.StringIO(texto), skiprows=skiprows, header=0, dtype=str)
             df.columns = df.columns.str.strip()
-            if "OP" in df.columns and "QUANTIDADE" in df.columns:
-                sub = df[["OP", "QUANTIDADE"]].copy()
-                sub["FONTE"] = fonte
-                frames.append(sub)
+
+            if "OP" not in df.columns and skiprows > 0:
+                df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
+                df.columns = df.columns.str.strip()
+
+            if "OP" not in df.columns or col_qtd not in df.columns:
+                logging.debug(
+                    f"load_cortes: {fonte} sem colunas esperadas. "
+                    f"Disponíveis: {list(df.columns)}"
+                )
+                continue
+
+            sub = df[["OP", col_qtd]].copy()
+            sub = sub.rename(columns={col_qtd: "QUANTIDADE"})
+            sub["FONTE"] = fonte
+
+            # Derivar SEMANA ISO a partir de DATA (para join por semana)
+            if "DATA" in df.columns:
+                datas = df["DATA"].apply(_parse_data_corte)
+                sub["SEMANA"] = datas.dt.isocalendar().week.astype("Int64")
+            else:
+                sub["SEMANA"] = pd.array([pd.NA] * len(sub), dtype="Int64")
+
+            frames.append(sub)
+            logging.debug(f"load_cortes: {fonte} → {len(sub)} registros")
+
         except Exception as e:
-            logging.debug(f"parse {fonte}: {e}")
+            logging.debug(f"load_cortes: parse {fonte}: {e}")
 
     if not frames:
-        return pd.DataFrame(columns=["OP", "QUANTIDADE", "FONTE"])
+        return pd.DataFrame(columns=["OP", "QUANTIDADE", "FONTE", "SEMANA"])
 
     out = pd.concat(frames, ignore_index=True)
     out["OP"]         = out["OP"].astype(str).str.strip()
     out["QUANTIDADE"] = pd.to_numeric(out["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
+    invalidos = {"", "NAN", "NONE", "N/A", "SEM OP"}
+    out = out[~out["OP"].str.upper().isin(invalidos)]
     return out
 
 
@@ -239,26 +302,121 @@ def _status_corte(cortada: int, prog_total: int) -> str:
     if cortada <= 0:
         return "Pendente"
     eficiencia = cortada / prog_total if prog_total > 0 else 0
-    if eficiencia >= 0.98:
+    if eficiencia >= 0.96:
         return "Concluído"
     return "Parcial"
 
 
 def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
-    cortes_por_op = df_cortes.groupby("OP")["QUANTIDADE"].sum().to_dict()
-    total_prog_op = df_prog.groupby("PED. CLIENTE")["QNT. PROG"].transform("sum")
+    """
+    Cruza programação com cortes.
 
+    Join principal: (OP, SEMANA)
+      Garante que OPs reutilizadas semana a semana (ex: "PROG 81") não acumulem
+      cortes de semanas anteriores — cada linha da programação enxerga apenas
+      os cortes da sua própria semana.
+
+    Prioridade de chave de busca:
+      1. (PED. CLIENTE, SEMANA)  → caso mais comum
+      2. (OP INTERNA,  SEMANA)  → quando a planilha de corte usa OP interna
+    """
+    import re as _re
+
+    # Soma QNT. PROG por (PED. CLIENTE, SEMANA) — evita acumular semanas anteriores
+    # para OPs reutilizadas semana a semana (ex: "PROG 81" tem 9.000/sem, não 88.992 total)
+    total_prog_op = df_prog.groupby(["PED. CLIENTE", "SEMANA"])["QNT. PROG"].transform("sum")
     df = df_prog.copy()
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
-    df["QNT_CORTADA"]    = df["PED. CLIENTE"].map(cortes_por_op).fillna(0).astype(int)
-    df["STATUS_PROD"]    = df["QNT_CORTADA"].apply(
+
+    # ── Sem dados de corte ────────────────────────────────────────────────────────
+    if df_cortes.empty:
+        df["QNT_CORTADA"]  = 0
+        df["STATUS_PROD"]  = "Não Iniciado"
+        df["STATUS_CORTE"] = "Pendente"
+        df["DIFERENÇA"]    = -df["QNT_PROG_TOTAL"]
+        df["EFICIÊNCIA_%"] = 0.0
+        return df
+
+    # ── Índice (OP, SEMANA) → quantidade cortada ──────────────────────────────────
+    _tem_semana = (
+        "SEMANA" in df_cortes.columns
+        and df_cortes["SEMANA"].notna().any()
+    )
+    if _tem_semana:
+        _sem_idx = (
+            df_cortes.dropna(subset=["SEMANA"])
+            .assign(_S=lambda d: d["SEMANA"].astype(int))
+            .groupby(["OP", "_S"])["QUANTIDADE"].sum()
+        )
+        # dict: (op_str, semana_int) → quantidade
+        _sem_map: dict = {(str(op), int(s)): int(q) for (op, s), q in _sem_idx.items()}
+    else:
+        _sem_map = {}
+
+    # Índice OP → quantidade (fallback sem semana)
+    _op_map: dict = df_cortes.groupby("OP")["QUANTIDADE"].sum().to_dict()
+
+    # ── Extrair semana ISO do campo SEMANA da programação ("SEMANA 22" → 22) ──────
+    def _parse_sem(s) -> int | None:
+        m = _re.search(r"\d+", str(s))
+        return int(m.group()) if m else None
+
+    df["_SEM"] = df["SEMANA"].apply(_parse_sem)
+
+    # Preparar colunas auxiliares para o apply
+    df["_PED"]   = df["PED. CLIENTE"].astype(str).str.strip()
+    df["_OPINT"] = (
+        df["OP INTERNA"].fillna("").astype(str).str.strip()
+        if "OP INTERNA" in df.columns
+        else ""
+    )
+
+    _inv = {"", "NAN", "NONE", "N/A"}
+
+    def _get_cortado(row) -> float:
+        ped    = row["_PED"]
+        op_int = row["_OPINT"]
+        sem    = row["_SEM"]
+
+        if _tem_semana and sem is not None:
+            # (PED. CLIENTE, SEMANA)
+            v = _sem_map.get((ped, sem), 0)
+            if v:
+                return float(v)
+            # (OP INTERNA, SEMANA)
+            if op_int.upper() not in _inv:
+                v = _sem_map.get((op_int, sem), 0)
+                if v:
+                    return float(v)
+            # Não encontrado nesta semana → corte ainda não realizado
+            return 0.0
+        else:
+            # Sem informação de semana: usa acumulado por OP (comportamento original)
+            v = _op_map.get(ped, 0)
+            if not v and op_int.upper() not in _inv:
+                v = _op_map.get(op_int, 0)
+            return float(v)
+
+    df["_CORTADO_ROW"] = df.apply(_get_cortado, axis=1)
+    df = df.drop(columns=["_SEM", "_PED", "_OPINT"])
+
+    # Soma por PED. CLIENTE → valor único distribuído a todas as linhas do pedido
+    df["QNT_CORTADA"] = (
+        df.groupby("PED. CLIENTE")["_CORTADO_ROW"]
+        .transform("sum")
+        .fillna(0)
+        .astype(int)
+    )
+    df = df.drop(columns=["_CORTADO_ROW"])
+
+    df["STATUS_PROD"]  = df["QNT_CORTADA"].apply(
         lambda x: "Liberado" if x > 0 else "Não Iniciado"
     )
-    df["STATUS_CORTE"]   = df.apply(
+    df["STATUS_CORTE"] = df.apply(
         lambda r: _status_corte(r["QNT_CORTADA"], r["QNT_PROG_TOTAL"]), axis=1
     )
-    df["DIFERENÇA"]      = df["QNT_CORTADA"] - df["QNT_PROG_TOTAL"]
-    df["EFICIÊNCIA_%"]   = (
+    df["DIFERENÇA"]    = df["QNT_CORTADA"] - df["QNT_PROG_TOTAL"]
+    df["EFICIÊNCIA_%"] = (
         df["QNT_CORTADA"] / df["QNT_PROG_TOTAL"].replace(0, pd.NA) * 100
     ).fillna(0).round(1)
     return df
@@ -334,7 +492,13 @@ with st.sidebar:
         st.rerun()
     st.caption(f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     st.caption(f"📋 Prog.: {len(df_prog_raw):,} linhas".replace(",", "."))
-    st.caption(f"✂️ Cortes: {len(df_cortes_raw):,} registros".replace(",", "."))
+    total_cortes = len(df_cortes_raw)
+    st.caption(f"✂️ Cortes total: {total_cortes:,} registros".replace(",", "."))
+    if not df_cortes_raw.empty and "FONTE" in df_cortes_raw.columns:
+        for fonte_nome, grupo in df_cortes_raw.groupby("FONTE"):
+            st.caption(f"  · {fonte_nome}: {len(grupo):,}".replace(",", "."))
+    if total_cortes == 0:
+        st.warning("⚠️ Nenhum dado de corte carregado — verifique acesso às planilhas.")
     if _erro_cortes:
         st.warning(f"⚠️ Cortes: {_erro_cortes[:60]}")
 
@@ -411,6 +575,116 @@ _kpi(k6, "Peças Cortadas",   f"{total_cort_pcs:,}".replace(",", "."), "total re
      "#22c55e" if total_cort_pcs >= total_prog_pcs else "#f59e0b")
 
 st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+
+
+# ── Diagnóstico de fontes ──────────────────────────────────────────────────────
+with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expanded=False):
+    st.markdown("##### Status de carregamento por planilha")
+
+    _FONTES_ESPERADAS = ["Arealva", "Iacanga", "Lençol"]
+    diag_rows = []
+
+    for fn in _FONTES_ESPERADAS:
+        if not df_cortes_raw.empty and "FONTE" in df_cortes_raw.columns:
+            g = df_cortes_raw[df_cortes_raw["FONTE"] == fn]
+            n_reg = len(g)
+        else:
+            g = pd.DataFrame()
+            n_reg = 0
+
+        if n_reg > 0:
+            n_ops   = int(g["OP"].nunique())
+            qtd     = int(g["QUANTIDADE"].sum())
+            status  = "✅ Carregado"
+            top_ops = (
+                g.groupby("OP")["QUANTIDADE"].sum()
+                .nlargest(5)
+                .index.tolist()
+            )
+            amostra = " · ".join(str(o) for o in top_ops)
+            # Faixa de semanas carregadas
+            if "SEMANA" in g.columns and g["SEMANA"].notna().any():
+                sem_min = int(g["SEMANA"].dropna().min())
+                sem_max = int(g["SEMANA"].dropna().max())
+                semanas_str = f"sem. {sem_min}–{sem_max}"
+            else:
+                semanas_str = "sem data"
+        else:
+            n_ops, qtd, status, amostra, semanas_str = 0, 0, "❌ Sem dados", "—", "—"
+
+        diag_rows.append({
+            "Fonte": fn,
+            "Status": status,
+            "Registros": f"{n_reg:,}".replace(",", "."),
+            "OPs únicas": f"{n_ops:,}".replace(",", "."),
+            "Peças totais": f"{qtd:,}".replace(",", "."),
+            "Semanas cobertas": semanas_str,
+            "Top OPs (por qtd.)": amostra,
+        })
+
+    st.dataframe(pd.DataFrame(diag_rows), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("##### Cruzamento: Programação × Cortes")
+
+    _ops_corte = (
+        set(df_cortes_raw["OP"].astype(str).str.strip().unique())
+        if not df_cortes_raw.empty else set()
+    )
+    _peds_prog = set(df_prog_raw["PED. CLIENTE"].astype(str).str.strip().unique())
+
+    _ops_int_prog: set = set()
+    if "OP INTERNA" in df_prog_raw.columns:
+        _ops_int_prog = {
+            str(v).strip()
+            for v in df_prog_raw["OP INTERNA"].dropna().unique()
+            if str(v).strip() not in ("", "nan", "None", "NAN")
+        }
+
+    _matched_ped = _peds_prog & _ops_corte
+    _matched_int = _ops_int_prog & _ops_corte
+    _nao_matched = _peds_prog - _ops_corte - _ops_int_prog
+
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    mc1.metric("Pedidos na programação", len(_peds_prog))
+    mc2.metric("Match via PED. CLIENTE", len(_matched_ped),
+               help="PED. CLIENTE encontrado como OP nos dados de corte")
+    mc3.metric("Match via OP INTERNA", len(_matched_int),
+               help="OP INTERNA encontrada como OP nos dados de corte")
+    mc4.metric("Sem match (corte não encontrado)", len(_nao_matched),
+               help="Nenhum valor da programação encontrado nos dados de corte")
+
+    if _nao_matched:
+        st.markdown(
+            f"**⚠️ {len(_nao_matched)} pedido(s) da programação sem corte registrado "
+            f"em nenhuma das planilhas:**"
+        )
+        # Exibe em grid de 5 colunas
+        _nm_sorted = sorted(_nao_matched)
+        _cols_nm = st.columns(5)
+        for i, nm in enumerate(_nm_sorted[:50]):   # limita a 50 para não poluir
+            _cols_nm[i % 5].markdown(f"`{nm}`")
+        if len(_nao_matched) > 50:
+            st.caption(f"… e mais {len(_nao_matched) - 50} pedidos.")
+    else:
+        st.success("✅ Todos os pedidos da programação têm corte registrado em alguma fonte.")
+
+    # Verificação inversa: OPs cortadas sem pedido na programação
+    _corte_sem_prog = _ops_corte - _peds_prog - _ops_int_prog
+    if _corte_sem_prog:
+        with st.container():
+            st.markdown(
+                f"**ℹ️ {len(_corte_sem_prog)} OP(s) cortada(s) sem pedido correspondente "
+                f"na programação:**"
+            )
+            _cs_sorted = sorted(_corte_sem_prog)
+            _cols_cs = st.columns(5)
+            for i, op in enumerate(_cs_sorted[:30]):
+                _cols_cs[i % 5].markdown(f"`{op}`")
+            if len(_corte_sem_prog) > 30:
+                st.caption(f"… e mais {len(_corte_sem_prog) - 30} OPs.")
+
+st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
 
 
 # ── Gráficos ───────────────────────────────────────────────────────────────────

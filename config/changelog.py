@@ -8,6 +8,31 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "26/05/2026",
+        "tag": "correção",
+        "title": "Controladoria Programação — corte de lençol não aparecia (QNT CORTADA zerada)",
+        "description": (
+            "A planilha de lançamentos de corte de lençol (Arealva) não estava sendo carregada "
+            "em 4_Controladoria_Programacao.py. Adicionada como terceira fonte em load_cortes(), "
+            "com tratamento da coluna QUANT (vs QUANTIDADE nas demais) e header detection para "
+            "linha de título. Aprimorado o matching: tenta PED. CLIENTE → OP e, se não encontrar, "
+            "tenta OP INTERNA → OP. Sidebar agora exibe contagem de registros por fonte para diagnóstico."
+        ),
+    },
+    {
+        "date": "26/05/2026",
+        "tag": "novo",
+        "title": "Análise de Metas / Previsão de Custos — nova página automática",
+        "description": (
+            "Nova página 7_Plano_de_Metas.py acessível pelo card 'Análise de Metas / Previsão de Custos' "
+            "na aba Análise de Dados. Cruza o plano de metas (planilha Google Sheets) com os lançamentos "
+            "diários de 4 unidades (GGTTEX, ZANATTEX, LITEX-Fronha, LITEX-Geral) e o xlsx de Produção Geral. "
+            "Exibe KPIs automáticos, tabela de progresso por prestador, gráfico de série temporal com projeção "
+            "linear até fim do mês, análise de custos e receita por centro de custo, e gerador de plano do "
+            "próximo mês em .xlsx calibrado pelo rendimento real (apenas Admin)."
+        ),
+    },
+    {
+        "date": "26/05/2026",
         "tag": "novo",
         "title": "GUIA.md — documentação completa do projeto",
         "description": (

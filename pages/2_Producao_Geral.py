@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
 import re
 import io
+import unicodedata
 import numpy as np
 
 # ──────────────────────────────────────────────
@@ -89,7 +90,7 @@ SPREADSHEET_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 CORES_EMPRESAS = {
     "Burdays": "#FF6B6B",
     "Camesa": "#4ECDC4",
-    "Niazitex": "#45B7D1",
+    "Niazittex / Seven": "#45B7D1",
     "Cortex": "#FFA726",
     "Sultan": "#AB47BC",
     "Decor": "#26C6DA",
@@ -123,6 +124,305 @@ NOMES_DIAS = {
 }
 
 ORDEM_DIAS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+# ──────────────────────────────────────────────
+# LITEX_GERAL — suplemento diário da Niazitex
+# (a aba Niazitex no xlsx não é preenchida; os dados reais ficam nesta planilha)
+# ──────────────────────────────────────────────
+_LITEX_GERAL_ID  = "1SF2ZumsloWdUVAMt1SRYd1o5gNIY9RXD"
+_LITEX_GERAL_GID = "1697720285"
+
+# ──────────────────────────────────────────────
+# PLANO DE METAS — fonte de Meta Diária autoritativa
+# (substitui os valores de Meta Diaria do xlsx de Produção Geral)
+# ──────────────────────────────────────────────
+_METAS_SHEET_ID_PG = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
+_METAS_GID_PG      = "1593003426"
+_MESES_PT_ABR_PG   = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+}
+
+# ── Metas diárias hardcoded — Niazittex / Seven ──────────────────────────────
+# Fonte: Plano de Metas (aprovado pelo usuário).
+# Chaves = resultado de _norm_produto_niazi() aplicado ao nome do produto.
+_NIAZI_SEVEN_METAS: dict[str, float] = {
+    "FRONHA":             3_000.0,
+    "LENCOL COM ELASTIC": 3_000.0,
+    "LENCOL PLANO":       5_000.0,
+    "JOGO SIMPLES":       2_000.0,
+    # MANTA e TOALHA DE MESA: sem meta definida por enquanto
+}
+# Nome canônico da empresa no dashboard
+_NIAZI_SEVEN_KEY = "Niazittex / Seven"
+
+_PROD_SUFIXOS_PG = frozenset({
+    "ST", "CS", "QN", "KG", "SL", "EX", "CAL",
+    "SOLTEIRO", "CASAL", "QUEEN", "KING", "AVULSA",
+    "HOTEL", "EXTRA", "SUPER", "PLUS", "P", "M", "G", "GG",
+})
+
+
+def _norm_pg(s: str) -> str:
+    """Uppercase + remove acentos."""
+    s = str(s).strip().upper()
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _base_prod_pg(nome: str) -> str:
+    """'LENCOL ST' → 'LENCOL', 'FRONHA AVULSA P' → 'FRONHA'."""
+    words = _norm_pg(nome).split()
+    if not words:
+        return ""
+    if len(words) == 1:
+        return words[0]
+    result = [words[0]]
+    for w in words[1:]:
+        if w in _PROD_SUFIXOS_PG or (len(w) <= 2 and w.isalpha()):
+            break
+        result.append(w)
+    return " ".join(result)
+
+
+def _parse_num_pg(val) -> float | None:
+    """Converte número no formato brasileiro ('1.234,56' ou '150') → float. Retorna None se inválido."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s in ("", "nan", "None", "#ERROR!", "#VALOR!", "#NAME?", "-"):
+        return None
+    s = re.sub(r"[R$\s]", "", s)
+    # Formato brasileiro: ponto como milhar, vírgula como decimal
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _load_metas_lookup_pg() -> dict:
+    """
+    Baixa a planilha de Plano de Metas e retorna lookup:
+      {(faccao_norm, produto_base, mes, ano): meta_diaria}
+
+    Faccao é normalizado por _norm_pg(); produto pela base (_base_prod_pg()).
+    Chaves são geradas tanto para RESPONSÁVEL (primário) quanto para CLIENTE
+    (fallback), permitindo correspondência mesmo quando o Faccao é o nome da empresa.
+
+    NÃO usa @st.cache_data — chamado de dentro de load_all_data() que já é cacheada.
+    """
+    import requests as _req
+
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{_METAS_SHEET_ID_PG}"
+        f"/export?format=csv&gid={_METAS_GID_PG}"
+    )
+    try:
+        r = _req.get(url, timeout=20)
+        r.raise_for_status()
+        df_raw = pd.read_csv(io.StringIO(r.text), dtype=str)
+        df_raw.columns = [c.strip().upper() for c in df_raw.columns]
+    except Exception as e:
+        print(f"[METAS_LOOKUP] Erro ao carregar planilha de metas: {e}")
+        return {}
+
+    # Detecta colunas pelo nome (tolerante a variações)
+    col_resp   = next((c for c in df_raw.columns if "RESPONSAVEL" in _norm_pg(c)), None)
+    col_cli    = next((c for c in df_raw.columns if _norm_pg(c) == "CLIENTE"),     None)
+    col_prod   = next((c for c in df_raw.columns if _norm_pg(c) == "PRODUTO"),     None)
+    col_meta_d = next((c for c in df_raw.columns if "META" in _norm_pg(c) and "DIARI" in _norm_pg(c)), None)
+    col_meta_m = next((c for c in df_raw.columns if "META" in _norm_pg(c) and "MES" in _norm_pg(c)),   None)
+    col_data_b = next((c for c in df_raw.columns if "DATA" in _norm_pg(c) and "BASE" in _norm_pg(c)),  None)
+    col_status = next((c for c in df_raw.columns if _norm_pg(c) == "STATUS"),      None)
+
+    if not all([col_resp, col_prod, col_data_b, col_status]):
+        print(f"[METAS_LOOKUP] Colunas essenciais ausentes. Disponíveis: {list(df_raw.columns)}")
+        return {}
+
+    lookup: dict = {}
+    for _, row in df_raw.iterrows():
+        status = _norm_pg(str(row.get(col_status, "")))
+        if status != "PREVISTO":
+            continue
+
+        # --- Mês e Ano da meta (ex: "1-mai." → mes=5, ano=2026) ---
+        data_raw = str(row.get(col_data_b, "")).strip().lower().replace(".", "")
+        m_match = re.search(r"(\d+)[\-/\s]([a-z]+)", data_raw)
+        if not m_match:
+            continue
+        mes_str = m_match.group(2)[:3]
+        mes_num = _MESES_PT_ABR_PG.get(mes_str)
+        if not mes_num:
+            continue
+        ano_num = date.today().year  # mesma convenção de 7_Plano_de_Metas.py
+
+        # --- Produto: normaliza preservando nome completo (ex: "LENCOL COM ELASTIC" ≠ "LENCOL PLANO") ---
+        prod_base = _norm_produto_niazi(str(row.get(col_prod, "")))
+        if not prod_base:
+            continue
+
+        # --- Meta Diária: prefere META DIÁRIA, fallback META MÊS ---
+        meta_val: float | None = None
+        for col_try in filter(None, [col_meta_d, col_meta_m]):
+            meta_val = _parse_num_pg(row.get(col_try))
+            if meta_val is not None and meta_val > 0:
+                break
+        if meta_val is None or meta_val <= 0:
+            continue
+
+        # --- Armazena por RESPONSÁVEL (primário) ---
+        resp = _norm_pg(str(row.get(col_resp, "")))
+        if resp:
+            lookup.setdefault((resp, prod_base, mes_num, ano_num), meta_val)
+
+        # --- Armazena por CLIENTE (fallback, sem sobrescrever chave do RESPONSÁVEL) ---
+        if col_cli:
+            cli = _norm_pg(str(row.get(col_cli, "")))
+            if cli and cli != resp:
+                lookup.setdefault((cli, prod_base, mes_num, ano_num), meta_val)
+
+    print(f"[METAS_LOOKUP] {len(lookup)} entradas carregadas do plano de metas")
+    return lookup
+
+
+def _norm_produto_niazi(nome: str) -> str:
+    """
+    Normaliza nome de produto para Niazittex.
+    - Usa _base_prod_pg para remover sufixos de tamanho ("FRONHA AVULSA" → "FRONHA")
+    - Preserva palavras que distinguem variantes ("LENCOL COM ELASTIC" ≠ "LENCOL PLANO")
+    - Normaliza "ELASTICO" → "ELASTIC" para casar com a planilha de metas
+    """
+    s = _base_prod_pg(_norm_pg(nome))   # uppercase + remove acentos + remove sufixos
+    s = s.replace("ELASTICO", "ELASTIC")  # "ELÁSTICO" = "ELASTIC" (planilha de metas usa sem O)
+    return s
+
+
+def _load_niazitex_suplementar() -> pd.DataFrame:
+    """
+    Carrega a planilha LITEX_GERAL e devolve apenas os dados do cliente NIAZITTEX.
+
+    Regras:
+    - Filtra coluna CLIENTE contendo "NIAZI" (cobre NIAZITEX, NIAZITTEX, NIAZI…)
+    - Agrupa por (Data, Produto) somando TOTAL CONFERIDO de todos os prestadores
+    - Produto é normalizado com _norm_produto_niazi (sem corte de sufixos)
+    - Meta Diaria é preenchida posteriormente por _load_metas_lookup_pg()
+    """
+    import requests as _req
+
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{_LITEX_GERAL_ID}"
+        f"/export?format=csv&gid={_LITEX_GERAL_GID}"
+    )
+    try:
+        r = _req.get(url, timeout=20)
+        r.raise_for_status()
+        raw_full = pd.read_csv(io.StringIO(r.text), header=None, dtype=str)
+    except Exception as e:
+        logging.warning(f"LITEX_GERAL não carregado: {e}")
+        return pd.DataFrame()
+
+    # Encontra linha de cabeçalho real
+    _HDR_KEYWORDS = {"DATA", "PRESTADOR", "CONFERIDO", "PRODUZIDO", "DESCRICAO", "DESCRI", "PRODUTO", "SETOR"}
+    hdr_idx = None
+    for i, row in raw_full.iterrows():
+        vals = [_norm_pg(str(v)) for v in row.tolist()]
+        if any(any(kw in v for kw in _HDR_KEYWORDS) for v in vals):
+            hdr_idx = i
+            break
+
+    if hdr_idx is None:
+        print(f"[LITEX_GERAL] Cabeçalho não encontrado. Primeiras linhas: {raw_full.head(3).values.tolist()}")
+        return pd.DataFrame()
+
+    raw = raw_full.iloc[hdr_idx + 1:].copy()
+    raw.columns = [str(v).strip() for v in raw_full.iloc[hdr_idx].tolist()]
+    raw = raw.reset_index(drop=True)
+
+    # Localiza colunas pelo nome normalizado
+    col_data = next((c for c in raw.columns if _norm_pg(c) == "DATA"), None)
+    col_qtd  = next((c for c in raw.columns if "CONFERIDO" in _norm_pg(c) or "PRODUZIDO" in _norm_pg(c)), None)
+    col_prod = next((c for c in raw.columns if _norm_pg(c) == "PRODUTO"), None)
+    col_cli  = next((c for c in raw.columns if _norm_pg(c) == "CLIENTE"), None)
+
+    if not col_data or not col_qtd or not col_prod:
+        print(f"[LITEX_GERAL] Colunas não encontradas. Disponíveis: {list(raw.columns)} | "
+              f"DATA={col_data} QTD={col_qtd} PROD={col_prod} CLI={col_cli}")
+        return pd.DataFrame()
+
+    raw["_DATA"] = pd.to_datetime(raw[col_data], dayfirst=True, errors="coerce")
+    raw["_QTD"]  = pd.to_numeric(
+        raw[col_qtd].str.replace(",", ".", regex=False), errors="coerce"
+    ).fillna(0)
+    raw["_PROD"] = raw[col_prod].apply(
+        lambda x: _norm_produto_niazi(str(x))
+        if pd.notna(x) and str(x).strip() not in ("", "nan", "None")
+        else ""
+    )
+
+    # ── Filtra pelos clientes NIAZITTEX e SEVEN (combinados no dashboard) ───────
+    _CLI_KWS = ("NIAZI", "SEVEN")
+    if col_cli:
+        antes = len(raw)
+        clientes_unicos = raw[col_cli].dropna().apply(_norm_pg).unique().tolist()
+        print(f"[LITEX_GERAL] Clientes disponíveis na planilha: {clientes_unicos}")
+        raw = raw[raw[col_cli].apply(
+            lambda x: any(kw in _norm_pg(str(x)) for kw in _CLI_KWS) if pd.notna(x) else False
+        )]
+        print(f"[LITEX_GERAL] Filtro NIAZI/SEVEN: {antes} → {len(raw)} linhas")
+    else:
+        print("[LITEX_GERAL] Coluna CLIENTE não encontrada — usando todas as linhas")
+
+    # Normaliza CLIENTE → "NIAZI" / "SEVEN" / valor original
+    def _norm_cli_label(x):
+        if not pd.notna(x) or str(x).strip() in ("", "nan", "None"):
+            return ""
+        n = _norm_pg(str(x))
+        if "NIAZI" in n:
+            return "NIAZI"
+        if "SEVEN" in n:
+            return "SEVEN"
+        return n
+
+    raw["_CLI"] = raw[col_cli].apply(_norm_cli_label) if col_cli else ""
+
+    raw = raw.dropna(subset=["_DATA"])
+    raw = raw[(raw["_QTD"] > 0) & (raw["_PROD"] != "")]
+
+    if raw.empty:
+        print("[LITEX_GERAL] Nenhum registro após filtro NIAZI/SEVEN + QTD > 0")
+        return pd.DataFrame()
+
+    # Agrega por (Data, Produto, Cliente) — mantém os dois clientes separados
+    df = (
+        raw.groupby(["_DATA", "_PROD", "_CLI"], as_index=False)
+        .agg(_QTD=("_QTD", "sum"))
+    )
+
+    print(f"[LITEX_GERAL] Produtos: {sorted(df['_PROD'].unique().tolist())}")
+    print(f"[LITEX_GERAL] Clientes: {sorted(df['_CLI'].unique().tolist())}")
+
+    df["Faccao"]      = "LITEX"
+    df["Produto"]     = df["_PROD"]
+    df["Cliente"]     = df["_CLI"]
+    df["Data"]        = df["_DATA"]
+    df["Quantidade"]  = df["_QTD"]
+    df["Meta Diaria"] = pd.NA
+    df["Ano"]         = df["Data"].dt.year
+    df["Mes"]         = df["Data"].dt.month
+    df["Mes Nome"]    = df["Mes"].map(MESES_PT)
+    df["Dia"]         = df["Data"].dt.day
+    df["Semana"]      = df["Data"].dt.isocalendar().week.astype(int)
+    df["DiaSemana"]   = df["Data"].dt.day_name()
+
+    df["Meta Diaria"] = pd.to_numeric(df["Meta Diaria"], errors="coerce")
+
+    return df[[
+        "Faccao", "Cliente", "Produto", "Data", "Quantidade", "Meta Diaria",
+        "Ano", "Mes", "Mes Nome", "Dia", "Semana", "DiaSemana",
+    ]]
+
 
 # ──────────────────────────────────────────────
 # UTILITÁRIOS
@@ -441,8 +741,11 @@ def load_all_data():
     all_data: dict[str, pd.DataFrame] = {}
     xls = pd.ExcelFile(xlsx_data, engine="openpyxl")
 
+    _NIAZI_NOMES = {"niazitex", "niazittex", "niazi"}
+
     for sheet in xls.sheet_names:
-        if sheet.lower() == "diversos":
+        if sheet.lower() in {"diversos"} | _NIAZI_NOMES:
+            # Niazitex é alimentada exclusivamente pelo LITEX_GERAL (abaixo)
             continue
         try:
             raw = pd.read_excel(xlsx_data, sheet_name=sheet, header=None, engine="openpyxl")
@@ -451,6 +754,60 @@ def load_all_data():
                 all_data[sheet] = parsed
         except Exception as e:
             st.warning(f"Erro ao processar aba '{sheet}': {e}")
+
+    # ── Niazitex — exclusivamente pelo LITEX_GERAL (atualizado diariamente) ───
+    df_litex = _load_niazitex_suplementar()
+    print(f"[load_all_data] Abas xlsx carregadas: {list(all_data.keys())}")
+    print(f"[load_all_data] LITEX_GERAL registros: {len(df_litex)}")
+    if not df_litex.empty:
+        all_data[_NIAZI_SEVEN_KEY] = df_litex.sort_values("Data").reset_index(drop=True)
+        print(f"[load_all_data] {_NIAZI_SEVEN_KEY} atualizada com LITEX_GERAL. "
+              f"Datas: {df_litex['Data'].min()} → {df_litex['Data'].max()}")
+
+    # ── Injeta Meta Diária da planilha de Plano de Metas ─────────────────────
+    # Substitui os valores de "Meta Diaria" do xlsx (que podem estar desatualizados)
+    # pelos valores autoritativos do Plano de Metas.
+    metas_lkp = _load_metas_lookup_pg()
+    if metas_lkp:
+        def _inject_meta_diaria(df: pd.DataFrame) -> pd.DataFrame:
+            df = df.copy()
+            def _get_meta(row):
+                fac      = _norm_pg(str(row["Faccao"]))
+                # Usa mesma normalização do lookup: preserva nome completo
+                prod     = _norm_produto_niazi(str(row["Produto"]))
+                mes      = int(row["Mes"])
+                ano      = int(row["Ano"])
+                meta_plano = metas_lkp.get((fac, prod, mes, ano))
+                # Usa meta do plano quando disponível; caso contrário mantém a do xlsx
+                return meta_plano if meta_plano is not None else row["Meta Diaria"]
+            df["Meta Diaria"] = df.apply(_get_meta, axis=1)
+            # Força float64: apply() com mix de Python float + None gera dtype object,
+            # o que faz pandas usar operator.truediv (Python) que lança ZeroDivisionError.
+            df["Meta Diaria"] = pd.to_numeric(df["Meta Diaria"], errors="coerce")
+            return df
+
+        all_data = {k: _inject_meta_diaria(v) for k, v in all_data.items()}
+        # Diagnóstico: conta quantas linhas receberam meta do plano
+        total_rows  = sum(len(v) for v in all_data.values())
+        com_meta    = sum((v["Meta Diaria"].notna() & (v["Meta Diaria"] > 0)).sum() for v in all_data.values())
+        print(f"[load_all_data] Meta Diária injetada: {com_meta}/{total_rows} linhas com meta do plano")
+    else:
+        # Garante float64 mesmo sem injeção (previne object dtype residual do xlsx)
+        for k in all_data:
+            all_data[k]["Meta Diaria"] = pd.to_numeric(all_data[k]["Meta Diaria"], errors="coerce")
+
+    # ── Metas hardcoded para Niazittex / Seven (sobrescreve qualquer valor anterior) ──
+    if _NIAZI_SEVEN_KEY in all_data:
+        df_ns = all_data[_NIAZI_SEVEN_KEY].copy()
+        df_ns["Meta Diaria"] = df_ns["Produto"].apply(
+            lambda p: _NIAZI_SEVEN_METAS.get(_norm_produto_niazi(str(p)))
+        )
+        df_ns["Meta Diaria"] = pd.to_numeric(df_ns["Meta Diaria"], errors="coerce")
+        all_data[_NIAZI_SEVEN_KEY] = df_ns
+        com_meta_ns = int(df_ns["Meta Diaria"].notna().sum())
+        print(f"[load_all_data] Metas hardcoded {_NIAZI_SEVEN_KEY}: "
+              f"{com_meta_ns}/{len(df_ns)} linhas com meta. "
+              f"Produtos com meta: {sorted(_NIAZI_SEVEN_METAS.keys())}")
 
     return all_data
 
@@ -981,6 +1338,18 @@ def render_company(empresa, df, all_data):
                 ini, fim = min(d_ini, d_fim), max(d_ini, d_fim)
                 df_f = df_f[df_f["Data"].dt.date.between(ini, fim)]
 
+        # ── Filtro de Cliente (apenas para Niazittex / Seven) ──────────────────
+        if empresa == _NIAZI_SEVEN_KEY and "Cliente" in df_f.columns and not df_f.empty:
+            clientes_disp = sorted(df_f["Cliente"].dropna().unique().tolist())
+            clientes_disp = [c for c in clientes_disp if c]   # remove strings vazias
+            if clientes_disp:
+                sel_cli = st.multiselect(
+                    "Cliente", clientes_disp, default=clientes_disp,
+                    key="cli_niazi_filter",
+                )
+                if sel_cli:
+                    df_f = df_f[df_f["Cliente"].isin(sel_cli)]
+
         facs = sorted(df_f["Faccao"].unique()) if not df_f.empty else []
         sel_facs = st.multiselect("Facção", facs, default=facs)
         if not sel_facs:
@@ -1133,6 +1502,10 @@ def render_company(empresa, df, all_data):
             )
         tbl["Meta Dia"] = tbl.apply(_fmt_meta_dia, axis=1)
 
+        # Garante float64 antes das divisões (previne ZeroDivisionError com object dtype)
+        tbl["Meta Periodo"] = pd.to_numeric(tbl["Meta Periodo"], errors="coerce").fillna(0)
+        tbl["Produzido"]    = pd.to_numeric(tbl["Produzido"],    errors="coerce").fillna(0)
+        tbl["Dias"]         = pd.to_numeric(tbl["Dias"],         errors="coerce").fillna(0)
         tbl["Ating. %"] = np.where(
             tbl["Meta Periodo"] > 0, tbl["Produzido"] / tbl["Meta Periodo"] * 100, 0
         )
@@ -1155,7 +1528,8 @@ def render_company(empresa, df, all_data):
         tbl_fac = df_f.groupby("Faccao", as_index=False).agg(
             Produzido=("Quantidade", "sum"),
         ).merge(dias_por_faccao, on="Faccao", how="left").merge(meta_fac_df, on="Faccao", how="left")
-        tbl_fac["Meta Periodo"] = tbl_fac["Meta Periodo"].fillna(0)
+        tbl_fac["Meta Periodo"] = pd.to_numeric(tbl_fac["Meta Periodo"], errors="coerce").fillna(0)
+        tbl_fac["Produzido"]    = pd.to_numeric(tbl_fac["Produzido"],    errors="coerce").fillna(0)
         tbl_fac["Ating. %"] = np.where(
             tbl_fac["Meta Periodo"] > 0,
             tbl_fac["Produzido"] / tbl_fac["Meta Periodo"] * 100, 0

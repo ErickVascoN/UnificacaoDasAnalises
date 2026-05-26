@@ -65,6 +65,30 @@ def _modal_changelog():
 render_sidebar()
 render_hero()
 
+st.markdown(
+    """
+    <div style="
+        background: rgba(245,158,11,0.08);
+        border: 1px solid rgba(245,158,11,0.30);
+        border-left: 4px solid #F59E0B;
+        border-radius: 10px;
+        padding: 12px 18px;
+        margin: 0 0 16px 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    ">
+        <span style="font-size:1.2rem;">🚧</span>
+        <span style="color:#FCD34D; font-size:0.88rem; line-height:1.5;">
+            <b>Plataforma em fase de melhorias contínuas.</b>
+            Os dashboards estão sendo aprimorados constantemente — novos dados,
+            correções e funcionalidades são adicionados com frequência.
+        </span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 _, col_btn, _ = st.columns([3, 1, 3])
 with col_btn:
     if st.button("📋 Ver Novidades", use_container_width=True, type="secondary"):
