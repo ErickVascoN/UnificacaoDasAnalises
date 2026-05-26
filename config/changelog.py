@@ -7,6 +7,27 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "26/05/2026",
+        "tag": "novo",
+        "title": "GUIA.md — documentação completa do projeto",
+        "description": (
+            "Criado GUIA.md na raiz do projeto com explicação de toda a arquitetura, "
+            "como rodar, autenticação, dashboards, configuração de planilhas e metas, "
+            "como adicionar novos setores, como usar o changelog e dicas práticas de uso."
+        ),
+    },
+    {
+        "date": "26/05/2026",
+        "tag": "melhoria",
+        "title": "Manta Arealva — Mesa 2 removida e layout adaptativo",
+        "description": (
+            "Mesa 2 retirada do dashboard de Corte da Manta Arealva. "
+            "Cards de progresso, KPIs por estação e colunas de análise agora se centralizam "
+            "automaticamente — ao adicionar ou remover uma estação em CORTE_METAS, "
+            "todos os componentes se adaptam sem precisar alterar o layout."
+        ),
+    },
+    {
         "date": "25/05/2026",
         "tag": "melhoria",
         "title": "Limpeza de código morto e arquivos obsoletos",

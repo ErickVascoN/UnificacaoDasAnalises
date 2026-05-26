@@ -1,6 +1,9 @@
 # Credenciais — nunca commitar
 .env
 
+# Documentação local (contém senhas e IDs sensíveis)
+GUIA.md
+
 # Python
 __pycache__/
 *.py[cod]

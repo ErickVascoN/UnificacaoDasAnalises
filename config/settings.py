@@ -17,7 +17,7 @@ SENHA_ADMIN = "adm0102"
 CORTE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
 CORTE_SHEETS_GID = "1544210185"
 CORTE_CACHE_TTL = 60             # segundos
-CORTE_METAS = {"MAQUINA": 7000, "MESA 1": 4000, "MESA 2": 3000}
+CORTE_METAS = {"MAQUINA": 7000, "MESA 1": 4000}
 CORTE_META_TOTAL = sum(CORTE_METAS.values())
 
 # ── Corte Iacanga (Setor 2 — Mantas Giattex) ──────────────────────────────────

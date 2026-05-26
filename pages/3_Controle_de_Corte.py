@@ -25,7 +25,7 @@ try:
 except ImportError:
     GOOGLE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
     GOOGLE_SHEETS_GID = "1544210185"
-    METAS = {'MAQUINA': 7000, 'MESA 1': 4000, 'MESA 2': 3000}
+    METAS = {'MAQUINA': 7000, 'MESA 1': 4000}
     META_TOTAL = sum(METAS.values())
     CACHE_TTL = 60
 
@@ -1050,7 +1050,6 @@ elif screen == 'arealva_products':
             <div class="rc-tags">
                 <span class="rc-tag">Máquina</span>
                 <span class="rc-tag">Mesa 1</span>
-                <span class="rc-tag">Mesa 2</span>
                 <span class="rc-tag">OPs</span>
             </div>
         </div>
@@ -1933,9 +1932,6 @@ elif screen == 'arealva_manta':
         total_cores = df_filtrado['COR'].nunique()
         dias_trabalhados = df_filtrado['DATA'].dt.date.nunique()
         media_dia = total_pecas / max(dias_trabalhados, 1)
-        pecas_maquina = df_filtrado[df_filtrado['ESTACAO'] == 'MAQUINA']['QUANTIDADE'].sum()
-        pecas_mesa1 = df_filtrado[df_filtrado['ESTACAO'] == 'MESA 1']['QUANTIDADE'].sum()
-        pecas_mesa2 = df_filtrado[df_filtrado['ESTACAO'] == 'MESA 2']['QUANTIDADE'].sum()
         delta_media = ((media_dia / META_TOTAL) - 1) * 100 if META_TOTAL > 0 else 0
 
         cols_kpi = st.columns(4)
@@ -1944,11 +1940,13 @@ elif screen == 'arealva_manta':
         cols_kpi[2].metric("🎨 Cores Diferentes", f"{total_cores}")
         cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trabalhados}")
 
-        cols_kpi2 = st.columns(4)
+        _ICONS_EST = {"MAQUINA": "🔧", "MESA 1": "📐", "MESA 2": "📐"}
+        cols_kpi2 = st.columns(1 + len(METAS))
         cols_kpi2[0].metric("⚡ Média Peças/Dia", f"{media_dia:,.0f}".replace(",", "."), delta=f"{delta_media:+.1f}% vs Meta {META_TOTAL:,}".replace(",", "."))
-        cols_kpi2[1].metric("🔧 Máquina", f"{pecas_maquina:,.0f}".replace(",", "."))
-        cols_kpi2[2].metric("📐 Mesa 1", f"{pecas_mesa1:,.0f}".replace(",", "."))
-        cols_kpi2[3].metric("📐 Mesa 2", f"{pecas_mesa2:,.0f}".replace(",", "."))
+        for _j, (_est, _) in enumerate(METAS.items()):
+            _icon = _ICONS_EST.get(_est, "🏭")
+            _pecas = df_filtrado[df_filtrado['ESTACAO'] == _est]['QUANTIDADE'].sum()
+            cols_kpi2[_j + 1].metric(f"{_icon} {_est}", f"{_pecas:,.0f}".replace(",", "."))
 
         st.markdown("---")
         st.markdown("#### 📈 Produção Diária (Peças)")
@@ -2075,11 +2073,12 @@ elif screen == 'arealva_manta':
     # TAB 3
     with tab3:
         st.markdown("### 🏭 Produção por Estação de Corte")
-        estacoes = ['MAQUINA', 'MESA 1', 'MESA 2']
-        cores_estacao = {'MAQUINA': '#1f77b4', 'MESA 1': '#2ca02c', 'MESA 2': '#ff7f0e'}
+        estacoes = list(METAS.keys())
+        _PALETA = ['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#e377c2']
+        cores_estacao = {est: _PALETA[i % len(_PALETA)] for i, est in enumerate(estacoes)}
 
         st.markdown("#### 🎯 Progresso vs Meta Diária (Média Peças/Dia)")
-        cols_meta = st.columns(3)
+        cols_meta = st.columns(len(estacoes))
         for i, estacao in enumerate(estacoes):
             df_est_b = df_filtrado[df_filtrado['ESTACAO'] == estacao]
             dias_b = df_est_b['DATA'].dt.date.nunique()
@@ -2118,7 +2117,7 @@ elif screen == 'arealva_manta':
                 st.markdown(card_html, unsafe_allow_html=True)
 
         st.markdown("---")
-        cols_est = st.columns(3)
+        cols_est = st.columns(len(estacoes))
         for i, estacao in enumerate(estacoes):
             df_est = df_filtrado[df_filtrado['ESTACAO'] == estacao]
             with cols_est[i]:
