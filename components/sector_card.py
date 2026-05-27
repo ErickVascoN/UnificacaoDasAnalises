@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Componente de renderização dos cards de setor."""
 
 import streamlit as st
@@ -6,7 +5,6 @@ from utils.auth import verificar_acesso
 from utils.navigation import safe_switch
 
 _COLS_PER_ROW = 3
-
 
 def render_sector_cards(sectors: list[dict], tab_prefix: str) -> None:
     """
@@ -35,10 +33,10 @@ def render_sector_cards(sectors: list[dict], tab_prefix: str) -> None:
             with cols[len(row_sectors) + i]:
                 st.empty()
 
-
 def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> None:
     locked = sector["key"] == "faturados" and nivel_acesso not in ("", "admin")
     coming_soon = sector.get("coming_soon", False)
+    maintenance = sector.get("maintenance", False)
 
     tags_html = "".join(
         f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
@@ -58,10 +56,25 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
             'border-radius:6px;padding:2px 8px;font-size:.63rem;'
             'color:#A78BFA;font-weight:700;letter-spacing:.04em">🚧 EM BREVE</div>'
         )
+    elif maintenance:
+        badge_html = (
+            '<div style="position:absolute;top:10px;right:12px;'
+            'background:rgba(245,158,11,0.18);border:1px solid rgba(245,158,11,0.50);'
+            'border-radius:6px;padding:2px 8px;font-size:.63rem;'
+            'color:#F59E0B;font-weight:700;letter-spacing:.04em">🔧 MANUTENÇÃO</div>'
+        )
     else:
         badge_html = ""
 
-    dim = "opacity:.50;pointer-events:none;" if (locked or coming_soon) else ""
+    maintenance_obs_html = (
+        '<div style="margin-top:10px;background:rgba(245,158,11,0.10);'
+        'border:1px solid rgba(245,158,11,0.35);border-left:3px solid #F59E0B;'
+        'border-radius:6px;padding:6px 10px;font-size:.75rem;color:#FCD34D;line-height:1.4;">'
+        '⚠️ <b>OBS:</b> Em Manutenção — planilhas sendo padronizadas.'
+        '</div>'
+    ) if maintenance else ""
+
+    dim = "opacity:.50;pointer-events:none;" if (locked or coming_soon or maintenance) else ""
     card_style = (
         f"--card-a:{sector['color_a']};--card-b:{sector['color_b']};"
         f"--card-accent:{sector['accent']};" + dim
@@ -77,13 +90,13 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
         f'<h3 class="sector-title">{sector["title"]}</h3>'
         f'<p class="sector-desc">{sector["description"]}</p>'
         f'<div class="sector-tags">{tags_html}</div>'
+        f"{maintenance_obs_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
     )
 
     key = f"{tab_prefix}_{sector['key']}"
-    _render_card_button(sector, key, nivel_acesso, locked, coming_soon)
-
+    _render_card_button(sector, key, nivel_acesso, locked, coming_soon, maintenance)
 
 def _render_card_button(
     sector: dict,
@@ -91,8 +104,12 @@ def _render_card_button(
     nivel_acesso: str,
     locked: bool,
     coming_soon: bool,
+    maintenance: bool = False,
 ) -> None:
-    if coming_soon:
+    if maintenance:
+        st.button("🔧 Em Manutenção", key=f"open_{key}", use_container_width=True, disabled=True)
+
+    elif coming_soon:
         st.button("🚧 Em breve", key=f"open_{key}", use_container_width=True, disabled=True)
 
     elif locked:
@@ -129,7 +146,6 @@ def _render_card_button(
         ):
             st.session_state.auth_target = key
             st.rerun()
-
 
 def _render_inline_auth(sector: dict, key: str) -> None:
     senha_input = st.text_input(

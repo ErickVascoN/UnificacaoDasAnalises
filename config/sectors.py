@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Definição de todos os cards de setor exibidos na home."""
 
 SECTORS_ANALISE = [
@@ -36,6 +35,7 @@ SECTORS_ANALISE = [
         "accent":  "#FFA726",
         "tags": ["Produção", "Multi-empresa", "Metas"],
         "requires_auth": True,
+        "maintenance": True,
     },
     {
         "key": "metas_previsao",
@@ -130,23 +130,7 @@ SECTORS_CONTROLADORIA = [
         "tags": ["Programação", "Corte", "Planejado vs Realizado"],
         "requires_auth": True,
     },
-    {
-        "key": "enderecamento_corte",
-        "title": "Endereçamento de Corte",
-        "subtitle": "Operação — distribuição por estação",
-        "description": (
-            "Controle do endereçamento das ordens de corte às estações de trabalho, "
-            "com visibilidade de ocupação, balanceamento e rastreabilidade por OP."
-        ),
-        "icon": "📍",
-        "page_path": "pages/5_Enderecamento_Corte.py",
-        "color_a": "#3D1F00",
-        "color_b": "#C2600A",
-        "accent":  "#F59E0B",
-        "tags": ["Endereçamento", "Corte", "Estações"],
-        "requires_auth": True,
-        "coming_soon": True,
-    },
+    
     {
         "key": "carteira_pedidos",
         "title": "Carteira de Pedidos",

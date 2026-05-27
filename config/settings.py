@@ -1,8 +1,7 @@
-# -*- coding: utf-8 -*-
 """Configurações centralizadas de todos os dashboards."""
 from __future__ import annotations
 
-# ── Página principal ───────────────────────────────────────────────────────────
+# página principal
 PAGE_CONFIG = dict(
     page_title="Central de Análise Zanattex | Setores",
     page_icon="🏢",
@@ -10,31 +9,31 @@ PAGE_CONFIG = dict(
     initial_sidebar_state="expanded",
 )
 
-# ── Autenticação ───────────────────────────────────────────────────────────────
+# autenticação
 SENHA_USUARIO = "0102"
 SENHA_ADMIN = "adm0102"
 
-# ── Corte (Setor 1 — Arealva / Mantas) ────────────────────────────────────────
+# corte (setor 1 — arealva / mantas)
 CORTE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
 CORTE_SHEETS_GID = "1544210185"
 CORTE_CACHE_TTL = 60             # segundos
 CORTE_METAS = {"MAQUINA": 7000, "MESA 1": 4000}
 CORTE_META_TOTAL = sum(CORTE_METAS.values())
 
-# ── Corte Iacanga (Setor 2 — Mantas Giattex) ──────────────────────────────────
+# corte iacanga (setor 2 — mantas giattex)
 IACANGA_SHEETS_ID = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
 IACANGA_SHEETS_GID = "1362699684"
 
-# ── Faturamento ────────────────────────────────────────────────────────────────
+# faturamento
 FATURAMENTO_SHEETS_ID = "1tpQmqkinlA4AscPI8kIkmm5DGD9Jw_wHb-5sy5itSGg"
 FATURAMENTO_SHEETS_GID = "1255712550"
 FATURAMENTO_CACHE_TTL = 300      # segundos
 
-# ── Produção ───────────────────────────────────────────────────────────────────
+# produção
 PRODUCAO_SHEETS_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 PRODUCAO_CACHE_TTL = 120         # segundos
 
-# ── Plano de Metas ─────────────────────────────────────────────────────────────
+# plano de metas
 METAS_SHEET_ID = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
 METAS_GID      = "1593003426"
 
@@ -97,7 +96,7 @@ CENTRO_CUSTO_PARA_LANCAMENTO = {
 
 METAS_CACHE_TTL = 300  # segundos
 
-# ── Equivalência de Nomes de Prestadores ──────────────────────────────────────
+# equivalência de nomes de prestadores
 # Mapeia variante (uppercase, sem acento) → nome canônico nas planilhas de produção.
 # Entradas manuais têm PRIORIDADE sobre a detecção automática por similaridade ≥90%.
 # Chave e valor devem estar normalizados: uppercase, sem acento, sem espaços extras.
@@ -108,7 +107,7 @@ NOME_EQUIVALENCIAS: dict[str, str] = {
     # Adicione aqui aliases permanentes conforme forem identificados:
 }
 
-# ── Eficiência de Corte ────────────────────────────────────────────────────────
+# eficiência de corte
 # Manta Arealva
 EFICIENCIA_MANTA_AREALVA_ID = "17ido41trF22ks7HgoJz9XHcJU0oA4SYK"
 EFICIENCIA_MANTA_AREALVA_GID = "874592526"
