@@ -18,8 +18,8 @@ import numpy as np
 EFICIENCIA_MANTA_AREALVA_ID  = "17ido41trF22ks7HgoJz9XHcJU0oA4SYK"
 EFICIENCIA_MANTA_AREALVA_GID = "874592526"
 
-EFICIENCIA_LENCOL_AREALVA_ID  = "1Wd0C-Sb23mQWAUX01UfpcqVMhIVRVe6H"
-EFICIENCIA_LENCOL_AREALVA_GID = "2055485890"
+EFICIENCIA_LENCOL_AREALVA_ID  = "18i48EIx-c7V5kyFt2Zxl6NmXwgvq9NSR"
+EFICIENCIA_LENCOL_AREALVA_GID = "1424027835"
 
 EFICIENCIA_GIATTEX_ID  = "1XaBhH1vCqI-xKXO3-B5kI-_mCNYk_Sp5"
 EFICIENCIA_GIATTEX_GID = "0"
@@ -174,10 +174,7 @@ def carregar_manta_arealva() -> pd.DataFrame:
 @st.cache_data(ttl=EFICIENCIA_CACHE_TTL, show_spinner=False)
 def carregar_lencol_arealva() -> pd.DataFrame:
     texto = _fetch(EFICIENCIA_LENCOL_AREALVA_ID, EFICIENCIA_LENCOL_AREALVA_GID)
-    skip  = _detect_header(texto, [
-        "O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE",
-        "METROS RECEBIDOS", "METROS CORTADOS",           # nomes da planilha nova
-    ])
+    skip  = _detect_header(texto, ["O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE"])
     df    = pd.read_csv(io.StringIO(texto), skiprows=skip, header=0, dtype=str)
     df.columns = df.columns.str.strip()
     df = df.drop(columns=[c for c in df.columns if "Unnamed" in c or not c.strip()], errors="ignore")
@@ -191,18 +188,14 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     tam_col      = _col(df, ["TAMANHO"])
     stat_col     = _col(df, ["STATUS"])
     prog_col     = _col(df, ["QUANTIDADE PROGRAMADA(PÇS)", "QUANTIDADE PROGRAMADA (PÇS)",
-                              "QNT PROG", "PROGRAMADO", "QTDE PREV",
-                              "QUANTID./ROLOS", "QUANTID /ROLOS", "QUANTIDADE/ROLOS"])  # planilha nova
+                              "QNT PROG", "PROGRAMADO", "QTDE PREV"])
     cort_col     = _col(df, ["QUANTIDADE CORTADA(PÇS)", "QUANTIDADE CORTADA (PÇS)",
                               "QNT CORTADA", "CORTADO"])
-    mts_esp_col  = _col(df, ["METROS ESPERADOS(MTS)", "METROS ESPERADOS (MTS)", "MTS ESPERADOS",
-                              "METROS RECEBIDOS"])                                       # planilha nova
-    mts_cort_col = _col(df, ["METROS CORTADOS(MTS)", "METROS CORTADOS (MTS)", "MTS CORTADOS",
-                              "METROS CORTADOS"])                                        # planilha nova
-    dif_col      = _col(df, ["DIFERENÇA (MTS)", "DIFERENCA (MTS)", "DIFERENÇA", "DIFERENCA",
-                              "DIVERGENCIA MTS", "DIVERGÊNCIA MTS"])                    # planilha nova
-    perda_col    = _col(df, ["PERDA (%)", "PERDA", "PERDA %"])                          # planilha nova
-    ret_col      = _col(df, ["RETALHO (KG)", "RETALHO"])
+    mts_esp_col  = _col(df, ["METROS ESPERADOS(MTS)", "METROS ESPERADOS (MTS)", "MTS ESPERADOS"])
+    mts_cort_col = _col(df, ["METROS CORTADOS(MTS)", "METROS CORTADOS (MTS)", "MTS CORTADOS"])
+    dif_col      = _col(df, ["DIFERENÇA (MTS)", "DIFERENCA (MTS)", "DIFERENÇA", "DIFERENCA"])
+    perda_col    = _col(df, ["PERDA (%)", "PERDA"])
+    ret_col      = _col(df, ["RETALHO (KG)", "RETALHO (KG)", "RETALHO"])
     aprov_col    = _col(df, ["APROVEITAMENTO", "APROV"])
 
     col_map = {
@@ -258,12 +251,12 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     df = df[~df["OP"].astype(str).str.upper().str.strip().isin(invalidos)]
 
     # Remove linhas sem nenhum dado relevante (linhas vazias do fim da planilha)
-    # Aceita linha com qualquer campo numérico preenchido (planilha nova pode não ter QTD_CORT)
-    cols_numericas = ["QTD_PROG", "QTD_CORT", "MTS_ESP", "MTS_CORT", "RETALHO_KG"]
-    tem_dado = pd.Series(False, index=df.index)
-    for c in cols_numericas:
-        if c in df.columns:
-            tem_dado |= (df[c] > 0)
+    tem_dado = (
+        (df["QTD_PROG"] > 0) |
+        (df["QTD_CORT"] > 0) |
+        (df["MTS_ESP"]  > 0) |
+        (df["MTS_CORT"] > 0)
+    )
     df = df[tem_dado].reset_index(drop=True)
     return df
 
@@ -499,42 +492,16 @@ def _aba_manta():
 # ABA 2 — LENÇOL AREALVA
 
 def _aba_lencol():
-    # --- diagnóstico: mostra colunas brutas antes de processar ---
-    try:
-        texto_raw = _fetch(EFICIENCIA_LENCOL_AREALVA_ID, EFICIENCIA_LENCOL_AREALVA_GID)
-        skip_raw  = _detect_header(texto_raw, ["O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE"])
-        df_diag   = pd.read_csv(io.StringIO(texto_raw), skiprows=skip_raw, header=0,
-                                dtype=str, nrows=3)
-        df_diag.columns = df_diag.columns.str.strip()
-        colunas_encontradas = [c for c in df_diag.columns if "Unnamed" not in c and c.strip()]
-    except Exception as e_diag:
-        colunas_encontradas = []
-        st.error(f"❌ Não foi possível acessar a planilha de Eficiência de Lençol: {e_diag}")
-        st.caption(f"ID: `{EFICIENCIA_LENCOL_AREALVA_ID}` · GID: `{EFICIENCIA_LENCOL_AREALVA_GID}`")
-        return
-
     try:
         with st.spinner("Carregando Lençol Arealva..."):
             df_raw = carregar_lencol_arealva()
     except Exception as e:
         st.error(f"❌ Erro ao carregar Lençol: {e}")
         st.caption("Verifique se a planilha está acessível e com as colunas esperadas.")
-        if colunas_encontradas:
-            with st.expander("🔍 Colunas encontradas na planilha", expanded=True):
-                st.code(", ".join(colunas_encontradas))
         return
 
     if df_raw.empty:
         st.warning("Nenhum dado disponível para Lençol.")
-        with st.expander("🔍 Diagnóstico — colunas encontradas na planilha", expanded=True):
-            st.markdown("**Colunas lidas da planilha:**")
-            st.code(", ".join(colunas_encontradas) if colunas_encontradas else "Nenhuma coluna detectada")
-            st.markdown(
-                "**Colunas esperadas pelo parser:**  \n"
-                "`O.P. / OP / NUM OP` · `CLIENTE` · `PRODUTO` · `TECIDO` · `TIPO` · `TAMANHO` · `STATUS`  \n"
-                "`QUANTIDADE PROGRAMADA(PÇS)` · `QUANTIDADE CORTADA(PÇS)`  \n"
-                "`METROS ESPERADOS(MTS)` · `METROS CORTADOS(MTS)` · `DIFERENÇA (MTS)` · `PERDA (%)` · `RETALHO (KG)`"
-            )
         return
 
     # filtros
