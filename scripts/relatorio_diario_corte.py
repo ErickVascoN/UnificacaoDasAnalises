@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""Relatório diário de corte — busca dados do Google Sheets e envia por e-mail."""
+"""Relatório diário de corte - busca dados do Google Sheets e envia por email."""
 
 import io
 import os
@@ -34,27 +33,26 @@ logging.basicConfig(
     ]
 )
 
-# ── Configuração ──────────────────────────────────────────────────────────────
+# configuração
 EMAIL_REMETENTE     = os.getenv("EMAIL_REMETENTE", "")
 EMAIL_SENHA_APP     = os.getenv("EMAIL_SENHA_APP", "")
 _dest_raw           = os.getenv("EMAIL_DESTINATARIOS", os.getenv("EMAIL_DESTINATARIO", "erickviniciusvas@gmail.com"))
 EMAIL_DESTINATARIOS = [e.strip() for e in _dest_raw.split(",") if e.strip()]
 
-SHEET_MANTA_AREALVA_ID  = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
+SHEET_MANTA_AREALVA_ID  = "1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB"
 SHEET_MANTA_AREALVA_GID = "1544210185"
 
-SHEET_MANTA_IACANGA_ID  = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
-SHEET_MANTA_IACANGA_GID = "1362699684"
+SHEET_MANTA_IACANGA_ID  = "1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU"
+SHEET_MANTA_IACANGA_GID = "0"
 
-SHEET_LENCOL_ID  = "1BAbgM0zLWBHPn06LfzEvH4aPH84eZvAV"
+SHEET_LENCOL_ID  = "1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa"
 SHEET_LENCOL_GID = "1396046910"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-_raw: dict = {}  # cache de dados brutos — evita downloads repetidos por execução
+_raw: dict = {}  # cache pra não baixar os dados repetidas vezes
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# helpers para processar dados
 def _find_col(df: pd.DataFrame, *substrings: str) -> str | None:
     """Encontra coluna cujo nome ASCII contém todos os substrings (ignora acentos e encoding)."""
     for col in df.columns:
@@ -62,7 +60,6 @@ def _find_col(df: pd.DataFrame, *substrings: str) -> str | None:
         if all(s.upper() in col_ascii for s in substrings):
             return col
     return None
-
 
 def _find_col_exact(df: pd.DataFrame, name: str) -> str | None:
     """Encontra coluna cujo nome ASCII é exatamente `name` (ignora acentos e encoding)."""
@@ -72,7 +69,6 @@ def _find_col_exact(df: pd.DataFrame, name: str) -> str | None:
             return col
     return None
 
-
 def _baixar_csv(sheet_id: str, gid: str | None = None) -> pd.DataFrame | None:
     urls = [f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"]
     if gid:
@@ -80,13 +76,12 @@ def _baixar_csv(sheet_id: str, gid: str | None = None) -> pd.DataFrame | None:
     for url in urls:
         try:
             r = requests.get(url, timeout=30, headers=HEADERS)
-            r.encoding = "utf-8"  # Google Sheets exporta em UTF-8
+            r.encoding = "utf-8"  # google sheets exporta UTF-8
             if r.status_code == 200 and len(r.text) > 100:
                 return pd.read_csv(io.StringIO(r.text), header=0, dtype=str)
         except Exception as e:
             logging.warning(f"Falha {url[:60]}: {e}")
     return None
-
 
 def _parse_datas(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
     df[col] = pd.to_datetime(
@@ -95,17 +90,14 @@ def _parse_datas(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
     )
     return df.dropna(subset=[col])
 
-
 def _dia_ref() -> date:
     return date.today() - timedelta(days=1)
 
-
-# ── Carga de dados ────────────────────────────────────────────────────────────
+# carregamento de dados
 def _str_col(df: pd.DataFrame, col: str | None, fillna: str = "") -> pd.Series:
     if col and col in df.columns:
         return df[col].fillna(fillna).astype(str).str.strip()
     return pd.Series(fillna, index=df.index)
-
 
 def _raw_manta_arealva() -> pd.DataFrame:
     if "are" in _raw:
@@ -136,20 +128,17 @@ def _raw_manta_arealva() -> pd.DataFrame:
     _raw["are"] = df
     return _raw["are"]
 
-
 def carregar_manta_arealva(dia: date) -> pd.DataFrame:
     df = _raw_manta_arealva()
     if df.empty:
         return df
     return df[df["DATA"].dt.date == dia].copy()
 
-
 def carregar_manta_arealva_range(d_ini: date, d_fim: date) -> pd.DataFrame:
     df = _raw_manta_arealva()
     if df.empty:
         return df
     return df[(df["DATA"].dt.date >= d_ini) & (df["DATA"].dt.date <= d_fim)].copy()
-
 
 def _raw_manta_iacanga() -> pd.DataFrame:
     if "iac" in _raw:
@@ -182,20 +171,17 @@ def _raw_manta_iacanga() -> pd.DataFrame:
     _raw["iac"] = df
     return _raw["iac"]
 
-
 def carregar_manta_iacanga(dia: date) -> pd.DataFrame:
     df = _raw_manta_iacanga()
     if df.empty:
         return df
     return df[df["DATA"].dt.date == dia].copy()
 
-
 def carregar_manta_iacanga_range(d_ini: date, d_fim: date) -> pd.DataFrame:
     df = _raw_manta_iacanga()
     if df.empty:
         return df
     return df[(df["DATA"].dt.date >= d_ini) & (df["DATA"].dt.date <= d_fim)].copy()
-
 
 def _raw_lencol_arealva() -> pd.DataFrame:
     if "len" in _raw:
@@ -256,13 +242,11 @@ def _raw_lencol_arealva() -> pd.DataFrame:
     _raw["len"] = df
     return _raw["len"]
 
-
 def carregar_lencol_arealva(dia: date) -> pd.DataFrame:
     df = _raw_lencol_arealva()
     if df.empty:
         return df
     return df[df["DATA"].dt.date == dia].copy()
-
 
 def carregar_lencol_arealva_range(d_ini: date, d_fim: date) -> pd.DataFrame:
     df = _raw_lencol_arealva()
@@ -270,13 +254,11 @@ def carregar_lencol_arealva_range(d_ini: date, d_fim: date) -> pd.DataFrame:
         return df
     return df[(df["DATA"].dt.date >= d_ini) & (df["DATA"].dt.date <= d_fim)].copy()
 
-
-# ── Geração de HTML ───────────────────────────────────────────────────────────
+# geração de HTML
 def _v(val: str) -> str:
-    """Retorna valor limpo ou traço se vazio/nan."""
+    # retorna valor limpo ou traço se vazio
     s = str(val).strip()
     return s if s and s.lower() not in ("nan", "none", "") else "—"
-
 
 def _bloco_manta_arealva(df: pd.DataFrame) -> str:
     titulo, emoji = "MANTA AREALVA", "🏭"
@@ -316,7 +298,6 @@ def _bloco_manta_arealva(df: pd.DataFrame) -> str:
         f'<div class="total-setor">TOTAL {titulo}: {total_setor:,} peças</div></div>'
     )
 
-
 def _bloco_manta_iacanga(df: pd.DataFrame) -> str:
     titulo, emoji = "MANTA IACANGA", "✂️"
     if df.empty:
@@ -354,7 +335,6 @@ def _bloco_manta_iacanga(df: pd.DataFrame) -> str:
         f'{blocos}'
         f'<div class="total-setor">TOTAL {titulo}: {total_setor:,} peças</div></div>'
     )
-
 
 def _bloco_lencol(df: pd.DataFrame) -> str:
     titulo, emoji = "LENÇOL AREALVA", "✂️"
@@ -406,7 +386,6 @@ def _bloco_lencol(df: pd.DataFrame) -> str:
         f'{blocos}'
         f'<div class="total-setor">TOTAL {titulo}: {total_setor:,} peças · {tv_fmt}</div></div>'
     )
-
 
 def gerar_html(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame, df_lencol: pd.DataFrame) -> str:
     total_manta_are = int(df_manta_are["QUANTIDADE"].sum()) if not df_manta_are.empty else 0
@@ -564,8 +543,7 @@ def gerar_html(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame
 </body>
 </html>"""
 
-
-# ── Geração de PDF ───────────────────────────────────────────────────────────
+# geração de PDF
 def _bloco_pdf_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE") -> str:
     if df.empty:
         return (
@@ -642,7 +620,6 @@ def _bloco_pdf_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE")
     )
     return blocos
 
-
 def _bloco_pdf_lencol(df: pd.DataFrame) -> str:
     titulo = "LENCOL AREALVA"
     if df.empty:
@@ -710,7 +687,6 @@ def _bloco_pdf_lencol(df: pd.DataFrame) -> str:
         f'TOTAL {titulo}: {total_setor:,} pecas &nbsp;|&nbsp; {tv_fmt}</p>'
     )
     return blocos
-
 
 def gerar_pdf(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame, df_lencol: pd.DataFrame) -> bytes:
     from xhtml2pdf import pisa
@@ -831,24 +807,19 @@ def gerar_pdf(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame,
     pisa.CreatePDF(html.encode("utf-8"), dest=buf, encoding="utf-8")
     return buf.getvalue()
 
-
-# ── PDF Consolidado (dia + mês atual + 2 meses anteriores) ───────────────────
+# pdf consolidado com dia + mês + últimos 2 meses
 _MESES_PT = ["Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
              "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-
 
 def _nome_mes(d: date) -> str:
     return f"{_MESES_PT[d.month - 1]}/{d.year}"
 
-
 def _inicio_mes(d: date) -> date:
     return date(d.year, d.month, 1)
-
 
 def _fim_mes(d: date) -> date:
     _, ultimo = monthrange(d.year, d.month)
     return date(d.year, d.month, ultimo)
-
 
 def _mes_ant(d: date, n: int) -> date:
     m, y = d.month - n, d.year
@@ -856,7 +827,6 @@ def _mes_ant(d: date, n: int) -> date:
         m += 12
         y -= 1
     return date(y, m, 1)
-
 
 def _bloco_resumo_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE") -> str:
     th = "background:#f5f5f5;border:1px solid #ddd;padding:2px 5px;font-size:8px;text-align:left;"
@@ -905,7 +875,6 @@ def _bloco_resumo_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDAD
         f'<thead><tr><th style="{th}">OP</th><th style="{th}">Produto</th><th style="{th}">Qtd</th></tr></thead>'
         f'<tbody>{linhas_op}</tbody></table>'
     )
-
 
 def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
     th = "background:#f5f5f5;border:1px solid #ddd;padding:2px 5px;font-size:8px;text-align:left;"
@@ -966,7 +935,6 @@ def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
         f'<thead><tr><th style="{th}">OP</th><th style="{th}">Material</th><th style="{th}">Categoria</th><th style="{th}">Qtd</th><th style="{th}">Total R$</th></tr></thead>'
         f'<tbody>{linhas_op}</tbody></table>'
     )
-
 
 def gerar_pdf_consolidado(dia: date) -> bytes:
     from xhtml2pdf import pisa
@@ -1107,8 +1075,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
     pisa.CreatePDF(html.encode("utf-8"), dest=buf, encoding="utf-8")
     return buf.getvalue()
 
-
-# ── Envio de e-mail ───────────────────────────────────────────────────────────
+# envio de email
 def _corpo_resumo(dia: date, totais: dict[str, int], com_consolidado: bool = False) -> str:
     data_fmt = dia.strftime("%d/%m/%Y")
     total_geral = sum(totais.values())
@@ -1138,7 +1105,6 @@ def _corpo_resumo(dia: date, totais: dict[str, int], com_consolidado: bool = Fal
   <p style="color:#888;font-size:11px;margin:0;">{anexos_txt}</p>
 </div>
 """.strip()
-
 
 def enviar_email(pdf_bytes: bytes, dia: date, totais: dict[str, int], pdf_consolidado: bytes | None = None) -> None:
     if not EMAIL_REMETENTE or not EMAIL_SENHA_APP:
@@ -1179,8 +1145,7 @@ def enviar_email(pdf_bytes: bytes, dia: date, totais: dict[str, int], pdf_consol
     extras = f" + {nome_cons}" if pdf_consolidado else ""
     logging.info(f"E-mail enviado para {EMAIL_DESTINATARIOS} ({nome_diario}{extras})")
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
+# main
 if __name__ == "__main__":
     dia = _dia_ref()  # dia anterior por padrão
     

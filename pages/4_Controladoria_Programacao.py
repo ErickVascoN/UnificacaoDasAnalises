@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Controle de Programação de Corte
 Cruza a programação semanal com os dados reais de corte (Arealva Manta + Iacanga).
@@ -24,14 +23,14 @@ if _PROJECT_ROOT not in sys.path:
 from utils.auth import init_session_state
 from utils.navigation import safe_switch
 
-# ── Constantes ─────────────────────────────────────────────────────────────────
+# constantes
 PROG_ID     = "1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA"
 PROG_GID    = "708887209"
-MANTA_ID    = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
+MANTA_ID    = "1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB"
 MANTA_GID   = "1544210185"
-IACANGA_ID  = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
-IACANGA_GID = "1362699684"
-LENCOL_ID   = "1BAbgM0zLWBHPn06LfzEvH4aPH84eZvAV"
+IACANGA_ID  = "1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU"
+IACANGA_GID = "0"
+LENCOL_ID   = "1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa"
 LENCOL_GID  = "1396046910"
 CACHE_TTL   = 300
 
@@ -40,7 +39,7 @@ _COR_PROD   = {"Liberado": "#22c55e", "Não Iniciado": "#6b7280"}
 _EMOJI_STATUS = {"Concluído": "✅", "Parcial": "🟡", "Pendente": "🔴"}
 _EMOJI_PROD   = {"Liberado": "🟢", "Não Iniciado": "⚫"}
 
-# ── Page config ────────────────────────────────────────────────────────────────
+# page config
 st.set_page_config(
     page_title="Controle de Programação",
     page_icon="📊",
@@ -48,7 +47,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ────────────────────────────────────────────────────────────────────────
+# css
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -116,7 +115,7 @@ div[data-testid="stMetric"]{
 </style>
 """, unsafe_allow_html=True)
 
-# ── Auth ───────────────────────────────────────────────────────────────────────
+# auth
 init_session_state()
 if not st.session_state.get("auth_nivel"):
     st.warning("🔒 Acesso restrito. Faça login na página inicial.")
@@ -124,7 +123,7 @@ if not st.session_state.get("auth_nivel"):
         safe_switch("app.py")
     st.stop()
 
-# ── Sidebar nav ────────────────────────────────────────────────────────────────
+# sidebar nav
 with st.sidebar:
     st.markdown("### 📊 Controle de Programação")
     st.markdown("---")
@@ -133,8 +132,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("🔍 Filtros")
 
-
-# ── Data loading ───────────────────────────────────────────────────────────────
+# data loading
 def _fetch(sheet_id: str, gid: str) -> str | None:
     _HEADERS = {"User-Agent": "Mozilla/5.0"}
     urls = [
@@ -152,7 +150,6 @@ def _fetch(sheet_id: str, gid: str) -> str | None:
         except (HTTPError, URLError, TimeoutError) as e:
             logging.debug(f"fetch {url[:60]}: {e}")
     return None
-
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_programacao() -> pd.DataFrame:
@@ -205,7 +202,6 @@ def load_programacao() -> pd.DataFrame:
         ~df["PED. CLIENTE"].str.upper().isin(invalidos)
     ].reset_index(drop=True)
     return df
-
 
 def _parse_data_corte(s: str) -> "pd.Timestamp":
     """
@@ -260,7 +256,6 @@ def _parse_data_corte(s: str) -> "pd.Timestamp":
                 pass
 
     return pd.to_datetime(s, errors="coerce")
-
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_cortes() -> pd.DataFrame:
@@ -338,8 +333,7 @@ def load_cortes() -> pd.DataFrame:
     out = out[~out["OP"].str.upper().isin(invalidos)]
     return out
 
-
-# ── Lógica de cruzamento ───────────────────────────────────────────────────────
+# lógica de cruzamento
 def _status_corte(cortada: int, prog_total: int) -> str:
     if cortada <= 0:
         return "Pendente"
@@ -347,7 +341,6 @@ def _status_corte(cortada: int, prog_total: int) -> str:
     if eficiencia >= 0.96:
         return "Concluído"
     return "Parcial"
-
 
 def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     """
@@ -370,7 +363,7 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     df = df_prog.copy()
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
 
-    # ── Sem dados de corte ────────────────────────────────────────────────────────
+    # sem dados de corte
     if df_cortes.empty:
         df["QNT_CORTADA"]  = 0
         df["STATUS_PROD"]  = "Não Iniciado"
@@ -379,7 +372,7 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
         df["EFICIÊNCIA_%"] = 0.0
         return df
 
-    # ── Índice (OP, SEMANA) → quantidade cortada ──────────────────────────────────
+    # índice (op, semana) → quantidade cortada
     _tem_semana = (
         "SEMANA" in df_cortes.columns
         and df_cortes["SEMANA"].notna().any()
@@ -398,7 +391,7 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     # Índice OP → quantidade (fallback sem semana)
     _op_map: dict = df_cortes.groupby("OP")["QUANTIDADE"].sum().to_dict()
 
-    # ── Extrair semana ISO do campo SEMANA da programação ("SEMANA 22" → 22) ──────
+    # extrair semana iso do campo semana da programação ("semana 22" → 22)
     def _parse_sem(s) -> int | None:
         m = _re.search(r"\d+", str(s))
         return int(m.group()) if m else None
@@ -463,7 +456,6 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     ).fillna(0).round(1)
     return df
 
-
 def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
     def join_unique(s):
         vals = sorted({str(v) for v in s if str(v) not in ("", "nan", "NAN", "None")})
@@ -482,8 +474,7 @@ def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
         EFICIÊNCIA_PRC=("EFICIÊNCIA_%",    "first"),
     )
 
-
-# ── Carregamento ──────────────────────────────────────────────────────────────
+# carregamento
 _erro_prog   = None
 _erro_cortes = None
 
@@ -513,8 +504,7 @@ if df_prog_raw.empty:
 
 df_enriched = enriquecer(df_prog_raw, df_cortes_raw)
 
-
-# ── Sidebar — filtros ──────────────────────────────────────────────────────────
+# sidebar — filtros
 with st.sidebar:
     semanas_disp = sorted(df_enriched["SEMANA"].dropna().unique())
     semanas_sel  = st.multiselect("📅 Semana", options=semanas_disp, default=[], key="prog_semana")
@@ -555,8 +545,7 @@ with st.sidebar:
             st.success(f"**{resultado['QUANTIDADE'].apply(pd.to_numeric, errors='coerce').fillna(0).sum():,.0f}** peças cortadas".replace(",", "."))
             st.dataframe(resultado[["FONTE", "OP", "QUANTIDADE"]], use_container_width=True, hide_index=True)
 
-
-# ── Aplicar filtros ────────────────────────────────────────────────────────────
+# aplicar filtros
 df_filtered = df_enriched.copy()
 if semanas_sel:
     df_filtered = df_filtered[df_filtered["SEMANA"].isin(semanas_sel)]
@@ -567,8 +556,7 @@ if locais_sel:
 if status_sel:
     df_filtered = df_filtered[df_filtered["STATUS_CORTE"].isin(status_sel)]
 
-
-# ── Header ─────────────────────────────────────────────────────────────────────
+# header
 st.markdown("""
 <div class="breadcrumb">
   <span class="bc-link">Controladoria</span>
@@ -583,8 +571,7 @@ st.markdown("""
 <div class="page-divider"></div>
 """, unsafe_allow_html=True)
 
-
-# ── KPIs ───────────────────────────────────────────────────────────────────────
+# kpis
 df_agg = agregar_por_op(df_filtered)
 
 total_ops      = len(df_agg)
@@ -618,8 +605,7 @@ _kpi(k6, "Peças Cortadas",   f"{total_cort_pcs:,}".replace(",", "."), "total re
 
 st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
 
-
-# ── Diagnóstico de fontes ──────────────────────────────────────────────────────
+# diagnóstico de fontes
 with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expanded=False):
     st.markdown("##### Status de carregamento por planilha")
 
@@ -728,8 +714,7 @@ with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expan
 
 st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
 
-
-# ── Gráficos ───────────────────────────────────────────────────────────────────
+# gráficos
 _DARK = dict(
     plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
     font=dict(color="#CBD5E0", size=12),
@@ -794,11 +779,10 @@ with col_bar:
 
 st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
-
-# ── Tabelas ────────────────────────────────────────────────────────────────────
+# tabelas
 tab_resumo, tab_detalhe = st.tabs(["📊 Resumo por Ordem (OP)", "📋 Detalhe Completo"])
 
-# ── Tab 1: Resumo por OP ──────────────────────────────────────────────────────
+# tab 1: resumo por op
 with tab_resumo:
     if df_agg.empty:
         st.info("Nenhuma ordem encontrada com os filtros aplicados.")
@@ -830,8 +814,7 @@ with tab_resumo:
         )
         st.caption(f"Total: {len(df_show)} ordens | {total_prog_pcs:,} peças programadas | {total_cort_pcs:,} cortadas".replace(",", "."))
 
-
-# ── Tab 2: Detalhe Completo ───────────────────────────────────────────────────
+# tab 2: detalhe completo
 with tab_detalhe:
     if df_filtered.empty:
         st.info("Nenhum registro encontrado com os filtros aplicados.")
