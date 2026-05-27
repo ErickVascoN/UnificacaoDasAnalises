@@ -8,6 +8,23 @@ CHANGELOG = [
     {
         "date": "27/05/2026",
         "tag": "correção",
+        "title": "Relatório diário de corte — peças zeradas no e-mail",
+        "description": (
+            "O script relatorio_diario_corte.py enviava relatório com 0 peças em todos os setores "
+            "por dois motivos: (1) _parse_datas() usava format='mixed' do pandas 2.0+, mas "
+            "requirements_relatorio.txt não tinha versão mínima — se o ambiente instalasse pandas "
+            "1.x, todas as datas viravam NaT e dropna() esvaziava o DataFrame silenciosamente. "
+            "(2) df.columns.str.strip() preservava o case original dos cabeçalhos (ex: 'Data'), "
+            "mas o acesso posterior era df['DATA'] — KeyError em qualquer planilha com headers "
+            "não totalmente maiúsculos. Correções: pandas>=2.0.0 pinado em requirements_relatorio.txt; "
+            "_parse_datas() reescrito com busca case-insensitive da coluna e try/except para "
+            "fallback compatível com pandas < 2.0; df.columns.str.upper() adicionado nos loaders "
+            "de Manta Arealva e Manta Iacanga."
+        ),
+    },
+    {
+        "date": "27/05/2026",
+        "tag": "correção",
         "title": "Correção sistêmica de parsing de datas (DD/MM vs MM/DD)",
         "description": (
             "Datas exportadas pelo Google Sheets em formato M/D/YYYY (locale US) eram "

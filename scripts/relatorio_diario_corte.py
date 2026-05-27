@@ -84,11 +84,27 @@ def _baixar_csv(sheet_id: str, gid: str | None = None) -> pd.DataFrame | None:
     return None
 
 def _parse_datas(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
-    df[col] = pd.to_datetime(
-        df[col].astype(str).str.split(" ").str[0].str.strip(),
-        format="mixed", dayfirst=True, errors="coerce"
-    )
-    return df.dropna(subset=[col])
+    # Localiza coluna de data de forma case-insensitive (ex.: "Data" → "DATA")
+    col_real = col
+    for c in df.columns:
+        if c.strip().upper() == col.upper():
+            col_real = c
+            break
+    if col_real not in df.columns:
+        logging.warning(f"Coluna '{col}' não encontrada. Colunas: {list(df.columns)}")
+        return pd.DataFrame()
+
+    raw = df[col_real].astype(str).str.split(" ").str[0].str.strip()
+    try:
+        # format="mixed" requer pandas >= 2.0
+        parsed = pd.to_datetime(raw, format="mixed", dayfirst=True, errors="coerce")
+    except TypeError:
+        # pandas < 2.0: fallback sem format="mixed"
+        parsed = pd.to_datetime(raw, dayfirst=True, errors="coerce")
+
+    df = df.copy()
+    df["DATA"] = parsed
+    return df.dropna(subset=["DATA"])
 
 def _dia_ref() -> date:
     return date.today() - timedelta(days=1)
@@ -107,7 +123,7 @@ def _raw_manta_arealva() -> pd.DataFrame:
         logging.error("Não foi possível baixar Manta Arealva.")
         _raw["are"] = pd.DataFrame()
         return _raw["are"]
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip().str.upper()
     df = _parse_datas(df)
     if not df.empty:
         quant_col   = _find_col(df, "QUANTIDADE")
@@ -148,7 +164,7 @@ def _raw_manta_iacanga() -> pd.DataFrame:
         logging.error("Não foi possível baixar Manta Iacanga.")
         _raw["iac"] = pd.DataFrame()
         return _raw["iac"]
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip().str.upper()
     df = _parse_datas(df)
     if not df.empty:
         quant_col   = _find_col(df, "QUANTIDADE")
