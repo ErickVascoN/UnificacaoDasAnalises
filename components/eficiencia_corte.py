@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Componente de Eficiência de Corte — Dashboard Unificado
 Abas: Manta Arealva (Zanattex), Lençol, GIattex
@@ -14,22 +13,20 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 import numpy as np
 
-
-# =====================================================================
 # CONFIG
-# =====================================================================
+
 EFICIENCIA_MANTA_AREALVA_ID  = "17ido41trF22ks7HgoJz9XHcJU0oA4SYK"
 EFICIENCIA_MANTA_AREALVA_GID = "874592526"
 
-EFICIENCIA_LENCOL_AREALVA_ID  = "1PBb_XS9dsiRMBQt6cnILzUnANTaN9stQ"
-EFICIENCIA_LENCOL_AREALVA_GID = "1424027835"
+EFICIENCIA_LENCOL_AREALVA_ID  = "1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa"
+EFICIENCIA_LENCOL_AREALVA_GID = "1396046910"
 
 EFICIENCIA_GIATTEX_ID  = "1XaBhH1vCqI-xKXO3-B5kI-_mCNYk_Sp5"
 EFICIENCIA_GIATTEX_GID = "0"
 
 EFICIENCIA_CACHE_TTL = 300
 
-# ── Tema ──────────────────────────────────────────────────────────────
+# tema
 _ACCENT   = "#6366F1"
 _GREEN    = "#22C55E"
 _YELLOW   = "#F59E0B"
@@ -37,10 +34,8 @@ _RED      = "#EF4444"
 _PLOT_BG  = "rgba(0,0,0,0)"
 _FONT     = dict(color="#E2E8F0", size=11)
 
-
-# =====================================================================
 # HELPERS
-# =====================================================================
+
 def _fetch(sheet_id: str, gid: str) -> str:
     headers = {"User-Agent": "Mozilla/5.0"}
     urls = [
@@ -58,7 +53,6 @@ def _fetch(sheet_id: str, gid: str) -> str:
             logging.debug(f"fetch {sheet_id[:20]}: {e}")
     raise RuntimeError(f"Não foi possível baixar a planilha {sheet_id}")
 
-
 def _detect_header(texto: str, marcadores: list[str]) -> int:
     """Retorna índice da linha que contém os cabeçalhos reais."""
     for i, linha in enumerate(texto.splitlines()[:15]):
@@ -66,7 +60,6 @@ def _detect_header(texto: str, marcadores: list[str]) -> int:
         if any(m.upper() in lu for m in marcadores):
             return i
     return 0
-
 
 def _num(series: pd.Series) -> pd.Series:
     return pd.to_numeric(
@@ -76,7 +69,6 @@ def _num(series: pd.Series) -> pd.Series:
         errors="coerce"
     ).fillna(0)
 
-
 def _col(df: pd.DataFrame, candidatos: list[str]) -> str | None:
     """Retorna o primeiro nome de coluna encontrado (case-insensitive)."""
     mapa = {c.upper().strip(): c for c in df.columns}
@@ -85,7 +77,6 @@ def _col(df: pd.DataFrame, candidatos: list[str]) -> str | None:
         if found:
             return found
     return None
-
 
 def _kpi(col, label: str, valor: str, delta: str = "", color: str = "#E2E8F0"):
     col.markdown(f"""
@@ -97,7 +88,6 @@ def _kpi(col, label: str, valor: str, delta: str = "", color: str = "#E2E8F0"):
         {"<div style='font-size:.75rem;color:#64748B;'>"+delta+"</div>" if delta else ""}
     </div>""", unsafe_allow_html=True)
 
-
 def _plot_cfg():
     return dict(
         plot_bgcolor=_PLOT_BG, paper_bgcolor=_PLOT_BG,
@@ -105,10 +95,8 @@ def _plot_cfg():
         legend=dict(bgcolor="rgba(0,0,0,0)")
     )
 
-
-# =====================================================================
 # CARREGAMENTO — Manta Arealva
-# =====================================================================
+
 @st.cache_data(ttl=EFICIENCIA_CACHE_TTL, show_spinner=False)
 def carregar_manta_arealva() -> pd.DataFrame:
     texto = _fetch(EFICIENCIA_MANTA_AREALVA_ID, EFICIENCIA_MANTA_AREALVA_GID)
@@ -181,10 +169,8 @@ def carregar_manta_arealva() -> pd.DataFrame:
     df = df[~df["NUM OP"].astype(str).str.upper().str.strip().isin(invalidos)].reset_index(drop=True)
     return df
 
-
-# =====================================================================
 # CARREGAMENTO — Lençol Arealva
-# =====================================================================
+
 @st.cache_data(ttl=EFICIENCIA_CACHE_TTL, show_spinner=False)
 def carregar_lencol_arealva() -> pd.DataFrame:
     texto = _fetch(EFICIENCIA_LENCOL_AREALVA_ID, EFICIENCIA_LENCOL_AREALVA_GID)
@@ -274,10 +260,8 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     df = df[tem_dado].reset_index(drop=True)
     return df
 
-
-# =====================================================================
 # CARREGAMENTO — GIattex
-# =====================================================================
+
 @st.cache_data(ttl=EFICIENCIA_CACHE_TTL, show_spinner=False)
 def carregar_giattex() -> pd.DataFrame:
     try:
@@ -289,10 +273,8 @@ def carregar_giattex() -> pd.DataFrame:
         logging.warning(f"GIattex: {e}")
         return pd.DataFrame()
 
-
-# =====================================================================
 # RENDER PRINCIPAL
-# =====================================================================
+
 def render_dashboard_eficiencia():
     st.markdown("""
     <div style="text-align:center;padding:20px 0 8px 0;">
@@ -318,10 +300,8 @@ def render_dashboard_eficiencia():
     with tab2: _aba_lencol()
     with tab3: _aba_giattex()
 
-
-# =====================================================================
 # ABA 1 — MANTA AREALVA
-# =====================================================================
+
 def _aba_manta():
     try:
         with st.spinner("Carregando Manta Arealva..."):
@@ -340,7 +320,7 @@ def _aba_manta():
             st.caption("Colunas encontradas na planilha:")
             st.code(", ".join(df_raw.columns.tolist()))
 
-    # ── Filtros ───────────────────────────────────────────────────────
+    # filtros
     with st.expander("🔍 Filtros", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
         ops_disp   = sorted(df_raw["NUM OP"].dropna().unique())
@@ -363,7 +343,7 @@ def _aba_manta():
         st.info("Nenhum dado para os filtros selecionados.")
         return
 
-    # ── KPIs ─────────────────────────────────────────────────────────
+    # kpis
     total_ops    = df["NUM OP"].nunique()
     aprov_media  = df["APROVEITAMENTO_%"].mean(skipna=True)
     total_kgs_in = df["KGS CORTADOS"].sum()
@@ -385,7 +365,7 @@ def _aba_manta():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Gráficos ─────────────────────────────────────────────────────
+    # gráficos
     c_left, c_right = st.columns(2)
 
     with c_left:
@@ -425,7 +405,7 @@ def _aba_manta():
                            xaxis_title="Aproveitamento (%)", yaxis=dict(type="category"))
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Babys & Retalhos ─────────────────────────────────────────────
+    # babys & retalhos
     st.markdown("##### Babys & Retalhos por OP")
     c_l2, c_r2 = st.columns(2)
     df_br = df.groupby("NUM OP", as_index=False).agg(
@@ -459,7 +439,7 @@ def _aba_manta():
                            xaxis_title="Divergência (kg)", yaxis=dict(type="category"))
         st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Tabela detalhada ──────────────────────────────────────────────
+    # tabela detalhada
     st.markdown("##### Detalhamento por OP")
     cols_show = [c for c in [
         "NUM OP","PRODUTO","TAMANHO","PRODUTOR",
@@ -509,10 +489,8 @@ def _aba_manta():
 
     st.dataframe(styled, use_container_width=True, hide_index=True, height=380)
 
-
-# =====================================================================
 # ABA 2 — LENÇOL AREALVA
-# =====================================================================
+
 def _aba_lencol():
     try:
         with st.spinner("Carregando Lençol Arealva..."):
@@ -526,7 +504,7 @@ def _aba_lencol():
         st.warning("Nenhum dado disponível para Lençol.")
         return
 
-    # ── Filtros ───────────────────────────────────────────────────────
+    # filtros
     with st.expander("🔍 Filtros", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
         ops_disp  = sorted(df_raw["OP"].dropna().unique())
@@ -549,7 +527,7 @@ def _aba_lencol():
         st.info("Nenhum dado para os filtros selecionados.")
         return
 
-    # ── KPIs ─────────────────────────────────────────────────────────
+    # kpis
     total_ops    = df["OP"].nunique()
     aprov_media  = df["APROVEITAMENTO_%"].mean(skipna=True)
     total_mts_in = df["MTS_CORT"].sum()
@@ -577,7 +555,7 @@ def _aba_lencol():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Gráficos linha 1 ─────────────────────────────────────────────
+    # gráficos linha 1
     c_left, c_right = st.columns(2)
 
     with c_left:
@@ -614,7 +592,7 @@ def _aba_lencol():
                            xaxis_title="Aproveitamento (%)", yaxis=dict(type="category"))
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Gráficos linha 2 ─────────────────────────────────────────────
+    # gráficos linha 2
     c_l2, c_r2 = st.columns(2)
 
     with c_l2:
@@ -655,7 +633,7 @@ def _aba_lencol():
                            xaxis_title="Conclusão OP (%)", yaxis=dict(type="category"))
         st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Tabela detalhada ──────────────────────────────────────────────
+    # tabela detalhada
     st.markdown("##### Detalhamento por OP")
     cols_show = [c for c in [
         "OP","CLIENTE","PRODUTO","TIPO","TAMANHO","TECIDO","STATUS",
@@ -706,10 +684,8 @@ def _aba_lencol():
 
     st.dataframe(styled, use_container_width=True, hide_index=True, height=380)
 
-
-# =====================================================================
 # ABA 3 — GIATTEX
-# =====================================================================
+
 def _aba_giattex():
     try:
         with st.spinner("Carregando GIattex..."):
