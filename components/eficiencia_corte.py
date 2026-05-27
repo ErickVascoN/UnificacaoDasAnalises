@@ -492,16 +492,42 @@ def _aba_manta():
 # ABA 2 — LENÇOL AREALVA
 
 def _aba_lencol():
+    # --- diagnóstico: mostra colunas brutas antes de processar ---
+    try:
+        texto_raw = _fetch(EFICIENCIA_LENCOL_AREALVA_ID, EFICIENCIA_LENCOL_AREALVA_GID)
+        skip_raw  = _detect_header(texto_raw, ["O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE"])
+        df_diag   = pd.read_csv(io.StringIO(texto_raw), skiprows=skip_raw, header=0,
+                                dtype=str, nrows=3)
+        df_diag.columns = df_diag.columns.str.strip()
+        colunas_encontradas = [c for c in df_diag.columns if "Unnamed" not in c and c.strip()]
+    except Exception as e_diag:
+        colunas_encontradas = []
+        st.error(f"❌ Não foi possível acessar a planilha de Eficiência de Lençol: {e_diag}")
+        st.caption(f"ID: `{EFICIENCIA_LENCOL_AREALVA_ID}` · GID: `{EFICIENCIA_LENCOL_AREALVA_GID}`")
+        return
+
     try:
         with st.spinner("Carregando Lençol Arealva..."):
             df_raw = carregar_lencol_arealva()
     except Exception as e:
         st.error(f"❌ Erro ao carregar Lençol: {e}")
         st.caption("Verifique se a planilha está acessível e com as colunas esperadas.")
+        if colunas_encontradas:
+            with st.expander("🔍 Colunas encontradas na planilha", expanded=True):
+                st.code(", ".join(colunas_encontradas))
         return
 
     if df_raw.empty:
         st.warning("Nenhum dado disponível para Lençol.")
+        with st.expander("🔍 Diagnóstico — colunas encontradas na planilha", expanded=True):
+            st.markdown("**Colunas lidas da planilha:**")
+            st.code(", ".join(colunas_encontradas) if colunas_encontradas else "Nenhuma coluna detectada")
+            st.markdown(
+                "**Colunas esperadas pelo parser:**  \n"
+                "`O.P. / OP / NUM OP` · `CLIENTE` · `PRODUTO` · `TECIDO` · `TIPO` · `TAMANHO` · `STATUS`  \n"
+                "`QUANTIDADE PROGRAMADA(PÇS)` · `QUANTIDADE CORTADA(PÇS)`  \n"
+                "`METROS ESPERADOS(MTS)` · `METROS CORTADOS(MTS)` · `DIFERENÇA (MTS)` · `PERDA (%)` · `RETALHO (KG)`"
+            )
         return
 
     # filtros
