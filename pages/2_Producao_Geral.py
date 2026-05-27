@@ -10,9 +10,9 @@ import io
 import unicodedata
 import numpy as np
 
-# ──────────────────────────────────────────────
+# ─
 # CONFIGURACAO DA PAGINA
-# ──────────────────────────────────────────────
+# ─
 st.set_page_config(
     page_title="Dashboard Produção - Empresas",
     page_icon="🏭",
@@ -20,9 +20,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ──────────────────────────────────────────────
+# ─
 # CSS CUSTOMIZADO
-# ──────────────────────────────────────────────
+# ─
 st.markdown("""
 <style>
     footer {visibility: hidden;}
@@ -82,9 +82,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────
+# ─
 # CONSTANTES
-# ──────────────────────────────────────────────
+# ─
 SPREADSHEET_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 
 CORES_EMPRESAS = {
@@ -125,17 +125,17 @@ NOMES_DIAS = {
 
 ORDEM_DIAS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
-# ──────────────────────────────────────────────
+# ─
 # LITEX_GERAL — suplemento diário da Niazitex
 # (a aba Niazitex no xlsx não é preenchida; os dados reais ficam nesta planilha)
-# ──────────────────────────────────────────────
+# ─
 _LITEX_GERAL_ID  = "1SF2ZumsloWdUVAMt1SRYd1o5gNIY9RXD"
 _LITEX_GERAL_GID = "1697720285"
 
-# ──────────────────────────────────────────────
+# ─
 # PLANO DE METAS — fonte de Meta Diária autoritativa
 # (substitui os valores de Meta Diaria do xlsx de Produção Geral)
-# ──────────────────────────────────────────────
+# ─
 _METAS_SHEET_ID_PG = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
 _METAS_GID_PG      = "1593003426"
 _MESES_PT_ABR_PG   = {
@@ -143,7 +143,7 @@ _MESES_PT_ABR_PG   = {
     "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
 }
 
-# ── Metas diárias hardcoded — Niazittex / Seven ──────────────────────────────
+# metas diárias hardcoded — niazittex / seven
 # Fonte: Plano de Metas (aprovado pelo usuário).
 # Chaves = resultado de _norm_produto_niazi() aplicado ao nome do produto.
 _NIAZI_SEVEN_METAS: dict[str, float] = {
@@ -162,13 +162,11 @@ _PROD_SUFIXOS_PG = frozenset({
     "HOTEL", "EXTRA", "SUPER", "PLUS", "P", "M", "G", "GG",
 })
 
-
 def _norm_pg(s: str) -> str:
     """Uppercase + remove acentos."""
     s = str(s).strip().upper()
     nfd = unicodedata.normalize("NFD", s)
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
-
 
 def _base_prod_pg(nome: str) -> str:
     """'LENCOL ST' → 'LENCOL', 'FRONHA AVULSA P' → 'FRONHA'."""
@@ -183,7 +181,6 @@ def _base_prod_pg(nome: str) -> str:
             break
         result.append(w)
     return " ".join(result)
-
 
 def _parse_num_pg(val) -> float | None:
     """Converte número no formato brasileiro ('1.234,56' ou '150') → float. Retorna None se inválido."""
@@ -200,7 +197,6 @@ def _parse_num_pg(val) -> float | None:
         return float(s)
     except ValueError:
         return None
-
 
 def _load_metas_lookup_pg() -> dict:
     """
@@ -247,7 +243,7 @@ def _load_metas_lookup_pg() -> dict:
         if status != "PREVISTO":
             continue
 
-        # --- Mês e Ano da meta (ex: "1-mai." → mes=5, ano=2026) ---
+        # mês e ano da meta (ex: "1-mai." → mes=5, ano=2026)
         data_raw = str(row.get(col_data_b, "")).strip().lower().replace(".", "")
         m_match = re.search(r"(\d+)[\-/\s]([a-z]+)", data_raw)
         if not m_match:
@@ -258,12 +254,12 @@ def _load_metas_lookup_pg() -> dict:
             continue
         ano_num = date.today().year  # mesma convenção de 7_Plano_de_Metas.py
 
-        # --- Produto: normaliza preservando nome completo (ex: "LENCOL COM ELASTIC" ≠ "LENCOL PLANO") ---
+        # produto: normaliza preservando nome completo (ex: "lencol com elastic" ≠ "lencol plano")
         prod_base = _norm_produto_niazi(str(row.get(col_prod, "")))
         if not prod_base:
             continue
 
-        # --- Meta Diária: prefere META DIÁRIA, fallback META MÊS ---
+        # meta diária: prefere meta diária, fallback meta mês
         meta_val: float | None = None
         for col_try in filter(None, [col_meta_d, col_meta_m]):
             meta_val = _parse_num_pg(row.get(col_try))
@@ -272,12 +268,12 @@ def _load_metas_lookup_pg() -> dict:
         if meta_val is None or meta_val <= 0:
             continue
 
-        # --- Armazena por RESPONSÁVEL (primário) ---
+        # armazena por responsável (primário)
         resp = _norm_pg(str(row.get(col_resp, "")))
         if resp:
             lookup.setdefault((resp, prod_base, mes_num, ano_num), meta_val)
 
-        # --- Armazena por CLIENTE (fallback, sem sobrescrever chave do RESPONSÁVEL) ---
+        # armazena por cliente (fallback, sem sobrescrever chave do responsável)
         if col_cli:
             cli = _norm_pg(str(row.get(col_cli, "")))
             if cli and cli != resp:
@@ -285,7 +281,6 @@ def _load_metas_lookup_pg() -> dict:
 
     print(f"[METAS_LOOKUP] {len(lookup)} entradas carregadas do plano de metas")
     return lookup
-
 
 def _norm_produto_niazi(nome: str) -> str:
     """
@@ -297,7 +292,6 @@ def _norm_produto_niazi(nome: str) -> str:
     s = _base_prod_pg(_norm_pg(nome))   # uppercase + remove acentos + remove sufixos
     s = s.replace("ELASTICO", "ELASTIC")  # "ELÁSTICO" = "ELASTIC" (planilha de metas usa sem O)
     return s
-
 
 def _load_niazitex_suplementar() -> pd.DataFrame:
     """
@@ -361,7 +355,7 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
         else ""
     )
 
-    # ── Filtra pelos clientes NIAZITTEX e SEVEN (combinados no dashboard) ───────
+    # filtra pelos clientes niazittex e seven (combinados no dashboard)
     _CLI_KWS = ("NIAZI", "SEVEN")
     if col_cli:
         antes = len(raw)
@@ -423,14 +417,12 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
         "Ano", "Mes", "Mes Nome", "Dia", "Semana", "DiaSemana",
     ]]
 
-
-# ──────────────────────────────────────────────
+# ─
 # UTILITÁRIOS
-# ──────────────────────────────────────────────
+# ─
 def fmt_br(v, decimals=0):
     txt = f"{v:,.{decimals}f}"
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
-
 
 def dias_uteis(datas):
     """
@@ -454,7 +446,6 @@ def dias_uteis(datas):
     # This ensures timestamps with different times (e.g., 14:30 vs 14:45) count as 1 day
     d = pd.to_datetime(datas).dropna().dt.normalize().drop_duplicates()
     return int((d.dt.weekday <= 4).sum())
-
 
 def calcular_dias_com_sabados_trabalhados(datas_grupo):
     """
@@ -492,10 +483,8 @@ def calcular_dias_com_sabados_trabalhados(datas_grupo):
     
     return int(dias_seg_sex + sabados_com_prod)
 
-
 # REMOVIDO: dias_uteis_com_sabados_trabalhados() - ver replacement abaixo
 # REMOVIDO: dias_uteis_com_trabalho() - consolidada em calcular_dias_com_sabados_trabalhados()
-
 
 def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
     """
@@ -574,7 +563,6 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
 
     return meta_periodo, meta_por_data, meta_por_faccao
 
-
 def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
     """
     Calcula meta por (Faccao, Produto) para a tabela expandida.
@@ -627,10 +615,9 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
     )
     return result
 
-
-# ──────────────────────────────────────────────
+# ─
 # PARSING DE DATAS
-# ──────────────────────────────────────────────
+# ─
 _SKIP_KEYWORDS = frozenset([
     "faccao", "produto", "meta", "qtde", "falta",
     "column", "cliente", "responsavel", "%", " tr",
@@ -641,7 +628,6 @@ _PT_MONTHS = {
     "mai": 5, "jun": 6, "jul": 7, "ago": 8,
     "set": 9, "out": 10, "nov": 11, "dez": 12,
 }
-
 
 def _remove_accents(text):
     replacements = {
@@ -654,13 +640,11 @@ def _remove_accents(text):
         text = text.replace(orig, repl)
     return text
 
-
 def _infer_year(month: int, base_year: int) -> int:
     current_year = datetime.now().year
     if base_year is None:
         base_year = current_year
     return base_year if month >= 10 else base_year + 1
-
 
 def parse_date_header(h, base_year=None):
     if base_year is None:
@@ -720,10 +704,9 @@ def parse_date_header(h, base_year=None):
 
     return None
 
-
-# ──────────────────────────────────────────────
+# ─
 # CARREGAMENTO DOS DADOS
-# ──────────────────────────────────────────────
+# ─
 @st.cache_data(ttl=300)
 def load_all_data():
     import requests as req
@@ -755,7 +738,7 @@ def load_all_data():
         except Exception as e:
             st.warning(f"Erro ao processar aba '{sheet}': {e}")
 
-    # ── Niazitex — exclusivamente pelo LITEX_GERAL (atualizado diariamente) ───
+    # niazitex — exclusivamente pelo litex_geral (atualizado diariamente)
     df_litex = _load_niazitex_suplementar()
     print(f"[load_all_data] Abas xlsx carregadas: {list(all_data.keys())}")
     print(f"[load_all_data] LITEX_GERAL registros: {len(df_litex)}")
@@ -764,7 +747,7 @@ def load_all_data():
         print(f"[load_all_data] {_NIAZI_SEVEN_KEY} atualizada com LITEX_GERAL. "
               f"Datas: {df_litex['Data'].min()} → {df_litex['Data'].max()}")
 
-    # ── Injeta Meta Diária da planilha de Plano de Metas ─────────────────────
+    # injeta meta diária da planilha de plano de metas
     # Substitui os valores de "Meta Diaria" do xlsx (que podem estar desatualizados)
     # pelos valores autoritativos do Plano de Metas.
     metas_lkp = _load_metas_lookup_pg()
@@ -796,7 +779,7 @@ def load_all_data():
         for k in all_data:
             all_data[k]["Meta Diaria"] = pd.to_numeric(all_data[k]["Meta Diaria"], errors="coerce")
 
-    # ── Metas hardcoded para Niazittex / Seven (sobrescreve qualquer valor anterior) ──
+    # metas hardcoded para niazittex / seven (sobrescreve qualquer valor anterior)
     if _NIAZI_SEVEN_KEY in all_data:
         df_ns = all_data[_NIAZI_SEVEN_KEY].copy()
         df_ns["Meta Diaria"] = df_ns["Produto"].apply(
@@ -811,15 +794,13 @@ def load_all_data():
 
     return all_data
 
-
-# ──────────────────────────────────────────────
+# ─
 # PARSING DE ABAS
-# ──────────────────────────────────────────────
+# ─
 _HEADER_LABELS = frozenset([
     "FACCAO", "PRODUTO", "META DIARIA", "META MENSAL",
     "QTDE PRODUZIDA", "FALTA", "CLIENTE",
 ])
-
 
 def _is_header_row(row_series) -> bool:
     vals = row_series.astype(str).str.upper().tolist()
@@ -830,14 +811,12 @@ def _is_header_row(row_series) -> bool:
             return True
     return False
 
-
 def _find_all_header_rows(raw) -> list[int]:
     header_rows = []
     for i in range(len(raw)):
         if _is_header_row(raw.iloc[i]):
             header_rows.append(i)
     return header_rows
-
 
 def _parse_block(raw_block: pd.DataFrame, headers: list, sheet_name: str) -> list[dict]:
     col_idx: dict[str, int] = {}
@@ -910,7 +889,6 @@ def _parse_block(raw_block: pd.DataFrame, headers: list, sheet_name: str) -> lis
 
     return records
 
-
 def _parse_sheet(raw: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
     header_rows = _find_all_header_rows(raw)
 
@@ -951,23 +929,20 @@ def _parse_sheet(raw: pd.DataFrame, sheet_name: str) -> pd.DataFrame | None:
 
     return df
 
-
-# ──────────────────────────────────────────────
+# ─
 # Callbacks de filtro
-# ──────────────────────────────────────────────
+# ─
 def _on_home_ano_change():
     for k in ("home_mes", "home_dia", "home_ini", "home_fim"):
         st.session_state.pop(k, None)
-
 
 def _on_home_mes_change():
     for k in ("home_dia", "home_ini", "home_fim"):
         st.session_state.pop(k, None)
 
-
-# ──────────────────────────────────────────────
+# ─
 # BOTÃO FILTROS (HTML)
-# ──────────────────────────────────────────────
+# ─
 _FILTROS_BTN_HTML = """
 <button onclick="
     var doc = window.parent.document;
@@ -1002,10 +977,9 @@ _FILTROS_BTN_HTML = """
    onmouseout="this.style.borderColor='#2D3748';this.style.color='#E2E8F0';">Filtros</button>
 """
 
-
-# ──────────────────────────────────────────────
+# ─
 # TELA INICIAL (HOME)
-# ──────────────────────────────────────────────
+# ─
 def render_home(all_data):
     with st.sidebar:
         st.markdown("### Filtros")
@@ -1290,10 +1264,9 @@ def render_home(all_data):
     st.dataframe(df_resumo.style.format({"Total Produzido": _fmt_int, "Média Diária": _fmt_int}),
                  width="stretch", hide_index=True)
 
-
-# ──────────────────────────────────────────────
+# ─
 # PAGINA DA EMPRESA (ANALISE DETALHADA)
-# ──────────────────────────────────────────────
+# ─
 def render_company(empresa, df, all_data):
     cor = CORES_EMPRESAS.get(empresa, "#1E3A5F")
 
@@ -1338,7 +1311,7 @@ def render_company(empresa, df, all_data):
                 ini, fim = min(d_ini, d_fim), max(d_ini, d_fim)
                 df_f = df_f[df_f["Data"].dt.date.between(ini, fim)]
 
-        # ── Filtro de Cliente (apenas para Niazittex / Seven) ──────────────────
+        # filtro de cliente (apenas para niazittex / seven)
         if empresa == _NIAZI_SEVEN_KEY and "Cliente" in df_f.columns and not df_f.empty:
             clientes_disp = sorted(df_f["Cliente"].dropna().unique().tolist())
             clientes_disp = [c for c in clientes_disp if c]   # remove strings vazias
@@ -1409,7 +1382,7 @@ def render_company(empresa, df, all_data):
         ["Visão Geral", "Por Facção", "Ranking & Alertas", "Dados"]
     )
 
-    # ─── Tab 1 ────────────────────────────────────────────────────
+    # ─ tab 1
     with tab_vis:
         serie = df_f.groupby("Data", as_index=False)["Quantidade"].sum().sort_values("Data")
         serie["Meta Dia"] = serie["Data"].map(meta_por_data).fillna(0)
@@ -1465,14 +1438,14 @@ def render_company(empresa, df, all_data):
                               separators=",.", margin=dict(t=50, b=40))
         st.plotly_chart(fig_mes, width="stretch")
 
-    # ─── Tab 2 ────────────────────────────────────────────────────
+    # ─ tab 2
     with tab_facc:
-        # ── Agrupamento por Facção + Produto (uma linha por combinação) ──
+        # agrupamento por facção + produto (uma linha por combinação)
         tbl = df_f.groupby(["Faccao", "Produto"], as_index=False).agg(
             Produzido=("Quantidade", "sum"),
         )
         
-        # ── Contar dias: TODOS úteis + sábados trabalhados ──
+        # contar dias: todos úteis + sábados trabalhados
         dias_list = []
         for (fac, prod), group in df_f.groupby(["Faccao", "Produto"]):
             # Consolidado MÉDIO #16: Usar função única para dias com sábados
@@ -1484,7 +1457,7 @@ def render_company(empresa, df, all_data):
         
         tbl = tbl.merge(dias_por_faccao_produto, on=["Faccao", "Produto"], how="left")
 
-        # ── Meta por (Faccao, Produto) ──
+        # meta por (faccao, produto)
         meta_prod_df = _calc_meta_por_produto(df_f, list(tbl["Faccao"].unique()))
         tbl = tbl.merge(meta_prod_df, on=["Faccao", "Produto"], how="left")
         tbl["Meta Periodo"] = tbl["Meta Periodo"].fillna(0)
@@ -1513,10 +1486,10 @@ def render_company(empresa, df, all_data):
         tbl["Media/Dia"] = np.where(tbl["Dias"] > 0, tbl["Produzido"] / tbl["Dias"], 0)
         tbl = tbl.sort_values(["Faccao", "Produto"])
 
-        # ── Tabela agregada por facção (usada nos gráficos e alertas) ──
+        # tabela agregada por facção (usada nos gráficos e alertas)
         _, _, meta_fac_df = _calc_meta(df_f, sel_facs)
         
-        # ── Contar dias: TODOS úteis + sábados trabalhados (por facção) ──
+        # contar dias: todos úteis + sábados trabalhados (por facção)
         dias_fac_list = []
         for fac, group in df_f.groupby("Faccao"):
             # Consolidado MÉDIO #16: Usar função única para dias com sábados
@@ -1654,7 +1627,7 @@ def render_company(empresa, df, all_data):
         )
         st.plotly_chart(fig_linhas, width="stretch")
 
-    # ─── Tab 3 ────────────────────────────────────────────────────
+    # ─ tab 3
     with tab_rank:
         col_r1, col_r2 = st.columns(2)
 
@@ -1705,7 +1678,7 @@ def render_company(empresa, df, all_data):
         fig_heat.update_layout(separators=",.", margin=dict(t=20, b=40))
         st.plotly_chart(fig_heat, width="stretch")
 
-    # ─── Tab 4 ────────────────────────────────────────────────────
+    # ─ tab 4
     with tab_dados:
         st.markdown("### Base Filtrada")
         df_view = df_f[["Data", "Faccao", "Produto", "Quantidade", "Meta Diaria"]].copy()
@@ -1726,10 +1699,9 @@ def render_company(empresa, df, all_data):
             mime="text/csv",
         )
 
-
-# ──────────────────────────────────────────────
+# ─
 # MAIN
-# ──────────────────────────────────────────────
+# ─
 def main():
     all_data = load_all_data()
 
@@ -1745,7 +1717,6 @@ def main():
         render_company(empresa, all_data[empresa], all_data)
     else:
         render_home(all_data)
-
 
 if __name__ == "__main__":
     main()

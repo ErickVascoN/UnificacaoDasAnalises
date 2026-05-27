@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """Componente hero da página inicial."""
 
 import streamlit as st
-
 
 def render_hero() -> None:
     """Renderiza o bloco hero com título, subtítulo e pills de destaque."""

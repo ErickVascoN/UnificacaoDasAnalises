@@ -29,7 +29,6 @@ COLORS = {
     "bg_light": "#F3F6F9",
 }
 
-
 st.set_page_config(
     page_title="Dashboard de Produtos Faturados",
     page_icon="📈",
@@ -37,14 +36,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Guarda de autenticação — somente Admin pode acessar esta página ──
+# guarda de autenticação — somente admin pode acessar esta página
 if st.session_state.get("auth_nivel") != "admin":
     st.error("🔒 Acesso restrito. Esta página requer autenticação de **Administrador**.")
     st.info("Volte à página inicial e faça login com a senha de Admin.")
     if st.button("← Voltar à página inicial"):
         st.switch_page("app.py")
     st.stop()
-
 
 def inject_styles() -> None:
     st.markdown(
@@ -356,7 +354,6 @@ def inject_styles() -> None:
         unsafe_allow_html=True,
     )
 
-
 def to_brl(value: float) -> str:
     """Formata valor em R$ com separadores de milhar (formato brasileiro)."""
     if pd.isna(value):
@@ -365,14 +362,12 @@ def to_brl(value: float) -> str:
     formatted = f"{value:,.2f}"
     return f"R$ {formatted}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-
 def to_int(value: float) -> str:
     """Formata inteiro com separadores de milhar (formato brasileiro: 1.234.567)."""
     if pd.isna(value):
         return "0"
     # Format: 1234567 -> 1.234.567
     return f"{int(round(value)):,}".replace(",", ".")
-
 
 def format_number_br(value: float, decimals: int = 0) -> str:
     """Formata número genérico com separadores de milhar (formato brasileiro)."""
@@ -383,7 +378,6 @@ def format_number_br(value: float, decimals: int = 0) -> str:
     else:
         formatted = f"{value:,.{decimals}f}"
         return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
-
 
 def safe_to_float(value) -> float | None:
     """Converte valor para float com segurança, retorna None para valores inválidos."""
@@ -401,20 +395,17 @@ def safe_to_float(value) -> float | None:
             return None
     return None
 
-
 def to_pct(value: float) -> str:
     """Formata percentual (formato brasileiro)."""
     if pd.isna(value):
         return "0,0%"
     return f"{value * 100:.1f}%".replace(".", ",")
 
-
 def to_date_br_short(value: pd.Timestamp | str) -> str:
     dt = pd.to_datetime(value, errors="coerce")
     if pd.isna(dt):
         return ""
     return dt.strftime("%d/%m/%y")
-
 
 def build_export_url(sheet_url: str) -> str:
     parsed = urlparse(sheet_url)
@@ -439,7 +430,6 @@ def build_export_url(sheet_url: str) -> str:
 
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
-
 def parse_br_number(series: pd.Series) -> pd.Series:
     cleaned = (
         series.fillna("")
@@ -453,29 +443,22 @@ def parse_br_number(series: pd.Series) -> pd.Series:
     )
     return pd.to_numeric(cleaned, errors="coerce")
 
-
 def parse_best_date(series: pd.Series) -> pd.Series:
     # Fixed: Use dayfirst=True (Brazilian format DD/MM/YYYY) only
     # Removed ambiguous dual-parsing logic that could invert 50% of dates
     return pd.to_datetime(series, errors="coerce", dayfirst=True)
 
-
-
-
 def normalize_text(text: str) -> str:
-    return unicodedata.normalize("NFD", str(text)).encode("ascii", "ignore").decode("utf-8").lower()
-
+    return unicodedata.normalize("NFD", str(text)).encode("ascii", "ignore").decode("utf-8")
 
 def is_dimension(text: str) -> bool:
     """Verifica se o texto é uma dimensão (ex: 1.40X2.00, 140X200, 0.47X0.65)."""
     return bool(re.match(r"^\d+[.,]?\d*[xX]\d+[.,]?\d*$", text.strip()))
 
-
 def is_valid_color_word(text: str) -> bool:
     """Verifica se a palavra pode ser um nome de cor (alfabética, mínimo 3 letras)."""
     cleaned = text.strip()
     return bool(cleaned) and cleaned.isalpha() and len(cleaned) >= 3 and not is_dimension(cleaned)
-
 
 def categorize_size(product_name: str) -> str:
     """Extrai tamanho/dimensão do nome do produto."""
@@ -503,7 +486,6 @@ def categorize_size(product_name: str) -> str:
     else:
         return "Indefinido"
 
-
 def categorize_color(product_name: str) -> str:
     """Extrai a cor, pulando dimensões e códigos no final do nome."""
     if not product_name:
@@ -525,7 +507,6 @@ def categorize_color(product_name: str) -> str:
             return palavra
     
     return "Indefinido"
-
 
 def categorize_product(product_name: str) -> str:
     """Agrupa produtos baseado em palavras-chave no nome."""
@@ -554,7 +535,6 @@ def categorize_product(product_name: str) -> str:
                 return categoria
     
     return "Outros"
-
 
 def canonical_column_names(columns: list[str]) -> dict[str, str]:
     renamed: dict[str, str] = {}
@@ -596,7 +576,6 @@ def canonical_column_names(columns: list[str]) -> dict[str, str]:
         else:
             renamed[original] = key
     return renamed
-
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def load_data(sheet_url: str) -> pd.DataFrame:
@@ -692,7 +671,6 @@ def load_data(sheet_url: str) -> pd.DataFrame:
 
     return df
 
-
 def kpi_card(title: str, value: str, subtext: str, delta: float | None = None) -> str:
     delta_html = ""
     if delta is not None and np.isfinite(delta):
@@ -708,7 +686,6 @@ def kpi_card(title: str, value: str, subtext: str, delta: float | None = None) -
             {delta_html}
         </div>
     """
-
 
 def compare_previous_period(df_all: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp, metric_col: str) -> float | None:
     """Compara período atual com período anterior de mesma duração."""
@@ -729,7 +706,6 @@ def compare_previous_period(df_all: pd.DataFrame, start_date: pd.Timestamp, end_
         return None
 
     return (current_value - prev_value) / prev_value
-
 
 def compare_with_baseline(df_all: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp, metric_col: str, baseline_type: str) -> float | None:
     """Compara período atual com múltiplas baselines: anterior, ano passado, ou média 3M (TIER 1 FIX)."""
@@ -762,7 +738,6 @@ def compare_with_baseline(df_all: pd.DataFrame, start_date: pd.Timestamp, end_da
     
     return None
 
-
 def monthly_view(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.groupby("ano_mes", as_index=False)
@@ -773,7 +748,6 @@ def monthly_view(df: pd.DataFrame) -> pd.DataFrame:
         )
         .sort_values("ano_mes")
     )
-
 
 def build_alerts(
     df: pd.DataFrame,
@@ -849,7 +823,6 @@ def build_alerts(
 
     return alerts[:4]
 
-
 def build_forecast(mensal: pd.DataFrame, periods: int = 4) -> pd.DataFrame:
     """Constrói previsão com detecção de sazonalidade (TIER 2 Melhoria)."""
     if len(mensal) < 4:
@@ -901,7 +874,6 @@ def build_forecast(mensal: pd.DataFrame, periods: int = 4) -> pd.DataFrame:
     )
     return forecast
 
-
 def render_alerts(alerts: list[dict[str, str]]) -> None:
     level_map = {"high": "risk-high", "mid": "risk-mid", "low": "risk-low"}
     for item in alerts:
@@ -917,7 +889,6 @@ def render_alerts(alerts: list[dict[str, str]]) -> None:
             unsafe_allow_html=True,
         )
 
-
 def render_chart_help(purpose: str, insight: str) -> None:
     st.markdown(
         (
@@ -928,7 +899,6 @@ def render_chart_help(purpose: str, insight: str) -> None:
         ),
         unsafe_allow_html=True,
     )
-
 
 def render_kpi_section(df_f: pd.DataFrame, receita_total: float, quantidade_total: float, pedidos_unicos: int, 
                        ticket_medio_pedido: float, preco_medio_ponderado: float, clientes_ativos: int, 
@@ -948,7 +918,6 @@ def render_kpi_section(df_f: pd.DataFrame, receita_total: float, quantidade_tota
     with c6:
         st.markdown(kpi_card("Clientes Ativos", to_int(clientes_ativos), f"{to_int(produtos_ativos)} produtos ativos"), unsafe_allow_html=True)
 
-
 def render_narrative_section(mensal_last: float, media_3m: float, top_cliente_name: str, top_cliente_share: float,
                              top_prod_name: str, gap_meta: float, meta_mensal: float) -> None:
     """Renderiza narrativa executiva de 60 segundos (TIER 2 Refactor)."""
@@ -966,7 +935,6 @@ def render_narrative_section(mensal_last: float, media_3m: float, top_cliente_na
         ),
         unsafe_allow_html=True,
     )
-
 
 def generate_insights_from_metrics(mensal_last: float, media_3m: float, top_cliente_share: float, 
                                    gap_meta: float, meta_mensal: float) -> list[str]:
@@ -990,7 +958,6 @@ def generate_insights_from_metrics(mensal_last: float, media_3m: float, top_clie
         insights.append("Operação dentro do normal. Acompanhe métricas semanalmente.")
     
     return insights[:4]  # Limita a 4 insights
-
 
 def generate_insights(df: pd.DataFrame) -> list[str]:
     insights: list[str] = []
@@ -1029,7 +996,6 @@ def generate_insights(df: pd.DataFrame) -> list[str]:
 
     return insights[:5]
 
-
 def chart_layout(fig: go.Figure) -> go.Figure:
     fig.update_layout(template="plotly_white")
     fig.update_layout(
@@ -1059,7 +1025,6 @@ def chart_layout(fig: go.Figure) -> go.Figure:
     )
     return fig
 
-
 def get_dynamic_chart_height(data_points: int, base_height: int = 400) -> int:
     """Calcula altura dinâmica do gráfico baseado na quantidade de dados (TIER 2 Melhoria)."""
     if data_points <= 5:
@@ -1070,7 +1035,6 @@ def get_dynamic_chart_height(data_points: int, base_height: int = 400) -> int:
         return int(base_height * 1.5)
     else:
         return int(base_height * (1 + min((data_points - 25) * 0.05, 2.0)))  # Cap em 3x
-
 
 def render_presentation_mode(
     df_f: pd.DataFrame,
@@ -1306,7 +1270,6 @@ def render_presentation_mode(
         st.markdown(
             f"3. {'Ativar plano comercial para recuperar' if gap_meta < 0 else 'Sustentar ritmo e elevar rentabilidade com mix premium'} {to_brl(abs(gap_meta))} {'abaixo' if gap_meta < 0 else 'acima'} da meta."
         )
-
 
 def main() -> None:
     inject_styles()
@@ -2210,7 +2173,6 @@ def main() -> None:
         f'<div class="foot-note">Qualidade de dados: Nota com {missing_nota:.1f}% de ausência e CFOP com {missing_cfop:.1f}% de ausência. Essas colunas foram mantidas fora das análises críticas.</div>',
         unsafe_allow_html=True,
     )
-
 
 if __name__ == "__main__":
     main()

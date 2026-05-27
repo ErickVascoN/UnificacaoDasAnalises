@@ -24,10 +24,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-# ──────────────────────────────────────────────────────────────
+# ─
 # VALIDAÇÕES ESPECÍFICAS POR DASHBOARD
-# ──────────────────────────────────────────────────────────────
+# ─
 
 def validate_corte_lencol(df: pd.DataFrame) -> list:
     """
@@ -70,7 +69,6 @@ def validate_corte_lencol(df: pd.DataFrame) -> list:
     
     return issues
 
-
 def validate_producao_geral(df: pd.DataFrame) -> list:
     """
     Valida integridade dos dados de Produção Geral.
@@ -98,7 +96,6 @@ def validate_producao_geral(df: pd.DataFrame) -> list:
                 issues.append(f"⚠️ {zero_qty} registros com Quantidade <= 0")
     
     return issues
-
 
 def validate_faturamento(df: pd.DataFrame) -> list:
     """
@@ -128,10 +125,9 @@ def validate_faturamento(df: pd.DataFrame) -> list:
     
     return issues
 
-
-# ──────────────────────────────────────────────────────────────
+# ─
 # VALIDAÇÕES GENÉRICAS
-# ──────────────────────────────────────────────────────────────
+# ─
 
 def check_date_columns(df: pd.DataFrame, date_cols: list = None) -> dict:
     """
@@ -187,7 +183,6 @@ def check_date_columns(df: pd.DataFrame, date_cols: list = None) -> dict:
     
     return results
 
-
 def check_numeric_columns(df: pd.DataFrame, numeric_cols: list = None) -> dict:
     """
     Valida colunas numéricas em um DataFrame.
@@ -228,7 +223,6 @@ def check_numeric_columns(df: pd.DataFrame, numeric_cols: list = None) -> dict:
     
     return results
 
-
 def check_missing_values(df: pd.DataFrame) -> dict:
     """
     Retorna estatísticas de valores faltantes por coluna.
@@ -246,7 +240,6 @@ def check_missing_values(df: pd.DataFrame) -> dict:
             'pct': round(100 * missing / total, 1) if total > 0 else 0
         }
     return results
-
 
 def generate_data_quality_report(df: pd.DataFrame, name: str = "Dataset") -> str:
     """
@@ -306,10 +299,9 @@ def generate_data_quality_report(df: pd.DataFrame, name: str = "Dataset") -> str
     
     return "\n".join(report)
 
-
-# ──────────────────────────────────────────────────────────────
+# ─
 # MAIN - Para testes diretos
-# ──────────────────────────────────────────────────────────────
+# ─
 
 if __name__ == "__main__":
     """

@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 """Utilitário para detectar automaticamente o GID de abas do Google Sheets."""
 
 from __future__ import annotations
 import re
 import urllib.request
 from urllib.error import HTTPError, URLError
-
 
 def detectar_gid_google_sheets(spreadsheet_id: str) -> str:
     """
@@ -39,7 +37,6 @@ def detectar_gid_google_sheets(spreadsheet_id: str) -> str:
     print("⚠️ Não foi possível detectar o GID, usando valor padrão: 0")
     return "0"
 
-
 def listar_abas_google_sheets(spreadsheet_id: str) -> None:
     """
     Testa GIDs conhecidos e imprime quais retornam dados válidos.
@@ -65,7 +62,6 @@ def listar_abas_google_sheets(spreadsheet_id: str) -> None:
             print(f"{'✅' if 'OK' in status else '❌'} GID {gid}: {status}")
         except Exception:
             print(f"❌ GID {gid}: Erro na requisição")
-
 
 if __name__ == "__main__":
     SPREADSHEET_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"

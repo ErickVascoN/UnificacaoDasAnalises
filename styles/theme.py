@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Paleta de cores e variáveis de tema compartilhadas entre os dashboards."""
 
 PALETTE: dict[str, str] = {

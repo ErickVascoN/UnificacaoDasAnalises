@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Central de Atualizações — adicione novos itens no topo da lista.
 Campos obrigatórios: date, tag, title, description

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # pages/3_Controle_de_Corte.py usa `from config import ...`
 from .settings import (
     CORTE_SHEETS_ID as GOOGLE_SHEETS_ID,

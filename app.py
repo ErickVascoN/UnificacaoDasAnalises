@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Dashboard Unificado — Página Inicial
 Centraliza o acesso aos dashboards setoriais em uma única interface.
@@ -22,7 +21,7 @@ from components.hero import render_hero
 from components.kpi_row import render_kpi_row
 from components.sector_tabs import render_sector_tabs
 
-# ── Setup ──────────────────────────────────────────────────────────────────────
+# setup
 st.set_page_config(**PAGE_CONFIG)
 st.markdown(get_home_css(), unsafe_allow_html=True)
 init_session_state()
@@ -61,7 +60,7 @@ def _modal_changelog():
             unsafe_allow_html=True,
         )
 
-# ── Página ─────────────────────────────────────────────────────────────────────
+# página
 render_sidebar()
 render_hero()
 
@@ -97,7 +96,7 @@ with col_btn:
 render_kpi_row()
 render_sector_tabs()
 
-# ── Rodapé ─────────────────────────────────────────────────────────────────────
+# rodapé
 st.markdown("---")
 st.markdown(
     """

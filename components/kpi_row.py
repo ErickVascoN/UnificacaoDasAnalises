@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """Componente de linha de KPIs da página inicial."""
 
 import streamlit as st
-
 
 def render_kpi_row() -> None:
     """Renderiza os 4 cards de KPI no topo da seção de setores."""

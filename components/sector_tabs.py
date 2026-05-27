@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 """Componente de abas de setores (Análise de Dados / Controladoria)."""
 
 import streamlit as st
 from config.sectors import SECTORS_ANALISE, SECTORS_CONTROLADORIA
 from components.sector_card import render_sector_cards
-
 
 def render_sector_tabs() -> None:
     """Renderiza o cabeçalho 'Setores Disponíveis' e as duas abas de cards."""

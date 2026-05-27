@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
 """Componente de sidebar da página inicial."""
 
 from datetime import datetime
 import streamlit as st
 from utils.navigation import safe_switch
-
 
 def render_sidebar() -> None:
     """Renderiza a barra lateral com autenticação e navegação rápida."""

@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """Utilitários de navegação entre páginas Streamlit."""
 
 import streamlit as st
-
 
 def safe_switch(page_path: str) -> None:
     """Navega para uma página exibindo mensagem amigável em caso de falha."""

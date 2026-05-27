@@ -1,8 +1,6 @@
-# -*- coding: utf-8 -*-
 """CSS completo da página inicial (home/app.py)."""
 
 from .theme import PALETTE
-
 
 def get_home_css() -> str:
     """Retorna o bloco <style> completo para injeção via st.markdown."""

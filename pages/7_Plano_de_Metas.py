@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Plano de Metas — Análise de Metas / Previsão de Custos
 
@@ -38,9 +37,9 @@ from config.settings import (
     NOME_EQUIVALENCIAS,
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # CONFIG DA PÁGINA
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 st.set_page_config(
     page_title="Plano de Metas / Previsão de Custos",
     page_icon="🎯",
@@ -56,9 +55,9 @@ if st.session_state.get("auth_nivel") not in ("usuario", "admin"):
 
 IS_ADMIN = st.session_state.get("auth_nivel") == "admin"
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # CSS
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 st.markdown("""
 <style>
     footer {visibility: hidden;}
@@ -81,9 +80,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # HELPERS
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 _MESES_PT_ABR = {
     "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
     "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
@@ -94,7 +93,6 @@ _SKIP_HEADER_KW = frozenset([
     "faccao", "produto", "meta", "qtde", "falta",
     "column", "cliente", "responsavel", "%", " tr",
 ])
-
 
 def _parse_date_col(h) -> date | None:
     """Converte cabeçalho de coluna em date. Trata Timestamp, date e strings."""
@@ -150,7 +148,6 @@ def _parse_date_col(h) -> date | None:
                     pass
     return None
 
-
 def _norm(s: str) -> str:
     """Uppercase + remove acentos + strip."""
     if not isinstance(s, str):
@@ -159,13 +156,11 @@ def _norm(s: str) -> str:
     nfd = unicodedata.normalize("NFD", s)
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
-
 _PRODUTO_SUFIXOS = frozenset({
     "ST", "CS", "QN", "KG", "SL", "EX", "CAL",
     "SOLTEIRO", "CASAL", "QUEEN", "KING", "AVULSA",
     "HOTEL", "EXTRA", "SUPER", "PLUS", "P", "M", "G", "GG",
 })
-
 
 def _base_produto(nome: str) -> str:
     """'LENCOL ST' → 'LENCOL', 'FRONHA AVULSA P' → 'FRONHA'. Espera string já _norm'd."""
@@ -179,7 +174,6 @@ def _base_produto(nome: str) -> str:
         result.append(w)
     return " ".join(result)
 
-
 def _empresa_match(e1: str, e2: str) -> bool:
     """'NIAZI' ↔ 'NIAZITEX' → True (substring, mínimo 5 chars)."""
     if not e1 or not e2:
@@ -188,7 +182,6 @@ def _empresa_match(e1: str, e2: str) -> bool:
         return True
     short, long_ = (e1, e2) if len(e1) <= len(e2) else (e2, e1)
     return len(short) >= 5 and short in long_
-
 
 def _parse_data_base(val) -> date | None:
     """Converte '1-mar.', '1-abr', '1-mai' → date(ano, mes, 1)."""
@@ -208,7 +201,6 @@ def _parse_data_base(val) -> date | None:
                 return None
     return None
 
-
 def _parse_num(val) -> float:
     """Converte '3.000', 'R$ 0,44', '#ERROR!' → float ou NaN."""
     if pd.isna(val):
@@ -222,7 +214,6 @@ def _parse_num(val) -> float:
     except ValueError:
         return float("nan")
 
-
 def _dias_uteis_mes(ano: int, mes: int) -> int:
     """Conta dias úteis (seg–sex) no mês inteiro."""
     _, n_dias = calendar.monthrange(ano, mes)
@@ -231,7 +222,6 @@ def _dias_uteis_mes(ano: int, mes: int) -> int:
         if date(ano, mes, d).weekday() < 5:
             count += 1
     return count
-
 
 def _build_nome_resolver(
     nomes_meta: set[str],
@@ -279,19 +269,16 @@ def _build_nome_resolver(
 
     return resolver, auto_found, sem_match
 
-
 def _fmt_br(v: float, dec: int = 0) -> str:
     if np.isnan(v):
         return "—"
     txt = f"{v:,.{dec}f}"
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
 
-
 def _fmt_reais(v: float) -> str:
     if np.isnan(v):
         return "—"
     return "R$ " + _fmt_br(v, 2)
-
 
 def _csv_url(sheet_id: str, gid: str) -> str:
     return (
@@ -299,10 +286,9 @@ def _csv_url(sheet_id: str, gid: str) -> str:
         f"/export?format=csv&gid={gid}"
     )
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # CARREGAMENTO DE DADOS
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _load_csv(sheet_id: str, gid: str) -> pd.DataFrame:
     url = _csv_url(sheet_id, gid)
@@ -323,7 +309,6 @@ def _load_csv(sheet_id: str, gid: str) -> pd.DataFrame:
         except Exception as e:
             st.warning(f"Falha ao carregar planilha {sheet_id}/{gid}: {e}")
             return pd.DataFrame()
-
 
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _load_producao_geral() -> pd.DataFrame:
@@ -414,7 +399,6 @@ def _load_producao_geral() -> pd.DataFrame:
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
-
 def _load_lancamentos(centro_custo_norm: str) -> pd.DataFrame:
     """Carrega e normaliza lançamentos para um CENTRO DE CUSTO."""
     chaves = CENTRO_CUSTO_PARA_LANCAMENTO.get(centro_custo_norm, [])
@@ -473,10 +457,9 @@ def _load_lancamentos(centro_custo_norm: str) -> pd.DataFrame:
         return pd.concat(frames, ignore_index=True)
     return pd.DataFrame()
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # PLANO DE METAS
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _load_metas() -> pd.DataFrame:
     raw = _load_csv(METAS_SHEET_ID, METAS_GID)
@@ -545,10 +528,9 @@ def _load_metas() -> pd.DataFrame:
     df = df[df["STATUS"].isin(["PREVISTO", "REALIZADO"])]
     return df
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # PRODUÇÃO REAL (lançamentos + prod geral)
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _build_producao_real(centros: list[str]) -> pd.DataFrame:
     """
@@ -585,10 +567,9 @@ def _build_producao_real(centros: list[str]) -> pd.DataFrame:
     result["DATA"] = pd.to_datetime(result["DATA"], errors="coerce").dt.date
     return result.dropna(subset=["DATA"])
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # CÁLCULO DE INDICADORES
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 def _calcular_indicadores(
     df_prev: pd.DataFrame,
     df_real: pd.DataFrame,
@@ -722,7 +703,6 @@ def _calcular_indicadores(
         })
     return pd.DataFrame(rows)
 
-
 def _serie_diaria(
     df_real: pd.DataFrame,
     resp: str, emp: str,
@@ -791,10 +771,9 @@ def _serie_diaria(
     real_full = pd.merge(real_full, proj, on="DATA", how="left")
     return daily, real_full
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # GERADOR DE PLANO DO PRÓXIMO MÊS
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 def _gerar_proximo_mes_xlsx(
     df_prev: pd.DataFrame,
     df_indicadores: pd.DataFrame,
@@ -869,18 +848,17 @@ def _gerar_proximo_mes_xlsx(
     buf.seek(0)
     return buf.getvalue()
 
-
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 # RENDERIZAÇÃO
-# ──────────────────────────────────────────────────────────────────────────────
+# ─
 def main():
     hoje = date.today()
 
-    # ── Cabeçalho ──────────────────────────────────────────────────────────────
+    # cabeçalho
     st.markdown("<h1 style='color:#FFF;font-size:2rem;margin-bottom:4px;'>🎯 Plano de Metas / Previsão de Custos</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color:#A0A0A0;margin-bottom:20px;'>Acompanhamento automático vs. metas — produção real, projeções e análise de custos</p>", unsafe_allow_html=True)
 
-    # ── Carrega metas ──────────────────────────────────────────────────────────
+    # carrega metas
     with st.spinner("Carregando plano de metas..."):
         df_metas = _load_metas()
 
@@ -888,7 +866,7 @@ def main():
         st.error("Não foi possível carregar a planilha de metas. Verifique o acesso.")
         st.stop()
 
-    # ── Filtros ────────────────────────────────────────────────────────────────
+    # filtros
     meses_disponiveis = sorted(
         df_metas["DATA_BASE"].dropna().unique(),
         key=lambda d: (d.year, d.month),
@@ -971,18 +949,18 @@ def main():
         st.warning("Nenhuma meta PREVISTO encontrada para os filtros selecionados.")
         st.stop()
 
-    # ── Produção real ──────────────────────────────────────────────────────────
+    # produção real
     with st.spinner("Carregando dados de produção..."):
         df_prod = _build_producao_real(centros_sel)
 
-    # ── Equivalência de nomes ─────────────────────────────────────────────────
+    # equivalência de nomes
     nomes_meta = set(df_prev["RESPONSAVEL"].unique())
     nomes_prod = set(df_prod["PRESTADOR"].unique()) if not df_prod.empty else set()
     nome_resolver, auto_matches, sem_match_list = _build_nome_resolver(nomes_meta, nomes_prod)
 
     df_ind = _calcular_indicadores(df_prev, df_prod, hoje, nome_resolver)
 
-    # ── KPI Row ────────────────────────────────────────────────────────────────
+    # kpi row
     meta_total     = df_prev["META_MES"].sum(skipna=True)
     real_total     = df_ind["REALIZADO"].sum() if not df_ind.empty else 0.0
     proj_total     = df_ind["PROJECAO"].sum() if not df_ind.empty else 0.0
@@ -1001,7 +979,7 @@ def main():
 
     st.markdown("---")
 
-    # ── Diagnóstico de Equivalências de Nomes ─────────────────────────────────
+    # diagnóstico de equivalências de nomes
     n_auto   = len(auto_matches)
     n_manual = len(NOME_EQUIVALENCIAS)
     n_sem    = len(sem_match_list)
@@ -1050,7 +1028,7 @@ def main():
 
     st.markdown("---")
 
-    # ── Seção 2 — Tabela de Progresso ─────────────────────────────────────────
+    # seção 2 — tabela de progresso
     st.markdown("<div class='sec-header'>📋 Progresso por Prestador × Produto</div>", unsafe_allow_html=True)
 
     if not df_ind.empty:
@@ -1076,7 +1054,7 @@ def main():
 
     st.markdown("---")
 
-    # ── Seção 3 — Série Temporal por Prestador ─────────────────────────────────
+    # seção 3 — série temporal por prestador
     st.markdown("<div class='sec-header'>📈 Evolução Diária — Meta vs Realizado vs Projeção</div>", unsafe_allow_html=True)
 
     if not df_ind.empty:
@@ -1148,7 +1126,7 @@ def main():
 
     st.markdown("---")
 
-    # ── Seção 4 — Análise de Custos por Centro de Custo ───────────────────────
+    # seção 4 — análise de custos por centro de custo
     st.markdown("<div class='sec-header'>💰 Análise de Custos e Receita por Centro de Custo</div>", unsafe_allow_html=True)
 
     if not df_ind.empty:
@@ -1208,7 +1186,7 @@ def main():
 
     st.markdown("---")
 
-    # ── Seção 5 — Gerador do Próximo Mês ──────────────────────────────────────
+    # seção 5 — gerador do próximo mês
     if IS_ADMIN:
         prox_mes_num = mes_sel.month % 12 + 1
         prox_ano_num = mes_sel.year + (1 if mes_sel.month == 12 else 0)
@@ -1233,6 +1211,5 @@ def main():
                 file_name=f"Plano_Metas_{prox_label.replace('/', '-')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-
 
 main()
