@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import logging
@@ -23,17 +22,15 @@ if _PROJECT_ROOT not in sys.path:
 try:
     from config import GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID, METAS, META_TOTAL, CACHE_TTL
 except ImportError:
-    GOOGLE_SHEETS_ID = "1iGj4-vknwzepbrHdRz1PwisZU2foU7aW"
+    GOOGLE_SHEETS_ID = "1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB"
     GOOGLE_SHEETS_GID = "1544210185"
     METAS = {'MAQUINA': 7000, 'MESA 1': 4000}
     META_TOTAL = sum(METAS.values())
     CACHE_TTL = 60
 
-# =====================================================================
-# CONFIG IACANGA (Setor 2 — Mantas Giattex)
-# =====================================================================
-GOOGLE_SHEETS_ID_IACANGA = "14OFOAxrV_DkyrwG6KG8NZT-PeXUV4jezPrPO90rh1DU"
-GOOGLE_SHEETS_GID_IACANGA = "1362699684"
+# config iacanga (Setor 2 - Mantas Giattex)
+GOOGLE_SHEETS_ID_IACANGA = "1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU"
+GOOGLE_SHEETS_GID_IACANGA = "0"
 
 # Colunas obrigatórias usadas pelo dashboard do Iacanga
 COLUNAS_USADAS_IACANGA = [
@@ -48,12 +45,10 @@ METAS_POR_TAMANHO = {
     "BURDAY":  {"SOLTEIRO": 9000, "CASAL": 9000, "QUEEN": 9000, "KING": 9000, "_DEFAULT": 9000},
 }
 
+# helpers iacanga - normaliza e meta variável
 
-# =====================================================================
-# HELPERS IACANGA — normalização + meta variável
-# =====================================================================
 def _norm_iacanga(texto: str) -> str:
-    """Normaliza texto: trim + upper + remove acentos."""
+    """normaliza: trim + upper + remove acentos."""
     if pd.isna(texto):
         return ""
     s = str(texto).strip().upper()
@@ -68,9 +63,8 @@ def _norm_iacanga(texto: str) -> str:
         s = s.replace(k, v)
     return s
 
-
 def identifica_grupo_estacao_iacanga(estacao: str) -> str:
-    """Mapeia o nome livre da estação -> grupo de meta (MAQUINA/MESA/BURDAY)."""
+    """identifica o grupo de meta (MAQUINA/MESA/BURDAY) pela estacao."""
     s = _norm_iacanga(estacao)
     if "BURDAY" in s:
         return "BURDAY"
@@ -80,9 +74,8 @@ def identifica_grupo_estacao_iacanga(estacao: str) -> str:
         return "MESA"
     return "OUTRO"
 
-
 def normaliza_tamanho_iacanga(tam: str) -> str:
-    """Normaliza tamanho -> SOLTEIRO/CASAL/QUEEN/KING (ou string normalizada)."""
+    """normaliza tamanho pra SOLTEIRO/CASAL/QUEEN/KING."""
     s = _norm_iacanga(tam)
     if "SOLT" in s:
         return "SOLTEIRO"
@@ -94,9 +87,8 @@ def normaliza_tamanho_iacanga(tam: str) -> str:
         return "KING"
     return s
 
-
 def meta_por_registro_iacanga(estacao: str, tamanho: str) -> float:
-    """Meta diária para um par (estação, tamanho)."""
+    """meta diária pra um par (estação, tamanho)."""
     grupo = identifica_grupo_estacao_iacanga(estacao)
     tam = normaliza_tamanho_iacanga(tamanho)
     if grupo not in METAS_POR_TAMANHO:
@@ -104,9 +96,8 @@ def meta_por_registro_iacanga(estacao: str, tamanho: str) -> float:
     metas_g = METAS_POR_TAMANHO[grupo]
     return metas_g.get(tam, metas_g.get("_DEFAULT", 0))
 
-
 def meta_ponderada_iacanga(df_subset: pd.DataFrame) -> float:
-    """Meta ponderada pelo mix real de tamanhos cortados no subset."""
+    """meta ponderada pelo mix real de tamanhos cortados."""
     if df_subset.empty:
         return 0.0
     total = df_subset['QUANTIDADE'].sum()
@@ -118,11 +109,9 @@ def meta_ponderada_iacanga(df_subset: pd.DataFrame) -> float:
         soma += meta_por_registro_iacanga(est, tam) * (qtd / total)
     return soma
 
-
 def meta_diaria_por_estacao_iacanga(df_subset: pd.DataFrame, estacao: str) -> float:
     """Meta ponderada restrita a uma estação específica."""
     return meta_ponderada_iacanga(df_subset[df_subset['ESTACAO'] == estacao])
-
 
 def calcular_meta_total_ponderada_iacanga(df_subset: pd.DataFrame) -> float:
     """Soma das metas ponderadas de cada estação presente no subset."""
@@ -132,7 +121,6 @@ def calcular_meta_total_ponderada_iacanga(df_subset: pd.DataFrame) -> float:
     for est in df_subset['ESTACAO'].unique():
         total += meta_diaria_por_estacao_iacanga(df_subset, est)
     return total
-
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -149,9 +137,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# =====================================================================
 # CSS
-# =====================================================================
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -401,10 +388,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-# =====================================================================
 # DATA LOADING
-# =====================================================================
+
 def parse_date_safe(data_str):
     """Parse date from Google Sheets (exports MM/DD/YYYY by default)."""
     if pd.isna(data_str) or not str(data_str).strip():
@@ -416,7 +401,6 @@ def parse_date_safe(data_str):
         except Exception:
             continue
     return pd.to_datetime(data_str, errors="coerce")
-
 
 def baixar_csv_google_sheets():
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -449,7 +433,6 @@ def baixar_csv_google_sheets():
             continue
     st.error(f"❌ Falha ao baixar CSV do Google Sheets em {tentativa_num} tentativas. Último erro: {str(ultimo_erro)[:100]}")
     raise RuntimeError(f"Falha ao baixar CSV do Google Sheets. Último erro: {ultimo_erro}")
-
 
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados():
@@ -487,10 +470,8 @@ def carregar_dados():
     df_corte['DIA_SEMANA'] = df_corte['DATA'].dt.day_name()
     return df_corte
 
-
-# =====================================================================
 # DATA LOADING — IACANGA (planilha própria)
-# =====================================================================
+
 def baixar_csv_google_sheets_iacanga():
     headers = {'User-Agent': 'Mozilla/5.0'}
     urls = [
@@ -510,7 +491,6 @@ def baixar_csv_google_sheets_iacanga():
             ultimo_erro = erro
             continue
     raise RuntimeError(f"Falha ao baixar CSV do Iacanga. Último erro: {ultimo_erro}")
-
 
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados_iacanga():
@@ -545,11 +525,9 @@ def carregar_dados_iacanga():
     df['DIA_SEMANA'] = df['DATA'].dt.day_name()
     return df
 
-
-# =====================================================================
 # LENÇOL — CONSTANTES E HELPERS
-# =====================================================================
-LENCOL_SPREADSHEET_ID = "1BAbgM0zLWBHPn06LfzEvH4aPH84eZvAV"
+
+LENCOL_SPREADSHEET_ID = "1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa"
 LENCOL_SPREADSHEET_GID = "1396046910"
 LENCOL_CACHE_TTL = 60
 
@@ -594,7 +572,6 @@ LENCOL_DIAS_PT = {
 }
 LENCOL_ORDEM_DIAS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
 
-
 def lencol_layout_dark(**kwargs):
     layout = {**LENCOL_DARK, **LENCOL_DARK_AXES}
     if 'yaxis' in kwargs:
@@ -604,15 +581,12 @@ def lencol_layout_dark(**kwargs):
     layout.update(kwargs)
     return layout
 
-
 def lencol_fmt_num(v, dec=0):
     txt = f"{float(v):,.{dec}f}"
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
 
-
 def lencol_fmt_brl(v):
     return f"R$ {lencol_fmt_num(v, 2)}"
-
 
 def lencol_parse_brl(s):
     if pd.isna(s):
@@ -627,7 +601,6 @@ def lencol_parse_brl(s):
     except Exception:
         return 0.0
 
-
 def lencol_cat_base(cat):
     if pd.isna(cat) or str(cat).strip().lower() in ("", "nan", "none", "n/a"):
         return ""
@@ -639,10 +612,8 @@ def lencol_cat_base(cat):
             break
     return c
 
-
 def lencol_cor_empresa(emp):
     return LENCOL_CORES_EMPRESA.get(emp.upper().strip(), "#718096")
-
 
 def lencol_parse_date(data_str):
     """
@@ -703,14 +674,12 @@ def lencol_parse_date(data_str):
     except Exception:
         return pd.NaT
 
-
 def lencol_delta_icon(v):
     if v > 0:
         return f"▲ {lencol_fmt_num(v, 1)}%"
     if v < 0:
         return f"▼ {lencol_fmt_num(abs(v), 1)}%"
     return "— 0,0%"
-
 
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_corte_lencol() -> pd.DataFrame:
@@ -837,7 +806,6 @@ def load_corte_lencol() -> pd.DataFrame:
     df["DIA_SEMANA_PT"] = df["DIA_SEMANA"].map(LENCOL_DIAS_PT)
     return df
 
-
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_metas_lencol() -> pd.DataFrame:
     url = (
@@ -865,23 +833,18 @@ def load_metas_lencol() -> pd.DataFrame:
         logging.debug(f"URL: {url}")
         return pd.DataFrame(columns=["PRESTADOR", "EMPRESA", "CATEGORIA", "META"])
 
-
-# =====================================================================
 # NAVIGATION HELPERS
-# =====================================================================
+
 if st.session_state.get('_active_page') != 'corte':
     st.session_state.corte_screen = 'analysis_type'
 st.session_state._active_page = 'corte'
-
 
 def _go(screen: str):
     st.session_state.corte_screen = screen
     st.rerun()
 
-
-# =====================================================================
 # SIDEBAR
-# =====================================================================
+
 with st.sidebar:
     st.markdown("### ✂️ Controle de Corte")
     st.markdown("---")
@@ -920,10 +883,8 @@ with st.sidebar:
         st.markdown("---")
         st.header("🔍 Filtros")
 
-
-# =====================================================================
 # SCREEN — ANALYSIS TYPE SELECTION (Rendimento vs Eficiência Geral)
-# =====================================================================
+
 screen = st.session_state.corte_screen
 
 if screen == 'analysis_type':
@@ -984,9 +945,8 @@ if screen == 'analysis_type':
             st.session_state.corte_screen = 'analysis_type'
             st.switch_page("app.py")
 
-# =====================================================================
 # SCREEN — EFICIÊNCIA DASHBOARD (UNIFIED WITH 3 TABS)
-# =====================================================================
+
 elif screen == 'eficiencia_dashboard':
     st.markdown("""
     <div class="breadcrumb">
@@ -1005,9 +965,8 @@ elif screen == 'eficiencia_dashboard':
         if st.button("← Voltar ao Tipo de Análise", key="back_efic_analysis", use_container_width=True):
             _go('analysis_type')
 
-# =====================================================================
 # SCREEN — REGION SELECTOR
-# =====================================================================
+
 elif screen == 'regions':
     st.markdown("""
     <div class="breadcrumb">
@@ -1074,10 +1033,8 @@ elif screen == 'regions':
         if st.button("← Voltar ao Tipo de Análise", key="back_to_analysis_type", use_container_width=True):
             _go('analysis_type')
 
-
-# =====================================================================
 # SCREEN — AREALVA PRODUCT SELECTOR
-# =====================================================================
+
 elif screen == 'arealva_products':
     st.markdown("""
     <div class="breadcrumb">
@@ -1145,13 +1102,11 @@ elif screen == 'arealva_products':
         if st.button("← Voltar às Regiões", key="back_to_regions", use_container_width=True):
             _go('regions')
 
-
-# =====================================================================
 # SCREEN — IACANGA RENDIMENTO — DASHBOARD MANTAS GIATTEX
-# =====================================================================
+
 elif screen == 'iacanga_rendimento':
 
-    # --- Breadcrumb ---
+    # breadcrumb
     st.markdown("""
     <div class="breadcrumb">
         <span class="bc-link">Controle de Corte</span>
@@ -1160,7 +1115,7 @@ elif screen == 'iacanga_rendimento':
     </div>
     """, unsafe_allow_html=True)
 
-    # --- Load data ---
+    # load data
     try:
         df_corte_iac = carregar_dados_iacanga()
     except KeyError as e:
@@ -1173,7 +1128,7 @@ elif screen == 'iacanga_rendimento':
         st.info("📡 Verifique se a planilha Google Sheets está acessível.")
         st.stop()
 
-    # --- Sidebar filters ---
+    # sidebar filters
     with st.sidebar:
         if not df_corte_iac.empty:
             st.info(
@@ -1283,7 +1238,7 @@ elif screen == 'iacanga_rendimento':
     st.sidebar.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     st.sidebar.caption(f"Registros carregados: {len(df_trabalho_iac):,}".replace(",", "."))
 
-    # --- Apply filters ---
+    # apply filters
     df_filtrado_iac = df_trabalho_iac.copy()
     if ops_sel_iac:
         df_filtrado_iac = df_filtrado_iac[df_filtrado_iac['OP'].isin(ops_sel_iac)]
@@ -1299,10 +1254,10 @@ elif screen == 'iacanga_rendimento':
             (df_filtrado_iac['DATA'].dt.date <= filtro_datas_iac[1])
         ]
 
-    # --- Meta total ponderada do recorte atual ---
+    # meta total ponderada do recorte atual
     META_TOTAL_IAC = calcular_meta_total_ponderada_iacanga(df_filtrado_iac)
 
-    # --- Dashboard Header ---
+    # dashboard header
     st.markdown('<div class="dash-header">✂️ Iacanga — Mantas Giattex</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="dash-sub">Acompanhamento de produção com meta variável por tamanho '
@@ -1310,7 +1265,7 @@ elif screen == 'iacanga_rendimento':
         unsafe_allow_html=True,
     )
 
-    # --- Tabs ---
+    # tabs
     tab1_iac, tab2_iac, tab3_iac = st.tabs([
         "📊 Visão Geral",
         "📋 Acompanhamento por OP",
@@ -1844,7 +1799,7 @@ elif screen == 'iacanga_rendimento':
             fig_sem_iac.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
             st.plotly_chart(fig_sem_iac, use_container_width=True)
 
-    # --- Footer ---
+    # footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align:center; color:#606878; font-size:0.82rem;'>"
@@ -1855,13 +1810,11 @@ elif screen == 'iacanga_rendimento':
         unsafe_allow_html=True,
     )
 
-
-# =====================================================================
 # SCREEN — AREALVA MANTA DASHBOARD
-# =====================================================================
+
 elif screen == 'arealva_manta':
 
-    # --- Breadcrumb ---
+    # breadcrumb
     st.markdown("""
     <div class="breadcrumb">
         <span class="bc-link">Controle de Corte</span>
@@ -1872,7 +1825,7 @@ elif screen == 'arealva_manta':
     </div>
     """, unsafe_allow_html=True)
 
-    # --- Load data ---
+    # load data
     try:
         df_corte = carregar_dados()
     except KeyError as e:
@@ -1885,7 +1838,7 @@ elif screen == 'arealva_manta':
         st.info("📡 Verifique se a planilha Google Sheets está acessível.")
         st.stop()
 
-    # --- Sidebar filters ---
+    # sidebar filters
     with st.sidebar:
         st.info(f"📅 {df_corte['DATA'].min().strftime('%d/%m/%Y')} → {df_corte['DATA'].max().strftime('%d/%m/%Y')}")
         if st.sidebar.button("🔄 Limpar Cache", use_container_width=True):
@@ -1964,7 +1917,7 @@ elif screen == 'arealva_manta':
     st.sidebar.caption(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     st.sidebar.caption(f"Registros filtrados: {len(df_trabalho):,}".replace(",", "."))
 
-    # --- Apply filters ---
+    # apply filters
     df_filtrado = df_trabalho.copy()
     if ops_selecionadas:
         df_filtrado = df_filtrado[df_filtrado['OP'].isin(ops_selecionadas)]
@@ -1978,11 +1931,11 @@ elif screen == 'arealva_manta':
             (df_filtrado['DATA'].dt.date <= filtro_datas[1])
         ]
 
-    # --- Dashboard Header ---
+    # dashboard header
     st.markdown('<div class="dash-header">✂️ Arealva — Manta</div>', unsafe_allow_html=True)
     st.markdown('<div class="dash-sub">Acompanhamento de produção e desempenho por estação</div>', unsafe_allow_html=True)
 
-    # --- Tabs ---
+    # tabs
     tab1, tab2, tab3 = st.tabs(["📊 Visão Geral", "📋 Acompanhamento por OP", "🏭 Produção por Estação"])
 
     # TAB 1
@@ -2318,7 +2271,7 @@ elif screen == 'arealva_manta':
         fig_sem.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
         st.plotly_chart(fig_sem, use_container_width=True)
 
-    # --- Footer ---
+    # footer
     st.markdown("---")
     st.markdown(
         "<div style='text-align:center; color:#606878; font-size:0.82rem;'>"
@@ -2328,10 +2281,8 @@ elif screen == 'arealva_manta':
         unsafe_allow_html=True,
     )
 
-
-# =====================================================================
 # SCREEN — IACANGA EFICIÊNCIA — PLACEHOLDER (EM BREVE)
-# =====================================================================
+
 elif screen == 'iacanga_eficiencia':
     
     st.markdown("""
@@ -2400,10 +2351,8 @@ elif screen == 'iacanga_eficiencia':
         if st.button("← Voltar à Seleção de Análise", key="back_to_type_selection", use_container_width=True):
             _go('iacanga_type_selection')
 
-
-# =====================================================================
 # SCREEN — AREALVA LENÇOL DASHBOARD
-# =====================================================================
+
 elif screen == 'arealva_lencol':
 
     # CSS específico do lençol
@@ -2490,7 +2439,7 @@ elif screen == 'arealva_lencol':
     data_max_ln = df_raw_ln["DATA"].max().date()
     hoje_ln = datetime.now().date()
 
-    # ── Sidebar filters ───────────────────────────────────────────────
+    # sidebar filters
     with st.sidebar:
         st.caption(f"Atualizado a cada {LENCOL_CACHE_TTL}s · {datetime.now().strftime('%H:%M:%S')}")
         if st.button("🔄 Limpar Cache", key="ln_clear", use_container_width=True):
@@ -2546,7 +2495,7 @@ elif screen == 'arealva_lencol':
 
         st.caption(f"📊 {len(df_raw_ln):,} registros totais".replace(",", "."))
 
-    # ── Aplicar filtros ───────────────────────────────────────────────
+    # aplicar filtros
     df_ln = df_raw_ln[
         (df_raw_ln["DATA"].dt.date >= p_ini_ln) &
         (df_raw_ln["DATA"].dt.date <= p_fim_ln)
@@ -2562,7 +2511,7 @@ elif screen == 'arealva_lencol':
         st.warning("⚠️ Nenhum dado para os filtros selecionados.")
         st.stop()
 
-    # ── Métricas globais ──────────────────────────────────────────────
+    # métricas globais
     total_pecas_ln = int(df_ln["QUANT"].sum())
     total_valor_ln = df_ln["VALOR_RECEBER"].sum()
     dias_trab_ln = (p_fim_ln - p_ini_ln).days + 1
@@ -2591,7 +2540,7 @@ elif screen == 'arealva_lencol':
 
     status_pg_ln = "Pago" if p_fim_ln < data_max_ln else "A Pagar"
 
-    # ── Header ────────────────────────────────────────────────────────
+    # header
     st.markdown(
         f"<h1 style='text-align:center;color:#FFFFFF;font-size:2rem;"
         f"font-weight:800;margin-bottom:2px'>✂️ Dashboard Corte · Lençol</h1>"
@@ -2602,14 +2551,14 @@ elif screen == 'arealva_lencol':
     )
     st.divider()
 
-    # ── Abas ──────────────────────────────────────────────────────────
+    # abas
     tabs_ln = st.tabs([
         "📊 Visão Geral", "👥 Prestadores", "📋 OPs",
         "🏭 Empresas", "📦 Categorias", "📅 Temporal",
         "💰 Financeiro", "🎯 Metas", "🏆 Ranking",
     ])
 
-    # ── TAB 1 — VISÃO GERAL ───────────────────────────────────────────
+    # tab 1 — visão geral
     with tabs_ln[0]:
         c1, c2, c3, c4 = st.columns(4)
         kd_p = lencol_delta_icon(delta_pecas_ln) if delta_pecas_ln is not None else None
@@ -2722,7 +2671,7 @@ elif screen == 'arealva_lencol':
                 unsafe_allow_html=True,
             )
 
-    # ── TAB 2 — PRESTADORES ───────────────────────────────────────────
+    # tab 2 — prestadores
     with tabs_ln[1]:
         st.markdown("<div class='ln-sec'>Desempenho por Prestador</div>", unsafe_allow_html=True)
         df_prest_ln = (
@@ -2792,7 +2741,7 @@ elif screen == 'arealva_lencol':
         fig_hm_ln.update_layout(**lencol_layout_dark(height=300, title="Distribuição prestador × empresa"))
         st.plotly_chart(fig_hm_ln, use_container_width=True)
 
-    # ── TAB 4 — EMPRESAS ──────────────────────────────────────────────
+    # tab 4 — empresas
     with tabs_ln[3]:
         df_emp_tab_ln = (
             df_ln.groupby("EMPRESA")
@@ -2864,7 +2813,7 @@ elif screen == 'arealva_lencol':
         st.dataframe(df_emp_show_ln.rename(columns={"EMPRESA":"Empresa"}),
                      use_container_width=True, hide_index=True)
 
-    # ── TAB 5 — CATEGORIAS ────────────────────────────────────────────
+    # tab 5 — categorias
     with tabs_ln[4]:
         df_cat_tab_ln = (
             df_ln.groupby("CAT_BASE")
@@ -2925,7 +2874,7 @@ elif screen == 'arealva_lencol':
         fig_hmec_ln.update_layout(**lencol_layout_dark(height=300, title="Peças: empresa vs categoria"))
         st.plotly_chart(fig_hmec_ln, use_container_width=True)
 
-    # ── TAB 6 — TEMPORAL ──────────────────────────────────────────────
+    # tab 6 — temporal
     with tabs_ln[5]:
         col_t1_ln, col_t2_ln = st.columns(2)
         with col_t1_ln:
@@ -2997,7 +2946,7 @@ elif screen == 'arealva_lencol':
         fig_ds_ln.update_layout(**lencol_layout_dark(height=260, title="Média de peças por dia da semana"))
         st.plotly_chart(fig_ds_ln, use_container_width=True)
 
-    # ── TAB 7 — FINANCEIRO ────────────────────────────────────────────
+    # tab 7 — financeiro
     with tabs_ln[6]:
         total_r_ln = df_ln["VALOR_RECEBER"].sum()
         media_dia_r_ln = total_r_ln / dias_trab_ln if dias_trab_ln else 0
@@ -3060,7 +3009,7 @@ elif screen == 'arealva_lencol':
         fig_sc_ln.update_layout(**lencol_layout_dark(height=320))
         st.plotly_chart(fig_sc_ln, use_container_width=True)
 
-    # ── TAB 8 — METAS ─────────────────────────────────────────────────
+    # tab 8 — metas
     with tabs_ln[7]:
         if df_metas_ln.empty:
             st.info("Nenhuma meta encontrada na planilha METAS.")
@@ -3135,7 +3084,7 @@ elif screen == 'arealva_lencol':
             )
             st.dataframe(df_meta_show_ln, use_container_width=True, hide_index=True)
 
-    # ── TAB 9 — RANKING ───────────────────────────────────────────────
+    # tab 9 — ranking
     with tabs_ln[8]:
         st.markdown("<div class='ln-sec'>🏆 Ranking Geral de Prestadores</div>", unsafe_allow_html=True)
         df_rank_ln = (
@@ -3204,7 +3153,7 @@ elif screen == 'arealva_lencol':
         else:
             st.info("Radar disponível com 2 ou mais prestadores.")
 
-    # ── TAB 3 — OPs ───────────────────────────────────────────────────
+    # tab 3 — ops
     with tabs_ln[2]:
         st.markdown("<div class='ln-sec'>📋 Resumo por OP</div>", unsafe_allow_html=True)
 
