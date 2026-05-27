@@ -174,7 +174,10 @@ def carregar_manta_arealva() -> pd.DataFrame:
 @st.cache_data(ttl=EFICIENCIA_CACHE_TTL, show_spinner=False)
 def carregar_lencol_arealva() -> pd.DataFrame:
     texto = _fetch(EFICIENCIA_LENCOL_AREALVA_ID, EFICIENCIA_LENCOL_AREALVA_GID)
-    skip  = _detect_header(texto, ["O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE"])
+    skip  = _detect_header(texto, [
+        "O.P.", "CLIENTE", "PRODUTO", "QUANTIDADE",
+        "METROS RECEBIDOS", "METROS CORTADOS",           # nomes da planilha nova
+    ])
     df    = pd.read_csv(io.StringIO(texto), skiprows=skip, header=0, dtype=str)
     df.columns = df.columns.str.strip()
     df = df.drop(columns=[c for c in df.columns if "Unnamed" in c or not c.strip()], errors="ignore")
@@ -188,14 +191,18 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     tam_col      = _col(df, ["TAMANHO"])
     stat_col     = _col(df, ["STATUS"])
     prog_col     = _col(df, ["QUANTIDADE PROGRAMADA(PÇS)", "QUANTIDADE PROGRAMADA (PÇS)",
-                              "QNT PROG", "PROGRAMADO", "QTDE PREV"])
+                              "QNT PROG", "PROGRAMADO", "QTDE PREV",
+                              "QUANTID./ROLOS", "QUANTID /ROLOS", "QUANTIDADE/ROLOS"])  # planilha nova
     cort_col     = _col(df, ["QUANTIDADE CORTADA(PÇS)", "QUANTIDADE CORTADA (PÇS)",
                               "QNT CORTADA", "CORTADO"])
-    mts_esp_col  = _col(df, ["METROS ESPERADOS(MTS)", "METROS ESPERADOS (MTS)", "MTS ESPERADOS"])
-    mts_cort_col = _col(df, ["METROS CORTADOS(MTS)", "METROS CORTADOS (MTS)", "MTS CORTADOS"])
-    dif_col      = _col(df, ["DIFERENÇA (MTS)", "DIFERENCA (MTS)", "DIFERENÇA", "DIFERENCA"])
-    perda_col    = _col(df, ["PERDA (%)", "PERDA"])
-    ret_col      = _col(df, ["RETALHO (KG)", "RETALHO (KG)", "RETALHO"])
+    mts_esp_col  = _col(df, ["METROS ESPERADOS(MTS)", "METROS ESPERADOS (MTS)", "MTS ESPERADOS",
+                              "METROS RECEBIDOS"])                                       # planilha nova
+    mts_cort_col = _col(df, ["METROS CORTADOS(MTS)", "METROS CORTADOS (MTS)", "MTS CORTADOS",
+                              "METROS CORTADOS"])                                        # planilha nova
+    dif_col      = _col(df, ["DIFERENÇA (MTS)", "DIFERENCA (MTS)", "DIFERENÇA", "DIFERENCA",
+                              "DIVERGENCIA MTS", "DIVERGÊNCIA MTS"])                    # planilha nova
+    perda_col    = _col(df, ["PERDA (%)", "PERDA", "PERDA %"])                          # planilha nova
+    ret_col      = _col(df, ["RETALHO (KG)", "RETALHO"])
     aprov_col    = _col(df, ["APROVEITAMENTO", "APROV"])
 
     col_map = {
@@ -251,12 +258,12 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     df = df[~df["OP"].astype(str).str.upper().str.strip().isin(invalidos)]
 
     # Remove linhas sem nenhum dado relevante (linhas vazias do fim da planilha)
-    tem_dado = (
-        (df["QTD_PROG"] > 0) |
-        (df["QTD_CORT"] > 0) |
-        (df["MTS_ESP"]  > 0) |
-        (df["MTS_CORT"] > 0)
-    )
+    # Aceita linha com qualquer campo numérico preenchido (planilha nova pode não ter QTD_CORT)
+    cols_numericas = ["QTD_PROG", "QTD_CORT", "MTS_ESP", "MTS_CORT", "RETALHO_KG"]
+    tem_dado = pd.Series(False, index=df.index)
+    for c in cols_numericas:
+        if c in df.columns:
+            tem_dado |= (df[c] > 0)
     df = df[tem_dado].reset_index(drop=True)
     return df
 
