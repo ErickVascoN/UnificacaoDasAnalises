@@ -96,6 +96,17 @@ CENTRO_CUSTO_PARA_LANCAMENTO = {
 
 METAS_CACHE_TTL = 300  # segundos
 
+# ── Equivalência de Nomes de Prestadores ──────────────────────────────────────
+# Mapeia variante (uppercase, sem acento) → nome canônico nas planilhas de produção.
+# Entradas manuais têm PRIORIDADE sobre a detecção automática por similaridade ≥90%.
+# Chave e valor devem estar normalizados: uppercase, sem acento, sem espaços extras.
+# Exemplo de uso:
+#   "MARIA A SILVA":   "MARIA APARECIDA SILVA",
+#   "JOSE C SANTOS":   "JOSE CARVALHO SANTOS",
+NOME_EQUIVALENCIAS: dict[str, str] = {
+    # Adicione aqui aliases permanentes conforme forem identificados:
+}
+
 # ── Eficiência de Corte ────────────────────────────────────────────────────────
 # Manta Arealva
 EFICIENCIA_MANTA_AREALVA_ID = "17ido41trF22ks7HgoJz9XHcJU0oA4SYK"

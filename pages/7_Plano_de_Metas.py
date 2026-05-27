@@ -9,6 +9,7 @@ Fontes de dados (todas lidas dinamicamente, sem valores hardcoded):
 """
 from __future__ import annotations
 
+import difflib
 import io
 import os
 import sys
@@ -34,6 +35,7 @@ from config.settings import (
     METAS_SHEET_ID, METAS_GID,
     LANCAMENTOS_SHEETS, CENTRO_CUSTO_PARA_LANCAMENTO,
     PRODUCAO_SHEETS_ID, METAS_CACHE_TTL,
+    NOME_EQUIVALENCIAS,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -229,6 +231,53 @@ def _dias_uteis_mes(ano: int, mes: int) -> int:
         if date(ano, mes, d).weekday() < 5:
             count += 1
     return count
+
+
+def _build_nome_resolver(
+    nomes_meta: set[str],
+    nomes_prod: set[str],
+) -> tuple[dict[str, str], dict[str, str], list[str]]:
+    """
+    Constrói mapa  nome_meta → nome_prod  para prestadores sem match direto.
+
+    Estratégias (por prioridade):
+      1. Entradas manuais em NOME_EQUIVALENCIAS (config/settings.py).
+      2. Detecção automática via difflib.SequenceMatcher — threshold ≥ 0.90.
+
+    Returns
+    -------
+    resolver   : dict completo (manual + auto) — use para resolver na hora do join.
+    auto_found : dict apenas dos matches automáticos (para diagnóstico/auditoria).
+    sem_match  : lista de nomes do plano de metas sem nenhuma resolução encontrada.
+    """
+    resolver: dict[str, str] = {}
+    auto_found: dict[str, str] = {}
+
+    # 1. Mapeamentos manuais (prioridade máxima — já normalizados pelo usuário)
+    for k, v in NOME_EQUIVALENCIAS.items():
+        resolver[_norm(k)] = _norm(v)
+
+    prod_list = sorted(nomes_prod)
+
+    # 2. Auto-detecção por similaridade ≥ 90%
+    for nome in nomes_meta:
+        if nome in resolver:
+            continue          # já tem mapeamento manual
+        if nome in nomes_prod:
+            continue          # match exato — não precisa resolver
+
+        matches = difflib.get_close_matches(nome, prod_list, n=1, cutoff=0.90)
+        if matches:
+            resolver[nome] = matches[0]
+            auto_found[nome] = matches[0]
+
+    # 3. Sem resolução
+    sem_match = sorted(
+        nome for nome in nomes_meta
+        if nome not in nomes_prod and nome not in resolver
+    )
+
+    return resolver, auto_found, sem_match
 
 
 def _fmt_br(v: float, dec: int = 0) -> str:
@@ -544,14 +593,21 @@ def _calcular_indicadores(
     df_prev: pd.DataFrame,
     df_real: pd.DataFrame,
     hoje: date,
+    nome_resolver: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     """
     Para cada linha PREVISTO, une com produção real e calcula:
     realizado, % atingido, média diária, projeção, custos projetados.
+
+    nome_resolver: dict nome_meta→nome_prod gerado por _build_nome_resolver().
+                   Se None, usa apenas match exato.
     """
+    if nome_resolver is None:
+        nome_resolver = {}
     rows = []
     for _, meta in df_prev.iterrows():
-        resp  = meta["RESPONSAVEL"]
+        resp_orig = meta["RESPONSAVEL"]
+        resp  = nome_resolver.get(resp_orig, resp_orig)   # aplica equivalência
         emp   = meta["CLIENTE"]
         cc    = meta["CENTRO_CUSTO"]
         mes   = meta["DATA_BASE"].month
@@ -919,7 +975,12 @@ def main():
     with st.spinner("Carregando dados de produção..."):
         df_prod = _build_producao_real(centros_sel)
 
-    df_ind = _calcular_indicadores(df_prev, df_prod, hoje)
+    # ── Equivalência de nomes ─────────────────────────────────────────────────
+    nomes_meta = set(df_prev["RESPONSAVEL"].unique())
+    nomes_prod = set(df_prod["PRESTADOR"].unique()) if not df_prod.empty else set()
+    nome_resolver, auto_matches, sem_match_list = _build_nome_resolver(nomes_meta, nomes_prod)
+
+    df_ind = _calcular_indicadores(df_prev, df_prod, hoje, nome_resolver)
 
     # ── KPI Row ────────────────────────────────────────────────────────────────
     meta_total     = df_prev["META_MES"].sum(skipna=True)
@@ -937,6 +998,55 @@ def main():
               delta=f"{(proj_total/meta_total*100 if meta_total > 0 else 0):.1f}% da meta")
     c4.metric("Receita Prevista", _fmt_reais(receita_prev_t))
     c5.metric("Receita Projetada", _fmt_reais(receita_proj_t))
+
+    st.markdown("---")
+
+    # ── Diagnóstico de Equivalências de Nomes ─────────────────────────────────
+    n_auto   = len(auto_matches)
+    n_manual = len(NOME_EQUIVALENCIAS)
+    n_sem    = len(sem_match_list)
+    _exp_label = (
+        f"🔤 Equivalências de Nomes — "
+        f"{n_auto} auto-detectadas · {n_manual} manuais · {n_sem} sem resolução"
+    )
+    with st.expander(_exp_label, expanded=(n_sem > 0)):
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Auto (≥ 90%)", n_auto)
+        col_b.metric("Manuais (settings.py)", n_manual)
+        col_c.metric("Sem resolução ❌", n_sem)
+
+        if auto_matches:
+            st.markdown("##### ✅ Matches automáticos detectados")
+            st.dataframe(
+                pd.DataFrame([
+                    {"Nome no Plano de Metas": k, "Equivalente na Produção": v}
+                    for k, v in sorted(auto_matches.items())
+                ]),
+                use_container_width=True, hide_index=True,
+            )
+
+        if NOME_EQUIVALENCIAS:
+            st.markdown("##### 📋 Mapeamentos manuais ativos")
+            st.dataframe(
+                pd.DataFrame([
+                    {"Alias (config/settings.py)": k, "Canônico": v}
+                    for k, v in sorted(NOME_EQUIVALENCIAS.items())
+                ]),
+                use_container_width=True, hide_index=True,
+            )
+
+        if sem_match_list:
+            st.markdown("##### ❌ Prestadores sem match — produção zerada")
+            st.warning(
+                "Estes nomes não foram encontrados nem por similaridade ≥ 90%. "
+                "Para corrigir, adicione entradas manualmente em "
+                "`config/settings.py → NOME_EQUIVALENCIAS`."
+            )
+            _cols = st.columns(3)
+            for i, nome in enumerate(sem_match_list):
+                _cols[i % 3].code(nome)
+        else:
+            st.success("Todos os prestadores do plano têm correspondência na produção.")
 
     st.markdown("---")
 
@@ -977,7 +1087,8 @@ def main():
         with col_sel2:
             ano_graf = mes_sel.year
             mes_graf = mes_sel.month
-            resp_norm_graf = _norm(resp_graf)
+            _resp_norm_raw  = _norm(resp_graf)
+            resp_norm_graf  = nome_resolver.get(_resp_norm_raw, _resp_norm_raw)
             emp_norm_graf  = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["_EMP_NORM"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else ""
             meta_d_graf = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["META_DIARIA"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else float("nan")
 

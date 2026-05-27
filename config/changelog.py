@@ -7,6 +7,34 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "27/05/2026",
+        "tag": "correção",
+        "title": "Correção sistêmica de parsing de datas (DD/MM vs MM/DD)",
+        "description": (
+            "Datas exportadas pelo Google Sheets em formato M/D/YYYY (locale US) eram "
+            "interpretadas como DD/MM, causando registros em meses errados — erro direto "
+            "em totais financeiros de pagamento. "
+            "Correção em dois níveis: (1) load_corte_lencol() migrado de CSV para XLSX: "
+            "Excel armazena datas como seriais numéricos, pandas retorna datetime64 sem "
+            "nenhum parsing de texto, eliminando a ambiguidade definitivamente. "
+            "(2) lencol_parse_date() e _parse_data_corte() reescritos com desambiguação "
+            "por tamanho de componente — se a > 12 é DD/MM, se b > 12 é MM/DD, ambos ≤ 12 "
+            "adota pt-BR (DD/MM). Cobre 3_Controle_de_Corte.py e 4_Controladoria_Programacao.py."
+        ),
+    },
+    {
+        "date": "27/05/2026",
+        "tag": "melhoria",
+        "title": "Plano de Metas — Dicionário de Equivalência de Nomes",
+        "description": (
+            "Prestadores cujos nomes diferem levemente entre o plano de metas e as planilhas de "
+            "produção agora são resolvidos automaticamente por similaridade ≥ 90% (difflib). "
+            "Um expander '🔤 Equivalências de Nomes' exibe matches automáticos, mapeamentos manuais "
+            "ativos e prestadores ainda sem resolução. Mapeamentos manuais permanentes podem ser "
+            "adicionados em config/settings.py → NOME_EQUIVALENCIAS."
+        ),
+    },
+    {
         "date": "26/05/2026",
         "tag": "correção",
         "title": "Controladoria Programação — corte de lençol não aparecia (QNT CORTADA zerada)",

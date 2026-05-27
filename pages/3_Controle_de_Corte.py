@@ -645,21 +645,59 @@ def lencol_cor_empresa(emp):
 
 
 def lencol_parse_date(data_str):
+    """
+    Parse robusto de data com desambiguação por tamanho de componente.
+
+    Motivação: exportações CSV do Google Sheets produzem datas em formato textual
+    (DD/MM/YYYY ou M/D/YYYY) dependendo do locale/formatação da célula.
+    Tentar DD/MM primeiro, sem checar os valores dos componentes, faz "1/5/2026"
+    (janeiro de 2026 exportado como M/D) ser interpretado como 1 de maio — erro
+    direto em cálculos financeiros de pagamento.
+
+    Algoritmo (por prioridade):
+      1. Formatos ISO / ano-primeiro  → sem ambiguidade.
+      2. Primeiro componente > 12    → obrigatoriamente DD/MM/YYYY.
+      3. Segundo componente > 12     → obrigatoriamente MM/DD/YYYY (dia = b).
+      4. Ambos ≤ 12                  → padrão pt-BR (DD/MM) — melhor estimativa
+                                       para planilhas brasileiras.
+    """
     if pd.isna(data_str) or not str(data_str).strip():
         return pd.NaT
     data_str = str(data_str).strip()
-    # Apenas dados até hoje (sem dias futuros)
-    _limite_futuro = pd.Timestamp.now().normalize()
-    formatos = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"]
-    for fmt in formatos:
+
+    # 1. Formatos ISO / ano-primeiro (sem ambiguidade)
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
         try:
-            dt = pd.to_datetime(data_str, format=fmt)
-            # Se o formato DD/MM gerar data muito no futuro, tenta o próximo (provável MM/DD)
-            if dt > _limite_futuro:
-                continue
-            return dt
+            return pd.to_datetime(data_str, format=fmt)
         except Exception:
             continue
+
+    # 2–4. Formato A/B/YYYY (ou A-B-YYYY, A.B.YYYY)
+    m = re.match(r'^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$', data_str)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if len(y) == 2:
+            y = "20" + y
+        if a > 12:
+            # a não pode ser mês → é dia: DD/MM/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
+            except Exception:
+                pass
+        elif b > 12:
+            # b não pode ser mês → é dia, a é mês: MM/DD/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%m/%d/%Y")
+            except Exception:
+                pass
+        else:
+            # Ambos ≤ 12: padrão pt-BR → DD/MM/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
+            except Exception:
+                pass
+
+    # Fallback genérico
     try:
         return pd.to_datetime(data_str, errors="coerce")
     except Exception:
@@ -676,55 +714,78 @@ def lencol_delta_icon(v):
 
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_corte_lencol() -> pd.DataFrame:
-    urls = [
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv&gid={LENCOL_SPREADSHEET_GID}",
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}/export?format=csv",
-    ]
-    texto = None
-    url_tentativa = 0
-    for url in urls:
-        url_tentativa += 1
-        try:
-            r = requests.get(url, timeout=25, headers={"User-Agent": "Mozilla/5.0"})
-            r.encoding = "utf-8"
-            if r.status_code == 200 and len(r.text) > 200:
-                texto = r.text
-                break
-        except Exception as e:
-            logging.debug(f"URL Lençol {url_tentativa}: {url[:60]}... falhou - {str(e)[:50]}")
-            continue
-    if not texto:
-        st.error("❌ Não foi possível baixar dados da planilha de lençol após {url_tentativa} tentativas.")
-        raise ConnectionError("Não foi possível baixar dados da planilha de lençol.")
+    """
+    Carrega lançamentos de lençol via XLSX (não CSV).
 
-    linhas = texto.splitlines()
+    Motivação: exportações CSV do Google Sheets produzem datas em formato textual
+    cujo locale (DD/MM vs M/D) varia por célula — causava meses incorretos em
+    registros mais antigos, com impacto direto em totais financeiros.
+    XLSX armazena datas como seriais numéricos IEEE; o pandas retorna datetime64[ns]
+    diretamente, sem qualquer parsing de texto, eliminando a ambiguidade de forma
+    definitiva.
+    """
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}"
+        f"/export?format=xlsx"
+    )
+    try:
+        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        if len(r.content) < 500:
+            raise ValueError("Resposta XLSX muito pequena — planilha vazia ou acesso negado.")
+    except Exception as e:
+        st.error(f"❌ Não foi possível baixar dados da planilha de lençol: {e}")
+        raise ConnectionError(f"Falha ao baixar lençol XLSX: {e}") from e
+
+    xls = pd.ExcelFile(io.BytesIO(r.content), engine="openpyxl")
+
+    # Localiza a aba + linha de header que contém "DATA" e "PRESTADOR"
+    target_sheet: str | None = None
     header_row = 0
-    for i, linha in enumerate(linhas[:6]):
-        if "DATA" in linha.upper() and "PRESTADOR" in linha.upper():
-            header_row = i
+    for sheet_name in xls.sheet_names:
+        for skip in range(6):
+            try:
+                df_probe = pd.read_excel(
+                    xls, sheet_name=sheet_name, skiprows=skip, nrows=0, header=0,
+                )
+                cols_upper = [str(c).strip().upper() for c in df_probe.columns]
+                if "DATA" in cols_upper and "PRESTADOR" in cols_upper:
+                    target_sheet = sheet_name
+                    header_row = skip
+                    break
+            except Exception:
+                continue
+        if target_sheet:
             break
 
-    df = pd.read_csv(io.StringIO(texto), skiprows=header_row, header=0, dtype=str)
+    if target_sheet is None:
+        target_sheet = xls.sheet_names[0]
+        header_row = 0
+        logging.warning(
+            "load_corte_lencol: aba com colunas DATA+PRESTADOR não encontrada; "
+            "usando primeira aba sem skiprows."
+        )
+
+    df = pd.read_excel(xls, sheet_name=target_sheet, skiprows=header_row, header=0)
     df = df.iloc[:, :11].copy()
     df.columns = [
         "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
         "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
     ]
 
-    df["DATA"] = df["DATA"].astype(str).str.strip().apply(lencol_parse_date)
+    # DATA: Excel retorna datetime64 — pd.to_datetime() apenas normaliza edge-cases
+    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
     before_count = len(df)
     df = df[df["DATA"].notna()]
     removed_nat = before_count - len(df)
     if removed_nat > 0:
         logging.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
-    # Removed ambiguous timestamp filter - dates in future (next day) are now allowed
 
-    df["QUANT"] = pd.to_numeric(
-        df["QUANT"].astype(str).str.replace(",", ""), errors="coerce"
-    ).fillna(0).astype(int)
-    df["VALOR_PECA"] = df["VALOR_PECA"].apply(lencol_parse_brl)
-    df["VALOR_RECEBER"] = df["VALOR_RECEBER"].apply(lencol_parse_brl)
-    df["RETALHO_KG"] = df["RETALHO_KG"].apply(lencol_parse_brl)
+    # Colunas numéricas: Excel retorna float — pd.to_numeric() apenas para garantia
+    df["QUANT"] = pd.to_numeric(df["QUANT"], errors="coerce").fillna(0).astype(int)
+    df["VALOR_PECA"] = pd.to_numeric(df["VALOR_PECA"], errors="coerce").fillna(0.0)
+    df["VALOR_RECEBER"] = pd.to_numeric(df["VALOR_RECEBER"], errors="coerce").fillna(0.0)
+    df["RETALHO_KG"] = pd.to_numeric(df["RETALHO_KG"], errors="coerce").fillna(0.0)
 
     df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip()
     df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()

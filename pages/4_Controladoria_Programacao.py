@@ -208,15 +208,57 @@ def load_programacao() -> pd.DataFrame:
 
 
 def _parse_data_corte(s: str) -> "pd.Timestamp":
-    """Parse datas exportadas pelo Google Sheets (MM/DD/YYYY por padrão)."""
+    """
+    Parse robusto de data com desambiguação por tamanho de componente.
+
+    Motivação: o parser anterior tentava MM/DD primeiro — incorreto para planilhas
+    brasileiras onde o padrão é DD/MM. Isso gerava semanas ISO erradas e somava
+    cortes na semana errada.
+
+    Algoritmo (por prioridade):
+      1. Formatos ISO / ano-primeiro  → sem ambiguidade.
+      2. Primeiro componente > 12    → obrigatoriamente DD/MM/YYYY.
+      3. Segundo componente > 12     → obrigatoriamente MM/DD/YYYY (dia = b).
+      4. Ambos ≤ 12                  → padrão pt-BR (DD/MM) — melhor estimativa
+                                       para planilhas brasileiras.
+    """
+    import re as _re
     if not s or str(s).strip() in ("", "nan", "None"):
         return pd.NaT
     s = str(s).strip().split(" ")[0]
-    for fmt in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+
+    # 1. ISO / ano-primeiro (sem ambiguidade)
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
         try:
             return pd.to_datetime(s, format=fmt)
         except Exception:
             continue
+
+    # 2–4. Formato A/B/YYYY (ou A-B-YYYY, A.B.YYYY)
+    m = _re.match(r'^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$', s)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if len(y) == 2:
+            y = "20" + y
+        if a > 12:
+            # a não pode ser mês → é dia: DD/MM/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
+            except Exception:
+                pass
+        elif b > 12:
+            # b não pode ser mês → é dia, a é mês: MM/DD/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%m/%d/%Y")
+            except Exception:
+                pass
+        else:
+            # Ambos ≤ 12: padrão pt-BR → DD/MM/YYYY
+            try:
+                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
+            except Exception:
+                pass
+
     return pd.to_datetime(s, errors="coerce")
 
 
