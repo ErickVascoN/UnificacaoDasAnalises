@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Configurações centralizadas de todos os dashboards."""
+from __future__ import annotations
 
 # ── Página principal ───────────────────────────────────────────────────────────
 PAGE_CONFIG = dict(

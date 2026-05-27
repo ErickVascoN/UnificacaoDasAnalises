@@ -28,7 +28,8 @@
       "WebFetch(domain:doc-0o-6k-sheets.googleusercontent.com)",
       "WebFetch(domain:doc-0g-6k-sheets.googleusercontent.com)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados\" -Recurse -Filter \"*.py\")",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(python -c ' *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\erick\\.claude\\projects\\c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados\\memory"
