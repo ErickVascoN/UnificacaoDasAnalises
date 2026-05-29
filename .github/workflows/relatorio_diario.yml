@@ -5,6 +5,13 @@ on:
     - cron: '0 12 * * 1-5'  # 09:00 BRT (UTC-3) segunda a sexta
   workflow_dispatch:        # permite disparo manual
 
+# Evita envio duplicado: o GitHub às vezes dispara o mesmo agendamento mais de
+# uma vez (quando o cron atrasa e a fila "repete"). Com um grupo de concorrência
+# único, um disparo duplicado cancela o anterior em andamento → 1 envio só.
+concurrency:
+  group: relatorio-diario-corte
+  cancel-in-progress: true
+
 jobs:
   enviar-relatorio:
     runs-on: ubuntu-latest
