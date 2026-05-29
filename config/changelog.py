@@ -6,6 +6,24 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "29/05/2026",
+        "tag": "novo",
+        "title": "Análise de Produção: hub Por Cliente / Por Colaborador (Interno com 4 guias)",
+        "description": (
+            "A Análise de Produção agora abre um seletor de cards (mesmo estilo do Corte) com "
+            "duas visões: (1) Por Cliente — o dashboard multi-empresa existente; (2) Por Colaborador "
+            "— dividido entre Interno e Externo. O painel Interno traz 4 guias (LITTEX, GGTTEX Jogos, "
+            "GGTTEX Fronha e GGTTEX Cortina), cada uma com filtro de período e de colaborador, KPIs e "
+            "gráfico de Top Colaboradores. Ao selecionar um ou mais colaboradores, o ranking dá lugar a "
+            "'Quantidade por Dia' e a um gráfico de Consistência (Regularidade = estabilidade da produção "
+            "diária; Assiduidade = % de dias com produção). Unidades com coluna de função (ex: Fronha) "
+            "ganham análise 'Produção por Função'. Novo loader padronizado (utils/producao_interno_loader.py) "
+            "detecta as colunas por conteúdo — necessário porque essas planilhas trazem o título mesclado "
+            "embutido no cabeçalho — e usa date_parser/cache_manager (datas M/D corrigidas, sem inversão). "
+            "O card de Produção saiu de 'Em manutenção'."
+        ),
+    },
+    {
         "date": "28/05/2026",
         "tag": "correção",
         "title": "Lençol: erro 'Colunas faltando: EMPRESA' por cabeçalho instável do Google",

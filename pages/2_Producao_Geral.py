@@ -7,8 +7,21 @@ import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
 import re
 import io
+import os
+import sys
 import unicodedata
 import numpy as np
+
+# Garante que a raiz do projeto esteja no path (para imports utils/styles/config
+# mesmo quando a página é aberta diretamente).
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from utils.auth import init_session_state
+from styles.selector_cards import get_selector_cards_css
+from config.settings import PRODUCAO_INTERNO_SHEETS
+from utils.producao_interno_loader import load_interno_unidade
 
 # ─
 # CONFIGURACAO DA PAGINA
@@ -1695,9 +1708,9 @@ def render_company(empresa, df, all_data):
         )
 
 # ─
-# MAIN
+# POR CLIENTE — dashboard de Produção Geral existente (sem alteração de lógica)
 # ─
-def main():
+def render_por_cliente():
     all_data = load_all_data()
 
     if not all_data:
@@ -1712,6 +1725,451 @@ def main():
         render_company(empresa, all_data[empresa], all_data)
     else:
         render_home(all_data)
+
+# ─
+# HUB — navegação por telas (mesmo estilo do Controle de Corte)
+# ─
+def _go_prod(screen: str):
+    st.session_state.producao_screen = screen
+    st.rerun()
+
+def _sidebar_nav_producao(screen: str):
+    with st.sidebar:
+        st.markdown("### 🏭 Análise de Produção")
+        st.markdown("---")
+        if st.button("🏢  Início", key="prod_sb_home", use_container_width=True):
+            st.session_state.producao_screen = 'analysis_type'
+            st.switch_page("app.py")
+        if screen == 'por_cliente':
+            if st.button("← Tipo de Análise", key="prod_sb_back_cli", use_container_width=True):
+                _go_prod('analysis_type')
+        elif screen == 'colaborador_type':
+            if st.button("← Tipo de Análise", key="prod_sb_back_colab", use_container_width=True):
+                _go_prod('analysis_type')
+        elif screen in ('interno', 'externo'):
+            if st.button("← Por Colaborador", key="prod_sb_back_intext", use_container_width=True):
+                _go_prod('colaborador_type')
+            if st.button("← Tipo de Análise", key="prod_sb_back2", use_container_width=True):
+                _go_prod('analysis_type')
+
+def _screen_analysis_type():
+    st.markdown("""
+    <div class="page-header">
+        <div class="page-badge">🏭 Análise de Produção</div>
+        <h1 class="page-title">Selecione o Tipo de <span class="accent">Análise</span></h1>
+        <p class="page-subtitle">Escolha como deseja analisar a produção</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, c1, c2, _ = st.columns([0.5, 3, 3, 0.5])
+    with c1:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#0F4C5C; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">🏢</div>
+            <div class="rc-label">Análise · Geral</div>
+            <div class="rc-title">Por Cliente</div>
+            <div class="rc-desc">
+                Acompanhamento da produção por empresa/cliente, com metas diárias,
+                evolução e ranking — visão multi-empresa.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Multi-empresa</span>
+                <span class="rc-tag">Metas</span>
+                <span class="rc-tag">Evolução</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_por_cliente", use_container_width=True):
+            _go_prod('por_cliente')
+
+    with c2:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#1A3A5C; --rc-b:#45B7D1; --rc-accent:#45B7D1;">
+            <div class="rc-icon">👥</div>
+            <div class="rc-label">Análise · Geral</div>
+            <div class="rc-title">Por Colaborador</div>
+            <div class="rc-desc">
+                Produção por colaborador, com análise de ranking, consistência
+                e desempenho — dividido entre internos e externos.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Interno</span>
+                <span class="rc-tag">Externo</span>
+                <span class="rc-tag">Consistência</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_por_colaborador", use_container_width=True):
+            _go_prod('colaborador_type')
+
+    st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("🏢 Voltar ao Início", key="prod_back_home", use_container_width=True):
+            st.session_state.producao_screen = 'analysis_type'
+            st.switch_page("app.py")
+
+def _screen_colaborador_type():
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Análise de Produção</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Por Colaborador</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:18px;">
+        <div class="page-badge">👥 Por Colaborador</div>
+        <h1 class="page-title">Interno ou <span class="accent">Externo</span></h1>
+        <p class="page-subtitle">Escolha o grupo de colaboradores para visualizar o painel</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, c1, c2, _ = st.columns([0.5, 3, 3, 0.5])
+    with c1:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#1A3A2A; --rc-b:#2A9D5C; --rc-accent:#2A9D5C;">
+            <div class="rc-icon">🏠</div>
+            <div class="rc-label">Colaboradores · Internos</div>
+            <div class="rc-title">Interno</div>
+            <div class="rc-desc">
+                Produção dos colaboradores internos por unidade, em guias:
+                LITTEX, GGTTEX Jogos, GGTTEX Fronha e GGTTEX Cortina.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">LITTEX</span>
+                <span class="rc-tag">GGTTEX</span>
+                <span class="rc-tag">4 unidades</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Interno  →", key="btn_interno", use_container_width=True):
+            _go_prod('interno')
+
+    with c2:
+        st.markdown("""
+        <div class="region-card disabled" style="--rc-a:#3D2817; --rc-b:#D97706; --rc-accent:#FFA726;">
+            <div class="rc-icon">🚚</div>
+            <div class="rc-label">Colaboradores · Externos</div>
+            <div class="rc-title">Externo</div>
+            <div class="rc-desc">
+                Produção dos prestadores/facções externos.
+                Em construção — planilhas serão integradas em breve.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag-soon">🚧 Em breve</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Externo  →", key="btn_externo", use_container_width=True):
+            _go_prod('externo')
+
+    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("← Voltar ao Tipo de Análise", key="prod_back_type_colab", use_container_width=True):
+            _go_prod('analysis_type')
+
+def _screen_externo():
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Análise de Produção</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Por Colaborador</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Externo</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="text-align:center; padding:60px 20px;">
+        <div style="font-size:3.5rem; margin-bottom:16px;">🚧</div>
+        <h2 style="color:#FFFFFF; font-family:'Sora',sans-serif; font-weight:800;">Em breve</h2>
+        <p style="color:#A0A0A0; max-width:520px; margin:10px auto; line-height:1.6;">
+            O painel de produção dos colaboradores <b>externos</b> (prestadores/facções)
+            está sendo construído. As planilhas serão integradas em breve.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("← Voltar a Por Colaborador", key="prod_back_colab_ext", use_container_width=True):
+            _go_prod('colaborador_type')
+
+# ─
+# INTERNO — dashboard com 4 guias (uma por unidade)
+# ─
+def _consistencia_colaboradores(base: pd.DataFrame, selecionados: list, dias_unidade: int) -> pd.DataFrame:
+    """
+    Por colaborador selecionado, calcula:
+      - Regularidade = 100*(1 - CV) da produção diária (CV = desvio/média), clamp 0–100.
+      - Assiduidade  = 100 * dias_com_produção / dias_úteis_observados na unidade.
+    Retorna DataFrame longo [COLABORADOR, METRICA, VALOR].
+    """
+    linhas = []
+    for nome in selecionados:
+        sub = base[base["COLABORADOR"] == nome]
+        diario = sub.groupby(sub["DATA"].dt.date)["QUANTIDADE"].sum()
+        dias_ativos = int(diario.shape[0])
+        assiduidade = (100.0 * dias_ativos / dias_unidade) if dias_unidade else 0.0
+        if dias_ativos >= 2 and diario.mean() > 0:
+            cv = diario.std(ddof=0) / diario.mean()
+            regularidade = max(0.0, min(100.0, 100.0 * (1.0 - cv)))
+        else:
+            regularidade = 100.0 if dias_ativos >= 1 else 0.0
+        linhas.append({"COLABORADOR": nome, "METRICA": "Regularidade", "VALOR": round(regularidade, 1)})
+        linhas.append({"COLABORADOR": nome, "METRICA": "Assiduidade",  "VALOR": round(min(assiduidade, 100.0), 1)})
+    return pd.DataFrame(linhas)
+
+def _render_interno_tab(chave: str, cfg: dict):
+    df = load_interno_unidade(chave)
+    if df.empty:
+        st.warning(f"⚠️ Sem dados disponíveis para {cfg['label']}.")
+        return
+
+    dmin, dmax = df["DATA"].min().date(), df["DATA"].max().date()
+
+    # ── Filtros ───────────────────────────────────────────────────────────────
+    c1, c2, c3 = st.columns([1, 1, 2])
+    with c1:
+        ini = st.date_input("De", value=dmin, min_value=dmin, max_value=dmax, key=f"ini_{chave}")
+    with c2:
+        fim = st.date_input("Até", value=dmax, min_value=dmin, max_value=dmax, key=f"fim_{chave}")
+    colabs_all = sorted(df["COLABORADOR"].unique())
+    with c3:
+        sel = st.multiselect("Colaborador(es)", colabs_all, key=f"colab_{chave}",
+                             placeholder="Todos (ranking)")
+
+    if ini > fim:
+        st.error("A data inicial não pode ser maior que a final.")
+        return
+
+    mask = (df["DATA"].dt.date >= ini) & (df["DATA"].dt.date <= fim)
+    dff = df[mask].copy()
+    if dff.empty:
+        st.info("Nenhum registro no período selecionado.")
+        return
+
+    # ── KPIs ────────────────────────────────────────────────────────────────────
+    total = int(dff["QUANTIDADE"].sum())
+    n_colab = dff["COLABORADOR"].nunique()
+    dias_unidade = dff["DATA"].dt.date.nunique()
+    media_dia = total / dias_unidade if dias_unidade else 0
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Produzido", f"{total:,.0f}".replace(",", "."))
+    k2.metric("Colaboradores", f"{n_colab}")
+    k3.metric("Dias com Produção", f"{dias_unidade}")
+    k4.metric("Média / Dia", f"{media_dia:,.0f}".replace(",", "."))
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
+    # ── Gráfico principal dinâmico ───────────────────────────────────────────────
+    if not sel:
+        st.markdown('<p class="section-title">🏆 Top Colaboradores</p>', unsafe_allow_html=True)
+        top = (dff.groupby("COLABORADOR")["QUANTIDADE"].sum()
+               .sort_values(ascending=True).tail(15).reset_index())
+        fig = px.bar(top, x="QUANTIDADE", y="COLABORADOR", orientation="h",
+                     text="QUANTIDADE", color="QUANTIDADE", color_continuous_scale="Teal")
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
+                          textfont=dict(color="#CBD5E0"))
+        fig.update_layout(height=max(320, len(top) * 36), showlegend=False,
+                          coloraxis_showscale=False, margin=dict(l=0, r=70, t=10, b=0),
+                          xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        base = dff[dff["COLABORADOR"].isin(sel)].copy()
+        # 1) Quantidade por dia
+        st.markdown('<p class="section-title">📈 Quantidade por Dia</p>', unsafe_allow_html=True)
+        diario = (base.groupby([base["DATA"].dt.date, "COLABORADOR"])["QUANTIDADE"]
+                  .sum().reset_index())
+        diario.columns = ["DATA", "COLABORADOR", "QUANTIDADE"]
+        fig_dia = px.line(diario, x="DATA", y="QUANTIDADE", color="COLABORADOR", markers=True)
+        fig_dia.update_layout(height=380, xaxis_title="Dia", yaxis_title="Quantidade",
+                              legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                          xanchor="right", x=1), **DARK_LAYOUT)
+        st.plotly_chart(fig_dia, use_container_width=True)
+
+        # 2) Consistência (Regularidade + Assiduidade)
+        st.markdown('<p class="section-title">🎯 Consistência por Colaborador</p>',
+                    unsafe_allow_html=True)
+        st.caption("Regularidade = estabilidade da produção diária · "
+                   "Assiduidade = % de dias com produção no período.")
+        cons = _consistencia_colaboradores(base, sel, dias_unidade)
+        fig_cons = px.bar(cons, x="COLABORADOR", y="VALOR", color="METRICA",
+                          barmode="group", text="VALOR", range_y=[0, 105],
+                          color_discrete_map={"Regularidade": "#4ECDC4", "Assiduidade": "#FFA726"})
+        fig_cons.update_traces(texttemplate="%{text:.0f}%", textposition="outside")
+        fig_cons.update_layout(height=360, xaxis_title="", yaxis_title="%",
+                               legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                           xanchor="right", x=1), **DARK_LAYOUT)
+        st.plotly_chart(fig_cons, use_container_width=True)
+
+    escopo = dff[dff["COLABORADOR"].isin(sel)] if sel else dff
+
+    # ── Análise por Setor (apenas se a unidade tiver setor preenchido) ───────────
+    if "SETOR" in dff.columns and escopo["SETOR"].astype(str).str.strip().ne("").any():
+        setor = escopo[escopo["SETOR"].astype(str).str.strip() != ""]
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<p class="section-title">🏭 Produção por Setor</p>', unsafe_allow_html=True)
+        aggs = (setor.groupby("SETOR")["QUANTIDADE"].sum()
+                .sort_values(ascending=True).reset_index())
+        fig_s = px.bar(aggs, x="QUANTIDADE", y="SETOR", orientation="h",
+                       text="QUANTIDADE", color="QUANTIDADE", color_continuous_scale="Teal")
+        fig_s.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
+                            textfont=dict(color="#CBD5E0"))
+        fig_s.update_layout(height=max(260, len(aggs) * 36), showlegend=False,
+                            coloraxis_showscale=False, margin=dict(l=0, r=70, t=10, b=0),
+                            xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
+        st.plotly_chart(fig_s, use_container_width=True)
+
+    # ── Análise por Função (apenas se a unidade tiver coluna de função) ──────────
+    if "FUNCAO" in dff.columns:
+        func = escopo[escopo["FUNCAO"].astype(str).str.strip() != ""]
+        if not func.empty:
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown('<p class="section-title">🔧 Produção por Função</p>',
+                        unsafe_allow_html=True)
+            agg = (func.groupby("FUNCAO")["QUANTIDADE"].sum()
+                   .sort_values(ascending=True).reset_index())
+            fig_f = px.bar(agg, x="QUANTIDADE", y="FUNCAO", orientation="h",
+                           text="QUANTIDADE", color="QUANTIDADE", color_continuous_scale="Tealgrn")
+            fig_f.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
+                                textfont=dict(color="#CBD5E0"))
+            fig_f.update_layout(height=max(260, len(agg) * 36), showlegend=False,
+                                coloraxis_showscale=False, margin=dict(l=0, r=70, t=10, b=0),
+                                xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
+            st.plotly_chart(fig_f, use_container_width=True)
+
+            # ── Individual: Mix de funções por colaborador ───────────────────────
+            # Escopo: colaboradores filtrados; se nenhum, top 12 por produção total.
+            if sel:
+                colabs_foco = sel
+            else:
+                colabs_foco = (func.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                               .sort_values(ascending=False).head(12).index.tolist())
+            mix = func[func["COLABORADOR"].isin(colabs_foco)]
+            if not mix.empty:
+                st.markdown('<p class="section-title">🧩 Mix de Funções por Colaborador</p>',
+                            unsafe_allow_html=True)
+                mix_agg = (mix.groupby(["COLABORADOR", "FUNCAO"])["QUANTIDADE"]
+                           .sum().reset_index())
+                # ordena colaboradores por total (maior em cima na barra horizontal)
+                ordem = (mix_agg.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                         .sort_values(ascending=True).index.tolist())
+                fig_mix = px.bar(mix_agg, x="QUANTIDADE", y="COLABORADOR", color="FUNCAO",
+                                 orientation="h", barmode="stack",
+                                 category_orders={"COLABORADOR": ordem})
+                fig_mix.update_layout(height=max(280, len(ordem) * 42),
+                                      margin=dict(l=0, r=30, t=10, b=0),
+                                      xaxis_title="Quantidade", yaxis_title="",
+                                      legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                                  xanchor="right", x=1, title=""),
+                                      **DARK_LAYOUT)
+                st.plotly_chart(fig_mix, use_container_width=True)
+
+                # ── Versatilidade: nº de funções + função principal ──────────────
+                st.markdown('<p class="section-title">⭐ Versatilidade dos Colaboradores</p>',
+                            unsafe_allow_html=True)
+                st.caption("Quantas funções diferentes cada colaborador executa e qual a principal "
+                           "(maior volume) no período/seleção.")
+                idx_princ = mix_agg.groupby("COLABORADOR")["QUANTIDADE"].idxmax()
+                principal = (mix_agg.loc[idx_princ, ["COLABORADOR", "FUNCAO"]]
+                             .set_index("COLABORADOR")["FUNCAO"])
+                vers = (mix.groupby("COLABORADOR")
+                        .agg(**{"Nº de Funções": ("FUNCAO", "nunique"),
+                                "Total": ("QUANTIDADE", "sum")})
+                        .reset_index())
+                vers["Função Principal"] = vers["COLABORADOR"].map(principal)
+                vers = vers.sort_values("Nº de Funções", ascending=False)
+                vers = vers.rename(columns={"COLABORADOR": "Colaborador"})
+                vers["Total"] = vers["Total"].map(lambda x: f"{x:,.0f}".replace(",", "."))
+                st.dataframe(
+                    vers[["Colaborador", "Nº de Funções", "Função Principal", "Total"]],
+                    use_container_width=True, hide_index=True,
+                )
+
+    # ── Produção por Cliente (quando houver) ─────────────────────────────────────
+    if "CLIENTE" in dff.columns and escopo["CLIENTE"].astype(str).str.strip().ne("").any():
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<p class="section-title">🏢 Produção por Cliente</p>', unsafe_allow_html=True)
+        cli = escopo[escopo["CLIENTE"].astype(str).str.strip() != ""]
+        aggc = (cli.groupby("CLIENTE")["QUANTIDADE"].sum()
+                .sort_values(ascending=True).tail(15).reset_index())
+        fig_c = px.bar(aggc, x="QUANTIDADE", y="CLIENTE", orientation="h",
+                       text="QUANTIDADE", color="QUANTIDADE", color_continuous_scale="Blugrn")
+        fig_c.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
+                            textfont=dict(color="#CBD5E0"))
+        fig_c.update_layout(height=max(260, len(aggc) * 36), showlegend=False,
+                            coloraxis_showscale=False, margin=dict(l=0, r=70, t=10, b=0),
+                            xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
+        st.plotly_chart(fig_c, use_container_width=True)
+
+    # ── Tabela detalhada ──────────────────────────────────────────────────────────
+    st.markdown("<hr>", unsafe_allow_html=True)
+    with st.expander("📋 Dados detalhados", expanded=False):
+        tabela = escopo.copy()
+        tabela["DATA"] = tabela["DATA"].dt.strftime("%d/%m/%Y")
+        st.dataframe(tabela.sort_values("DATA"), use_container_width=True, hide_index=True)
+
+def _screen_interno():
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Análise de Produção</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Por Colaborador</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Interno</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<p class="main-title">👥 Produção — Colaboradores Internos</p>',
+                unsafe_allow_html=True)
+    st.markdown('<p class="sub-title">Selecione a unidade nas guias abaixo</p>',
+                unsafe_allow_html=True)
+
+    chaves = list(PRODUCAO_INTERNO_SHEETS.keys())
+    rotulos = [f"{PRODUCAO_INTERNO_SHEETS[k]['icon']} {PRODUCAO_INTERNO_SHEETS[k]['label']}"
+               for k in chaves]
+    tabs = st.tabs(rotulos)
+    for tab, chave in zip(tabs, chaves):
+        with tab:
+            _render_interno_tab(chave, PRODUCAO_INTERNO_SHEETS[chave])
+
+# ─
+# MAIN — dispatcher de telas
+# ─
+def main():
+    init_session_state()
+    st.markdown(get_selector_cards_css(), unsafe_allow_html=True)
+
+    if st.session_state.get('_active_page') != 'producao':
+        st.session_state.producao_screen = 'analysis_type'
+    st.session_state._active_page = 'producao'
+
+    screen = st.session_state.get('producao_screen', 'analysis_type')
+    _sidebar_nav_producao(screen)
+
+    if screen == 'analysis_type':
+        _screen_analysis_type()
+    elif screen == 'colaborador_type':
+        _screen_colaborador_type()
+    elif screen == 'interno':
+        _screen_interno()
+    elif screen == 'externo':
+        _screen_externo()
+    else:  # 'por_cliente' — dashboard de Produção Geral existente
+        st.markdown("""
+        <div class="breadcrumb">
+            <span class="bc-link">Análise de Produção</span>
+            <span class="bc-sep">›</span>
+            <span class="bc-active">Por Cliente</span>
+        </div>
+        """, unsafe_allow_html=True)
+        render_por_cliente()
 
 if __name__ == "__main__":
     main()

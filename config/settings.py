@@ -33,6 +33,18 @@ FATURAMENTO_CACHE_TTL = 300      # segundos
 PRODUCAO_SHEETS_ID = "15s_ZttYG4UkSprgp4V_9gUBSgg7p8JRTiSQZL4xBi6Y"
 PRODUCAO_CACHE_TTL = 120         # segundos
 
+# produção — colaboradores internos (4 unidades, cada uma uma guia/tab)
+# Planilhas com título mesclado embutido no cabeçalho, datas M/D/YYYY e
+# quantidade com ponto de milhar → o loader detecta colunas por substring,
+# usa parse_date_series e limpa os números (ver utils/producao_interno_loader.py).
+PRODUCAO_INTERNO_SHEETS = {
+    "LITTEX":         {"id": "1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p", "gid": "1697720285", "label": "LITTEX",         "icon": "🧵"},
+    "GGTTEX_JOGOS":   {"id": "1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv", "gid": "410924690",  "label": "GGTTEX Jogos",   "icon": "🛏️"},
+    "GGTTEX_FRONHA":  {"id": "1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv", "gid": "671875370",  "label": "GGTTEX Fronha",  "icon": "🛌"},
+    "GGTTEX_CORTINA": {"id": "1PG5t_aWif2iJiCyEtgKE6sLFvMu7w5sL", "gid": "296216772",  "label": "GGTTEX Cortina", "icon": "🪟"},
+}
+PRODUCAO_INTERNO_CACHE_TTL = 300  # segundos
+
 # plano de metas
 METAS_SHEET_ID = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
 METAS_GID      = "1593003426"

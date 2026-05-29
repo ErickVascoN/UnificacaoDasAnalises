@@ -22,20 +22,19 @@ SECTORS_ANALISE = [
     {
         "key": "producao",
         "title": "Análise de Produção",
-        "subtitle": "Multi-empresas em tempo real",
+        "subtitle": "Por Cliente e Por Colaborador",
         "description": (
-            "Acompanhamento da produção de todas as empresas do grupo "
-            "(Burdays, Camesa, Niazitex, Cortex, Sultan, Decor, Marcelino) "
-            "com metas e evolução diária."
+            "Acompanhamento da produção em duas visões: Por Cliente (multi-empresa, "
+            "metas e evolução) e Por Colaborador (internos por unidade — LITTEX e GGTTEX — "
+            "com ranking, consistência e externos)."
         ),
         "icon": "🏭",
         "page_path": "pages/2_Producao_Geral.py",
         "color_a": "#0F4C5C",
         "color_b": "#4ECDC4",
         "accent":  "#FFA726",
-        "tags": ["Produção", "Multi-empresa", "Metas"],
+        "tags": ["Produção", "Por Cliente", "Por Colaborador"],
         "requires_auth": True,
-        "maintenance": True,
     },
     {
         "key": "metas_previsao",

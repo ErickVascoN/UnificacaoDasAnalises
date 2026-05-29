@@ -6,6 +6,7 @@ Cruza a programação semanal com os dados reais de corte (Arealva Manta + Iacan
 import io
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -233,12 +234,15 @@ def load_cortes() -> pd.DataFrame:
     frames = []
 
     # Manta e Iacanga: header simples, coluna DATA correta → parsing direto.
+    # Rótulos padronizados: Arealva = Zanattex, Iacanga = Giattex.
+    # col_mat = coluna com o material/produto; col_cli = coluna do cliente/empresa
+    # (None → usa cli_fixo). Manta Arealva não tem cliente → sempre "Camesa".
     _SOURCES = [
-        (MANTA_ID,   MANTA_GID,   "Arealva",  "QUANTIDADE"),
-        (IACANGA_ID, IACANGA_GID, "Iacanga",  "QUANTIDADE"),
+        (MANTA_ID,   MANTA_GID,   "Zanattex", "QUANTIDADE", "PRODUTO", None,      "Camesa"),
+        (IACANGA_ID, IACANGA_GID, "Giattex",  "QUANTIDADE", "PRODUTO", "CLIENTE", ""),
     ]
 
-    for sid, gid, fonte, col_qtd in _SOURCES:
+    for sid, gid, fonte, col_qtd, col_mat, col_cli, cli_fixo in _SOURCES:
         texto = _fetch(sid, gid)
         if not texto:
             logging.debug(f"load_cortes: sem texto para {fonte}")
@@ -257,6 +261,13 @@ def load_cortes() -> pd.DataFrame:
             sub = df[["OP", col_qtd]].copy()
             sub = sub.rename(columns={col_qtd: "QUANTIDADE"})
             sub["FONTE"] = fonte
+            sub["MATERIAL"] = (
+                df[col_mat].astype(str).str.strip() if col_mat in df.columns else ""
+            )
+            sub["CLIENTE"] = (
+                df[col_cli].astype(str).str.strip()
+                if (col_cli and col_cli in df.columns) else cli_fixo
+            )
 
             # Derivar SEMANA ISO a partir de DATA (para join por semana)
             if "DATA" in df.columns:
@@ -281,6 +292,14 @@ def load_cortes() -> pd.DataFrame:
                 "OP": df_len["OP"],
                 "QUANTIDADE": df_len["QUANT"],
                 "FONTE": "Lençol",
+                "MATERIAL": (
+                    df_len["TECIDO"].astype(str).str.strip()
+                    if "TECIDO" in df_len.columns else ""
+                ),
+                "CLIENTE": (
+                    df_len["EMPRESA"].astype(str).str.strip()
+                    if "EMPRESA" in df_len.columns else ""
+                ),
             })
             if "DATA" in df_len.columns:
                 datas = pd.to_datetime(df_len["DATA"], errors="coerce")
@@ -300,6 +319,16 @@ def load_cortes() -> pd.DataFrame:
     out = pd.concat(frames, ignore_index=True)
     out["OP"]         = out["OP"].astype(str).str.strip()
     out["QUANTIDADE"] = pd.to_numeric(out["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
+    if "MATERIAL" not in out.columns:
+        out["MATERIAL"] = ""
+    out["MATERIAL"] = out["MATERIAL"].astype(str).str.strip().replace(
+        {"nan": "", "NaN": "", "None": "", "<NA>": "", "0": ""}
+    )
+    if "CLIENTE" not in out.columns:
+        out["CLIENTE"] = ""
+    out["CLIENTE"] = out["CLIENTE"].astype(str).str.strip().replace(
+        {"nan": "", "NaN": "", "None": "", "<NA>": "", "0": ""}
+    )
     invalidos = {"", "NAN", "NONE", "N/A", "SEM OP"}
     out = out[~out["OP"].str.upper().isin(invalidos)]
     return out
@@ -505,7 +534,8 @@ with st.sidebar:
             st.info("Nenhum corte encontrado para essa OP.")
         else:
             st.success(f"**{resultado['QUANTIDADE'].apply(pd.to_numeric, errors='coerce').fillna(0).sum():,.0f}** peças cortadas".replace(",", "."))
-            st.dataframe(resultado[["FONTE", "OP", "QUANTIDADE"]], use_container_width=True, hide_index=True)
+            _cols_rastreio = [c for c in ["FONTE", "OP", "MATERIAL", "CLIENTE", "QUANTIDADE"] if c in resultado.columns]
+            st.dataframe(resultado[_cols_rastreio], use_container_width=True, hide_index=True)
 
 # aplicar filtros
 df_filtered = df_enriched.copy()
@@ -571,7 +601,7 @@ st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
 with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expanded=False):
     st.markdown("##### Status de carregamento por planilha")
 
-    _FONTES_ESPERADAS = ["Arealva", "Iacanga", "Lençol"]
+    _FONTES_ESPERADAS = ["Zanattex", "Giattex", "Lençol"]
     diag_rows = []
 
     for fn in _FONTES_ESPERADAS:
@@ -732,6 +762,58 @@ with col_bar:
 
 st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
+# ── Previsto × Cortado por OP (das programadas) ───────────────────────────────
+# Para OPs que ESTAVAM na programação e tiveram corte: compara o previsto
+# (losango) com o que foi efetivamente cortado (barra). Respeita os filtros.
+st.markdown('<div class="page-divider"></div>', unsafe_allow_html=True)
+st.markdown("### 📊 Previsto × Cortado por OP (programadas)")
+st.caption(
+    "OPs da programação que tiveram corte. A barra mostra o que foi cortado; "
+    "o losango marca o previsto — assim dá para ver se a OP atingiu, passou ou "
+    "ficou abaixo do planejado."
+)
+
+_prog_cmp = df_agg[
+    (df_agg["PED. CLIENTE"].astype(str).str.strip() != "")
+    & (df_agg["QNT_CORTADA"] > 0)
+].copy()
+
+if _prog_cmp.empty:
+    st.info("Nenhuma OP programada com corte no filtro atual.")
+else:
+    _pc = _prog_cmp.sort_values("QNT_CORTADA", ascending=False).head(15)
+    _pc = _pc.sort_values("QNT_CORTADA", ascending=True)
+    _ops_lbl = _pc["PED. CLIENTE"].astype(str).tolist()
+
+    fig_pc = go.Figure()
+    fig_pc.add_trace(go.Bar(
+        x=_pc["QNT_CORTADA"].tolist(), y=_ops_lbl, orientation="h",
+        name="Cortado", marker_color="#22c55e",
+        text=[f"{int(v):,}".replace(",", ".") for v in _pc["QNT_CORTADA"]],
+        textposition="outside",
+    ))
+    fig_pc.add_trace(go.Scatter(
+        x=_pc["QNT_PROG_TOTAL"].tolist(), y=_ops_lbl, mode="markers",
+        name="Previsto",
+        marker=dict(symbol="diamond", size=13, color="#818CF8",
+                    line=dict(color="#FFFFFF", width=1)),
+    ))
+    fig_pc.update_layout(
+        height=max(300, len(_pc) * 36),
+        margin=dict(l=0, r=80, t=10, b=0),
+        barmode="overlay",
+        xaxis_title="Peças", yaxis_title="",
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#CBD5E0"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(gridcolor="#2D3748"),
+        yaxis=dict(gridcolor="#2D3748", type="category",
+                   categoryorder="array", categoryarray=_ops_lbl),
+    )
+    st.plotly_chart(fig_pc, use_container_width=True)
+
+st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
 # tabelas
 tab_resumo, tab_detalhe = st.tabs(["📊 Resumo por Ordem (OP)", "📋 Detalhe Completo"])
 
@@ -774,6 +856,67 @@ with tab_detalhe:
     else:
         df_det = df_filtered.copy()
 
+        # ── Lençol: QNT CORTADA por PRODUTO (não o total da OP) ───────────────────
+        # A planilha de corte do Lençol traz o produto correto (TECIDO/MATERIAL).
+        # Casa o produto da linha da programação com o do corte por similaridade;
+        # sem correspondência ("caso não tenha"), mantém o total da OP. Só Lençol —
+        # nas demais fontes o nome do produto não bate, então fica o total.
+        if not df_cortes_raw.empty and "FONTE" in df_cortes_raw.columns \
+                and "MATERIAL" in df_cortes_raw.columns:
+            import difflib
+            from utils.normalize import normalize_op as _nop_d, normalize_text as _nt_d
+            _len = df_cortes_raw[df_cortes_raw["FONTE"] == "Lençol"].copy()
+            _len["_OPN"] = _len["OP"].map(_nop_d)
+            _len = _len[(_len["_OPN"] != "")
+                        & (_len["MATERIAL"].astype(str).str.strip() != "")]
+            # OPs cortadas em OUTRAS fontes (Giattex/Zanattex): nessas NÃO aplicamos a
+            # quebra por produto (e não zeramos), para não atribuir 0 errado.
+            _outras_opns = set(
+                df_cortes_raw.loc[df_cortes_raw["FONTE"] != "Lençol", "OP"].map(_nop_d)
+            ) - {""}
+            if not _len.empty:
+                _len_grp = _len.groupby(["_OPN", "MATERIAL"])["QUANTIDADE"].sum().reset_index()
+                _mapa_len = {}
+                for _, _r in _len_grp.iterrows():
+                    _mapa_len.setdefault(_r["_OPN"], []).append(
+                        (_nt_d(_r["MATERIAL"]), int(_r["QUANTIDADE"]))
+                    )
+
+                _LIMIAR_SIM = 0.70  # só casa produtos realmente parecidos
+
+                def _cortado_por_produto(row):
+                    opn = _nop_d(row.get("PED. CLIENTE", ""))
+                    # Só quebra por produto OPs cortadas exclusivamente no Lençol.
+                    if opn not in _mapa_len or opn in _outras_opns:
+                        return None  # mantém o total da OP
+                    desc = (str(row.get("DESCRIÇÃO DO PRODUTO", "")).strip()
+                            or str(row.get("PRODUTO", "")).strip())
+                    alvo = _nt_d(desc)
+                    if not alvo:
+                        return None
+                    best_q, best_r = 0, 0.0
+                    for _mn, _q in _mapa_len[opn]:
+                        _ratio = difflib.SequenceMatcher(None, alvo, _mn).ratio()
+                        if _ratio > best_r:
+                            best_r, best_q = _ratio, _q
+                    # Casou → qtd do produto; não casou → 0 (não foi cortado esse produto).
+                    return best_q if best_r >= _LIMIAR_SIM else 0
+
+                _novos = df_det.apply(_cortado_por_produto, axis=1)
+                _mask_ovr = _novos.notna()
+                if _mask_ovr.any():
+                    df_det.loc[_mask_ovr, "QNT_CORTADA"] = _novos[_mask_ovr].astype(int)
+                    _prog_row = pd.to_numeric(
+                        df_det.loc[_mask_ovr, "QNT. PROG"], errors="coerce"
+                    ).fillna(0)
+                    df_det.loc[_mask_ovr, "DIFERENÇA"] = (
+                        df_det.loc[_mask_ovr, "QNT_CORTADA"] - _prog_row
+                    )
+                    df_det.loc[_mask_ovr, "EFICIÊNCIA_%"] = (
+                        df_det.loc[_mask_ovr, "QNT_CORTADA"]
+                        / _prog_row.replace(0, pd.NA) * 100
+                    ).fillna(0).round(1)
+
         # Colunas originais da planilha + calculadas (substituindo as manuais)
         df_det["STATUS PRODUÇÃO"] = df_det["STATUS_PROD"].apply(
             lambda s: f"{_EMOJI_PROD.get(s, '')} {s}"
@@ -803,3 +946,143 @@ with tab_detalhe:
             height=min(50 + len(df_det) * 35, 700),
         )
         st.caption(f"Total: {len(df_det)} linhas")
+
+# ── Cortes fora da programação ────────────────────────────────────────────────
+# OPs que foram cortadas mas NÃO constam na programação (produção fora do plano).
+st.markdown('<div class="page-divider"></div>', unsafe_allow_html=True)
+st.markdown("### ✂️ Cortes Fora da Programação")
+_filtros_aplic = []
+if semanas_sel:
+    _filtros_aplic.append(", ".join(str(s) for s in sorted(semanas_sel)))
+if clientes_sel:
+    _filtros_aplic.append("empresa(s): " + ", ".join(sorted(clientes_sel)))
+if locais_sel:
+    _filtros_aplic.append("local: " + ", ".join(sorted(locais_sel)))
+st.caption(
+    "OPs que apareceram nas planilhas de corte mas não estão na programação — "
+    "ou seja, foi cortado sem ter sido programado."
+    + (f" Filtrando por {' · '.join(_filtros_aplic)}." if _filtros_aplic
+       else " Considerando todas as semanas e empresas.")
+)
+
+from utils.normalize import normalize_op as _nop_fora, normalize_text as _ntxt_fora
+
+if df_cortes_raw.empty:
+    st.info("Sem dados de corte carregados.")
+else:
+    _cortes = df_cortes_raw.copy()
+    _cortes["_OPN"] = _cortes["OP"].map(_nop_fora)
+    # Respeita o filtro de semana da sidebar: vazio → todas as semanas; com semanas
+    # selecionadas → apenas os cortes daquelas semanas.
+    # OBS: a SEMANA da programação é texto ("SEMANA 22") e a dos cortes é Int64 (22).
+    # Extraímos o número de dentro do texto e normalizamos para o filtro casar
+    # ("SEMANA 22"→"22", "SEMANA 01"→"1", 22→"22").
+    def _wk_canon(x):
+        s = str(x).strip()
+        m = re.search(r"\d+", s)
+        return str(int(m.group())) if m else s
+    if semanas_sel and "SEMANA" in _cortes.columns:
+        _sem_alvo = {_wk_canon(s) for s in semanas_sel}
+        _cortes = _cortes[_cortes["SEMANA"].map(_wk_canon).isin(_sem_alvo)]
+    # Respeita o filtro de Cliente/Empresa: compara por nome normalizado
+    # (maiúsculas/acentos) para casar "Burdays" (Giattex) com "BURDAYS" (Lençol).
+    if clientes_sel and "CLIENTE" in _cortes.columns:
+        _cli_alvo = {_ntxt_fora(c) for c in clientes_sel}
+        _cortes = _cortes[_cortes["CLIENTE"].map(_ntxt_fora).isin(_cli_alvo)]
+    # Respeita o filtro de Local: mapeia o LOCAL da programação (ex: "GIATTEX",
+    # "CORTE LENÇOL", "ZANATTEX") para a FONTE do corte por palavra-chave.
+    if locais_sel and "FONTE" in _cortes.columns:
+        _LOCAL_FONTE_KW = {
+            "Giattex":  ["GIATTEX", "GGTEX", "GIATTA", "IACANGA"],
+            "Zanattex": ["ZANATTEX", "AREALVA", "ZANATTA"],
+            "Lençol":   ["LENCOL"],
+        }
+        _locais_norm = [_ntxt_fora(l) for l in locais_sel]
+        def _fonte_no_local(fonte):
+            kws = _LOCAL_FONTE_KW.get(fonte, [])
+            return any(any(kw in ln for kw in kws) for ln in _locais_norm)
+        _cortes = _cortes[_cortes["FONTE"].map(_fonte_no_local)]
+    _sem_op_pcs = int(_cortes.loc[_cortes["_OPN"] == "", "QUANTIDADE"].sum())
+    _cortes = _cortes[_cortes["_OPN"] != ""]
+
+    _peds_prog_fora = {o for o in df_prog_raw["PED. CLIENTE"].map(_nop_fora).unique() if o}
+    _fora = _cortes[~_cortes["_OPN"].isin(_peds_prog_fora)]
+
+    _total_cort_all = int(_cortes["QUANTIDADE"].sum())
+    _total_fora_pcs = int(_fora["QUANTIDADE"].sum())
+    _n_ops_fora = int(_fora["_OPN"].nunique())
+    _pct_fora = (100 * _total_fora_pcs / _total_cort_all) if _total_cort_all else 0
+
+    kf1, kf2, kf3 = st.columns(3)
+    _kpi(kf1, "OPs fora da programação", f"{_n_ops_fora:,}".replace(",", "."),
+         "cortadas sem programar", "#f59e0b" if _n_ops_fora else "#22c55e")
+    _kpi(kf2, "Peças cortadas fora", f"{_total_fora_pcs:,}".replace(",", "."),
+         "total realizado fora do plano", "#f59e0b" if _total_fora_pcs else "#22c55e")
+    _kpi(kf3, "% do corte total", f"{_pct_fora:.1f}%".replace(".", ","),
+         "do que foi cortado", "#f59e0b" if _pct_fora else "#22c55e")
+
+    st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+
+    if _fora.empty:
+        st.success("✅ Tudo o que foi cortado estava na programação.")
+    else:
+        def _join_unicos(serie):
+            vals = sorted({
+                str(v).strip() for v in serie
+                if str(v).strip() not in ("", "nan", "NaN", "<NA>", "None", "NaT")
+            })
+            return " / ".join(vals)
+
+        _agg_kwargs = {"Peças": ("QUANTIDADE", "sum"), "Fonte": ("FONTE", _join_unicos)}
+        if "MATERIAL" in _fora.columns:
+            _agg_kwargs["Material"] = ("MATERIAL", _join_unicos)
+        if "CLIENTE" in _fora.columns:
+            _agg_kwargs["Cliente"] = ("CLIENTE", _join_unicos)
+        _tab = (
+            _fora.groupby("_OPN")
+            .agg(**_agg_kwargs)
+            .reset_index()
+            .rename(columns={"_OPN": "OP"})
+        )
+        if "SEMANA" in _fora.columns:
+            _sem = _fora.groupby("_OPN")["SEMANA"].apply(
+                lambda s: _join_unicos(
+                    s.dropna().astype("Int64").astype(str)
+                )
+            )
+            _tab["Semana(s)"] = _tab["OP"].map(_sem)
+
+        _tab = _tab.sort_values("Peças", ascending=False).reset_index(drop=True)
+        _tab_fmt = _tab.copy()
+        _tab_fmt["Peças"] = _tab_fmt["Peças"].map(lambda x: f"{int(x):,}".replace(",", "."))
+
+        st.dataframe(_tab_fmt, use_container_width=True, hide_index=True)
+
+        # Gráfico — top 15 OPs cortadas fora do plano
+        _top = _tab.head(15).sort_values("Peças", ascending=True)
+        # OP é rótulo (categoria), não número — senão o eixo trata "1895301001"
+        # como 1,8 bilhão e o gráfico fica achatado.
+        _y_labels = _top["OP"].astype(str).tolist()
+        fig_fora = go.Figure(go.Bar(
+            x=_top["Peças"].tolist(), y=_y_labels, orientation="h",
+            marker_color="#f59e0b",
+            text=[f"{int(v):,}".replace(",", ".") for v in _top["Peças"]],
+            textposition="outside",
+        ))
+        fig_fora.update_layout(
+            height=max(280, len(_top) * 34),
+            margin=dict(l=0, r=70, t=10, b=0),
+            xaxis_title="Peças cortadas", yaxis_title="",
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#CBD5E0"),
+            xaxis=dict(gridcolor="#2D3748"),
+            yaxis=dict(gridcolor="#2D3748", type="category",
+                       categoryorder="array", categoryarray=_y_labels),
+        )
+        st.plotly_chart(fig_fora, use_container_width=True)
+
+    if _sem_op_pcs > 0:
+        st.caption(
+            f"ℹ️ Além disso, {_sem_op_pcs:,}".replace(",", ".")
+            + " peça(s) foram cortadas sem número de OP (não classificáveis)."
+        )
