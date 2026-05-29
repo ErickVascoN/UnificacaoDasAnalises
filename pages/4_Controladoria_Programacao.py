@@ -9,9 +9,6 @@ import os
 import sys
 from datetime import datetime
 
-import urllib.request
-from urllib.error import HTTPError, URLError
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -134,22 +131,8 @@ with st.sidebar:
 
 # data loading
 def _fetch(sheet_id: str, gid: str) -> str | None:
-    _HEADERS = {"User-Agent": "Mozilla/5.0"}
-    urls = [
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}",
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}",
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv",
-    ]
-    for url in urls:
-        try:
-            req = urllib.request.Request(url, headers=_HEADERS)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                conteudo = resp.read().decode("utf-8")
-                if conteudo.strip():
-                    return conteudo
-        except (HTTPError, URLError, TimeoutError) as e:
-            logging.debug(f"fetch {url[:60]}: {e}")
-    return None
+    from utils.cache_manager import get_raw
+    return get_raw(sheet_id, gid, ttl=CACHE_TTL)
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_programacao() -> pd.DataFrame:
@@ -196,66 +179,43 @@ def load_programacao() -> pd.DataFrame:
     df["CLIENTE"]      = df["CLIENTE"].astype(str).str.strip()
     df["LOCAL"]        = df["LOCAL"].astype(str).str.strip()
 
-    invalidos = {"NAN", "NONE", "N/A"}
-    df = df[
-        df["PED. CLIENTE"].str.strip().ne("") &
-        ~df["PED. CLIENTE"].str.upper().isin(invalidos)
-    ].reset_index(drop=True)
+    invalidos = {"", "NAN", "NONE", "N/A"}
+
+    def _valido(serie: pd.Series) -> pd.Series:
+        s = serie.astype(str).str.strip()
+        return s.ne("") & ~s.str.upper().isin(invalidos)
+
+    # Fallback de OP: quando NÃO existe a OP (PED. CLIENTE), a OP INTERNA ocupa o lugar
+    # dela e passa a ser a OP daquela linha. Se a OP existe, OP INTERNA é ignorada
+    # (não entra no cruzamento, para não gerar match falso).
+    ped_valido = _valido(df["PED. CLIENTE"])
+    if "OP INTERNA" in df.columns:
+        usar_opint = ~ped_valido & _valido(df["OP INTERNA"])
+        df.loc[usar_opint, "PED. CLIENTE"] = (
+            df.loc[usar_opint, "OP INTERNA"].astype(str).str.strip()
+        )
+
+    # Mantém linhas com OP (própria ou via OP INTERNA) e também as sem OP nenhuma
+    # mas com produção real (ex: MANTA CELTA sem OP, só quantidade programada).
+    ped_valido = _valido(df["PED. CLIENTE"])
+    tem_producao = df["QNT. PROG"] > 0
+    df = df[ped_valido | tem_producao].reset_index(drop=True)
+
+    # _CHAVE = a OP (PED. CLIENTE). Linhas que continuam sem OP nenhuma agrupam por
+    # CLIENTE+PRODUTO+SEMANA (sub-linhas do mesmo item viram uma OP só); OP exibida vazia.
+    df["_CHAVE"] = df["PED. CLIENTE"]
+    sem_op = ~_valido(df["PED. CLIENTE"])
+    df.loc[sem_op, "_CHAVE"] = (
+        "SEMOP|"
+        + df.loc[sem_op, "CLIENTE"].astype(str).str.strip() + "|"
+        + df.loc[sem_op, "PRODUTO"].astype(str).str.strip() + "|"
+        + df.loc[sem_op, "SEMANA"].astype(str).str.strip()
+    )
+    df.loc[sem_op, "PED. CLIENTE"] = ""  # exibido como vazio/"—"
     return df
 
-def _parse_data_corte(s: str) -> "pd.Timestamp":
-    """
-    Parse robusto de data com desambiguação por tamanho de componente.
-
-    Motivação: o parser anterior tentava MM/DD primeiro — incorreto para planilhas
-    brasileiras onde o padrão é DD/MM. Isso gerava semanas ISO erradas e somava
-    cortes na semana errada.
-
-    Algoritmo (por prioridade):
-      1. Formatos ISO / ano-primeiro  → sem ambiguidade.
-      2. Primeiro componente > 12    → obrigatoriamente DD/MM/YYYY.
-      3. Segundo componente > 12     → obrigatoriamente MM/DD/YYYY (dia = b).
-      4. Ambos ≤ 12                  → padrão pt-BR (DD/MM) — melhor estimativa
-                                       para planilhas brasileiras.
-    """
-    import re as _re
-    if not s or str(s).strip() in ("", "nan", "None"):
-        return pd.NaT
-    s = str(s).strip().split(" ")[0]
-
-    # 1. ISO / ano-primeiro (sem ambiguidade)
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
-        try:
-            return pd.to_datetime(s, format=fmt)
-        except Exception:
-            continue
-
-    # 2–4. Formato A/B/YYYY (ou A-B-YYYY, A.B.YYYY)
-    m = _re.match(r'^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$', s)
-    if m:
-        a, b, y = int(m.group(1)), int(m.group(2)), m.group(3)
-        if len(y) == 2:
-            y = "20" + y
-        if a > 12:
-            # a não pode ser mês → é dia: DD/MM/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
-            except Exception:
-                pass
-        elif b > 12:
-            # b não pode ser mês → é dia, a é mês: MM/DD/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%m/%d/%Y")
-            except Exception:
-                pass
-        else:
-            # Ambos ≤ 12: padrão pt-BR → DD/MM/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
-            except Exception:
-                pass
-
-    return pd.to_datetime(s, errors="coerce")
+# (parser de data local removido — usar utils.date_parser.parse_date_series,
+#  que detecta o formato D/M vs M/D por coluna.)
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_cortes() -> pd.DataFrame:
@@ -269,35 +229,23 @@ def load_cortes() -> pd.DataFrame:
     SEMANA é o nº ISO da semana derivado da coluna DATA — essencial para que
     o join não some cortes de semanas anteriores para OPs reutilizadas (ex: PROG 81).
     """
+    from utils.date_parser import parse_date_series
     frames = []
 
-    # (sheet_id, gid, nome, coluna_quantidade, detectar_header)
+    # Manta e Iacanga: header simples, coluna DATA correta → parsing direto.
     _SOURCES = [
-        (MANTA_ID,   MANTA_GID,   "Arealva",  "QUANTIDADE", False),
-        (IACANGA_ID, IACANGA_GID, "Iacanga",  "QUANTIDADE", False),
-        (LENCOL_ID,  LENCOL_GID,  "Lençol",   "QUANT",      True),
+        (MANTA_ID,   MANTA_GID,   "Arealva",  "QUANTIDADE"),
+        (IACANGA_ID, IACANGA_GID, "Iacanga",  "QUANTIDADE"),
     ]
 
-    for sid, gid, fonte, col_qtd, detect_hdr in _SOURCES:
+    for sid, gid, fonte, col_qtd in _SOURCES:
         texto = _fetch(sid, gid)
         if not texto:
             logging.debug(f"load_cortes: sem texto para {fonte}")
             continue
         try:
-            skiprows = 0
-            if detect_hdr:
-                for i, linha in enumerate(texto.splitlines()[:8]):
-                    lu = linha.upper()
-                    if ("DATA" in lu and "PRESTADOR" in lu) or ("DATA" in lu and ",OP," in lu):
-                        skiprows = i
-                        break
-
-            df = pd.read_csv(io.StringIO(texto), skiprows=skiprows, header=0, dtype=str)
+            df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
             df.columns = df.columns.str.strip()
-
-            if "OP" not in df.columns and skiprows > 0:
-                df = pd.read_csv(io.StringIO(texto), header=0, dtype=str)
-                df.columns = df.columns.str.strip()
 
             if "OP" not in df.columns or col_qtd not in df.columns:
                 logging.debug(
@@ -312,7 +260,7 @@ def load_cortes() -> pd.DataFrame:
 
             # Derivar SEMANA ISO a partir de DATA (para join por semana)
             if "DATA" in df.columns:
-                datas = df["DATA"].apply(_parse_data_corte)
+                datas = parse_date_series(df["DATA"])
                 sub["SEMANA"] = datas.dt.isocalendar().week.astype("Int64")
             else:
                 sub["SEMANA"] = pd.array([pd.NA] * len(sub), dtype="Int64")
@@ -322,6 +270,29 @@ def load_cortes() -> pd.DataFrame:
 
         except Exception as e:
             logging.debug(f"load_cortes: parse {fonte}: {e}")
+
+    # Lençol: estrutura complexa (coluna "DATA" contém empresa, data real noutra coluna).
+    # Usa o loader dedicado, que mapeia as colunas por conteúdo corretamente.
+    try:
+        from utils.lencol_loader_smart import load_lencol_smart_xlsx
+        df_len = load_lencol_smart_xlsx()
+        if not df_len.empty and "OP" in df_len.columns and "QUANT" in df_len.columns:
+            sub = pd.DataFrame({
+                "OP": df_len["OP"],
+                "QUANTIDADE": df_len["QUANT"],
+                "FONTE": "Lençol",
+            })
+            if "DATA" in df_len.columns:
+                datas = pd.to_datetime(df_len["DATA"], errors="coerce")
+                sub["SEMANA"] = datas.dt.isocalendar().week.astype("Int64")
+            else:
+                sub["SEMANA"] = pd.array([pd.NA] * len(sub), dtype="Int64")
+            frames.append(sub)
+            logging.debug(f"load_cortes: Lençol → {len(sub)} registros")
+        else:
+            logging.debug("load_cortes: Lençol vazio ou sem colunas OP/QUANT")
+    except Exception as e:
+        logging.debug(f"load_cortes: parse Lençol: {e}")
 
     if not frames:
         return pd.DataFrame(columns=["OP", "QUANTIDADE", "FONTE", "SEMANA"])
@@ -357,10 +328,15 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     """
     import re as _re
 
-    # Soma QNT. PROG por (PED. CLIENTE, SEMANA) — evita acumular semanas anteriores
-    # para OPs reutilizadas semana a semana (ex: "PROG 81" tem 9.000/sem, não 88.992 total)
-    total_prog_op = df_prog.groupby(["PED. CLIENTE", "SEMANA"])["QNT. PROG"].transform("sum")
     df = df_prog.copy()
+    # _CHAVE = identificador de agrupamento (OP, ou chave única p/ linhas sem OP).
+    # Fallback defensivo caso a coluna não exista (compatibilidade).
+    if "_CHAVE" not in df.columns:
+        df["_CHAVE"] = df["PED. CLIENTE"]
+
+    # Soma QNT. PROG por (_CHAVE, SEMANA) — evita acumular semanas anteriores
+    # para OPs reutilizadas semana a semana (ex: "PROG 81" tem 9.000/sem, não 88.992 total)
+    total_prog_op = df.groupby(["_CHAVE", "SEMANA"])["QNT. PROG"].transform("sum")
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
 
     # sem dados de corte
@@ -377,19 +353,25 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
         "SEMANA" in df_cortes.columns
         and df_cortes["SEMANA"].notna().any()
     )
+    # OP normalizada (sem prefixo PROG/PGR/OP) — cruzamento prefixo-insensível.
+    from utils.normalize import normalize_op, is_blank
+    _cortes = df_cortes.copy()
+    _cortes["_OPN"] = _cortes["OP"].map(normalize_op)
+    _cortes = _cortes[_cortes["_OPN"].ne("")]
+
     if _tem_semana:
         _sem_idx = (
-            df_cortes.dropna(subset=["SEMANA"])
+            _cortes.dropna(subset=["SEMANA"])
             .assign(_S=lambda d: d["SEMANA"].astype(int))
-            .groupby(["OP", "_S"])["QUANTIDADE"].sum()
+            .groupby(["_OPN", "_S"])["QUANTIDADE"].sum()
         )
-        # dict: (op_str, semana_int) → quantidade
+        # dict: (op_normalizada, semana_int) → quantidade
         _sem_map: dict = {(str(op), int(s)): int(q) for (op, s), q in _sem_idx.items()}
     else:
         _sem_map = {}
 
-    # Índice OP → quantidade (fallback sem semana)
-    _op_map: dict = df_cortes.groupby("OP")["QUANTIDADE"].sum().to_dict()
+    # Índice OP normalizada → quantidade (fallback sem semana)
+    _op_map: dict = _cortes.groupby("_OPN")["QUANTIDADE"].sum().to_dict()
 
     # extrair semana iso do campo semana da programação ("semana 22" → 22)
     def _parse_sem(s) -> int | None:
@@ -398,46 +380,30 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
 
     df["_SEM"] = df["SEMANA"].apply(_parse_sem)
 
-    # Preparar colunas auxiliares para o apply
-    df["_PED"]   = df["PED. CLIENTE"].astype(str).str.strip()
-    df["_OPINT"] = (
-        df["OP INTERNA"].fillna("").astype(str).str.strip()
-        if "OP INTERNA" in df.columns
-        else ""
-    )
-
-    _inv = {"", "NAN", "NONE", "N/A"}
+    # OP da programação normalizada da mesma forma (a OP é o PED. CLIENTE;
+    # OP INTERNA não entra no cruzamento para não gerar match falso).
+    df["_PEDN"] = df["PED. CLIENTE"].map(normalize_op)
 
     def _get_cortado(row) -> float:
-        ped    = row["_PED"]
-        op_int = row["_OPINT"]
-        sem    = row["_SEM"]
+        ped = row["_PEDN"]
+        sem = row["_SEM"]
+
+        if not ped:
+            return 0.0  # linha sem OP → não há como cruzar com corte
 
         if _tem_semana and sem is not None:
-            # (PED. CLIENTE, SEMANA)
-            v = _sem_map.get((ped, sem), 0)
-            if v:
-                return float(v)
-            # (OP INTERNA, SEMANA)
-            if op_int.upper() not in _inv:
-                v = _sem_map.get((op_int, sem), 0)
-                if v:
-                    return float(v)
-            # Não encontrado nesta semana → corte ainda não realizado
-            return 0.0
+            # (OP=PED. CLIENTE, SEMANA), ambas normalizadas
+            return float(_sem_map.get((ped, sem), 0))
         else:
-            # Sem informação de semana: usa acumulado por OP (comportamento original)
-            v = _op_map.get(ped, 0)
-            if not v and op_int.upper() not in _inv:
-                v = _op_map.get(op_int, 0)
-            return float(v)
+            # Sem informação de semana: usa acumulado por OP
+            return float(_op_map.get(ped, 0))
 
     df["_CORTADO_ROW"] = df.apply(_get_cortado, axis=1)
-    df = df.drop(columns=["_SEM", "_PED", "_OPINT"])
+    df = df.drop(columns=["_SEM", "_PEDN"])
 
-    # Soma por PED. CLIENTE → valor único distribuído a todas as linhas do pedido
+    # Soma por _CHAVE → valor único distribuído a todas as linhas da OP
     df["QNT_CORTADA"] = (
-        df.groupby("PED. CLIENTE")["_CORTADO_ROW"]
+        df.groupby("_CHAVE")["_CORTADO_ROW"]
         .transform("sum")
         .fillna(0)
         .astype(int)
@@ -461,7 +427,9 @@ def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
         vals = sorted({str(v) for v in s if str(v) not in ("", "nan", "NAN", "None")})
         return " / ".join(vals)
 
-    return df.groupby("PED. CLIENTE", as_index=False).agg(
+    chave = "_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"
+    return df.groupby(chave, as_index=False).agg(
+        **{"PED. CLIENTE": ("PED. CLIENTE", "first")},
         SEMANA        =("SEMANA",          "first"),
         CLIENTE       =("CLIENTE",         "first"),
         LOCAL         =("LOCAL",           "first"),
@@ -519,7 +487,9 @@ with st.sidebar:
     status_sel  = st.multiselect("🔄 Status de Corte", options=status_disp, default=[], key="prog_status")
 
     st.markdown("---")
-    if st.button("🔄 Limpar Cache", key="prog_clear", use_container_width=True):
+    if st.button("🔄 Atualizar Dados", key="prog_clear", use_container_width=True):
+        from utils.cache_manager import invalidate_all
+        invalidate_all()
         st.cache_data.clear()
         st.rerun()
     st.caption(f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
@@ -538,7 +508,9 @@ with st.sidebar:
     st.markdown("**🔍 Rastrear OP**")
     op_busca = st.text_input("OP / PED. CLIENTE", key="op_rastreio", placeholder="ex: 254333")
     if op_busca.strip():
-        resultado = df_cortes_raw[df_cortes_raw["OP"].astype(str).str.strip() == op_busca.strip()]
+        from utils.normalize import normalize_op as _nop
+        _alvo = _nop(op_busca)
+        resultado = df_cortes_raw[df_cortes_raw["OP"].map(_nop) == _alvo]
         if resultado.empty:
             st.info("Nenhum corte encontrado para essa OP.")
         else:
@@ -655,32 +627,23 @@ with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expan
     st.markdown("---")
     st.markdown("##### Cruzamento: Programação × Cortes")
 
+    from utils.normalize import normalize_op as _nop
     _ops_corte = (
-        set(df_cortes_raw["OP"].astype(str).str.strip().unique())
+        {o for o in df_cortes_raw["OP"].map(_nop).unique() if o}
         if not df_cortes_raw.empty else set()
     )
-    _peds_prog = set(df_prog_raw["PED. CLIENTE"].astype(str).str.strip().unique())
-
-    _ops_int_prog: set = set()
-    if "OP INTERNA" in df_prog_raw.columns:
-        _ops_int_prog = {
-            str(v).strip()
-            for v in df_prog_raw["OP INTERNA"].dropna().unique()
-            if str(v).strip() not in ("", "nan", "None", "NAN")
-        }
+    # OP da programação = PED. CLIENTE (normalizada, prefixo-insensível)
+    _peds_prog = {o for o in df_prog_raw["PED. CLIENTE"].map(_nop).unique() if o}
 
     _matched_ped = _peds_prog & _ops_corte
-    _matched_int = _ops_int_prog & _ops_corte
-    _nao_matched = _peds_prog - _ops_corte - _ops_int_prog
+    _nao_matched = _peds_prog - _ops_corte
 
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    mc1.metric("Pedidos na programação", len(_peds_prog))
-    mc2.metric("Match via PED. CLIENTE", len(_matched_ped),
-               help="PED. CLIENTE encontrado como OP nos dados de corte")
-    mc3.metric("Match via OP INTERNA", len(_matched_int),
-               help="OP INTERNA encontrada como OP nos dados de corte")
-    mc4.metric("Sem match (corte não encontrado)", len(_nao_matched),
-               help="Nenhum valor da programação encontrado nos dados de corte")
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("OPs na programação", len(_peds_prog))
+    mc2.metric("Com corte encontrado", len(_matched_ped),
+               help="OP (PED. CLIENTE) encontrada nos dados de corte, ignorando prefixo")
+    mc3.metric("Sem corte encontrado", len(_nao_matched),
+               help="Nenhum corte com essa OP nas planilhas de corte")
 
     if _nao_matched:
         st.markdown(
@@ -698,7 +661,7 @@ with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expan
         st.success("✅ Todos os pedidos da programação têm corte registrado em alguma fonte.")
 
     # Verificação inversa: OPs cortadas sem pedido na programação
-    _corte_sem_prog = _ops_corte - _peds_prog - _ops_int_prog
+    _corte_sem_prog = _ops_corte - _peds_prog
     if _corte_sem_prog:
         with st.container():
             st.markdown(

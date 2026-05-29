@@ -15,6 +15,9 @@ venv/
 # Streamlit
 .streamlit/secrets.toml
 
+# Cache de planilhas Google Sheets (gerado automaticamente)
+cache/sheets/*.csv
+
 # Gerados pelo relatório
 scripts/*.pdf
 scripts/*.html

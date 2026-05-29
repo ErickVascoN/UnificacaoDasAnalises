@@ -9,8 +9,6 @@ import io
 import os
 import sys
 import re
-import urllib.request
-from urllib.error import HTTPError, URLError
 import requests
 import numpy as np
 from plotly.subplots import make_subplots
@@ -389,50 +387,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # DATA LOADING
-
-def parse_date_safe(data_str):
-    """Parse date from Google Sheets (exports MM/DD/YYYY by default)."""
-    if pd.isna(data_str) or not str(data_str).strip():
-        return pd.NaT
-    data_str = str(data_str).strip()
-    for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"]:
-        try:
-            return pd.to_datetime(data_str, format=fmt)
-        except Exception:
-            continue
-    return pd.to_datetime(data_str, errors="coerce")
+# Datas são convertidas com utils.date_parser.parse_date_series (detecção de
+# formato por coluna — D/M vs M/D). Não criar parsers de data locais aqui.
 
 def baixar_csv_google_sheets():
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    gid_param = f"&gid={GOOGLE_SHEETS_GID}" if GOOGLE_SHEETS_GID else ""
-    urls_padrao = [
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv{gid_param}",
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv{gid_param}",
-    ]
-    gids_fallback = ["206085601", "0"]
-    urls_fallback = []
-    for gid in gids_fallback:
-        urls_fallback.extend([
-            f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/export?format=csv&gid={gid}",
-            f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:csv&gid={gid}",
-        ])
-    todas_urls = urls_padrao + urls_fallback
-    ultimo_erro = None
-    tentativa_num = 0
-    for url in todas_urls:
-        tentativa_num += 1
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as response:
-                conteudo = response.read().decode('utf-8')
-                if conteudo.strip():
-                    return io.StringIO(conteudo)
-        except (HTTPError, URLError, TimeoutError) as erro:
-            logging.debug(f"URL {tentativa_num}: {url[:60]}... falhou - {type(erro).__name__}")
-            ultimo_erro = erro
-            continue
-    st.error(f"❌ Falha ao baixar CSV do Google Sheets em {tentativa_num} tentativas. Último erro: {str(ultimo_erro)[:100]}")
-    raise RuntimeError(f"Falha ao baixar CSV do Google Sheets. Último erro: {ultimo_erro}")
+    from utils.cache_manager import get_raw
+    conteudo = get_raw(GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID, ttl=CACHE_TTL)
+    if conteudo:
+        return io.StringIO(conteudo)
+    st.error("❌ Não foi possível carregar a planilha de Corte (Arealva Manta). Verifique sua conexão.")
+    raise RuntimeError("Falha ao carregar planilha de corte Arealva Manta.")
 
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados():
@@ -450,8 +414,8 @@ def carregar_dados():
             f"Colunas obrigatórias faltando: {', '.join(colunas_faltantes)}. "
             f"Disponíveis: {', '.join(df_corte.columns.tolist())}"
         )
-    data_raw = df_corte['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    df_corte['DATA'] = data_raw.apply(parse_date_safe)
+    from utils.date_parser import parse_date_series
+    df_corte['DATA'] = parse_date_series(df_corte['DATA'])
     df_corte = df_corte.dropna(subset=['DATA'])
     df_corte['OP'] = df_corte['OP'].fillna('SEM OP').astype(str).str.strip()
     df_corte.loc[df_corte['OP'] == '', 'OP'] = 'SEM OP'
@@ -473,24 +437,11 @@ def carregar_dados():
 # DATA LOADING — IACANGA (planilha própria)
 
 def baixar_csv_google_sheets_iacanga():
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    urls = [
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID_IACANGA}/export?format=csv&gid={GOOGLE_SHEETS_GID_IACANGA}",
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID_IACANGA}/gviz/tq?tqx=out:csv&gid={GOOGLE_SHEETS_GID_IACANGA}",
-        f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEETS_ID_IACANGA}/export?format=csv",
-    ]
-    ultimo_erro = None
-    for url in urls:
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as response:
-                conteudo = response.read().decode('utf-8')
-                if conteudo.strip():
-                    return io.StringIO(conteudo)
-        except (HTTPError, URLError, TimeoutError) as erro:
-            ultimo_erro = erro
-            continue
-    raise RuntimeError(f"Falha ao baixar CSV do Iacanga. Último erro: {ultimo_erro}")
+    from utils.cache_manager import get_raw
+    conteudo = get_raw(GOOGLE_SHEETS_ID_IACANGA, GOOGLE_SHEETS_GID_IACANGA, ttl=CACHE_TTL)
+    if conteudo:
+        return io.StringIO(conteudo)
+    raise RuntimeError("Falha ao carregar planilha de corte Iacanga.")
 
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados_iacanga():
@@ -509,8 +460,8 @@ def carregar_dados_iacanga():
     # META DIARIA, DIFERENÇA, QUEBRA TECIDO e quaisquer outras)
     df = df_full[COLUNAS_USADAS_IACANGA].copy()
 
-    data_raw = df['DATA'].astype(str).str.split(' ').str[0].str.strip()
-    df['DATA'] = data_raw.apply(parse_date_safe)
+    from utils.date_parser import parse_date_series
+    df['DATA'] = parse_date_series(df['DATA'])
     df = df.dropna(subset=['DATA'])
     df['OP'] = df['OP'].fillna('SEM OP').astype(str).str.strip()
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
@@ -615,64 +566,8 @@ def lencol_cat_base(cat):
 def lencol_cor_empresa(emp):
     return LENCOL_CORES_EMPRESA.get(emp.upper().strip(), "#718096")
 
-def lencol_parse_date(data_str):
-    """
-    Parse robusto de data com desambiguação por tamanho de componente.
-
-    Motivação: exportações CSV do Google Sheets produzem datas em formato textual
-    (DD/MM/YYYY ou M/D/YYYY) dependendo do locale/formatação da célula.
-    Tentar DD/MM primeiro, sem checar os valores dos componentes, faz "1/5/2026"
-    (janeiro de 2026 exportado como M/D) ser interpretado como 1 de maio — erro
-    direto em cálculos financeiros de pagamento.
-
-    Algoritmo (por prioridade):
-      1. Formatos ISO / ano-primeiro  → sem ambiguidade.
-      2. Primeiro componente > 12    → obrigatoriamente DD/MM/YYYY.
-      3. Segundo componente > 12     → obrigatoriamente MM/DD/YYYY (dia = b).
-      4. Ambos ≤ 12                  → padrão pt-BR (DD/MM) — melhor estimativa
-                                       para planilhas brasileiras.
-    """
-    if pd.isna(data_str) or not str(data_str).strip():
-        return pd.NaT
-    data_str = str(data_str).strip()
-
-    # 1. Formatos ISO / ano-primeiro (sem ambiguidade)
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
-        try:
-            return pd.to_datetime(data_str, format=fmt)
-        except Exception:
-            continue
-
-    # 2–4. Formato A/B/YYYY (ou A-B-YYYY, A.B.YYYY)
-    m = re.match(r'^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$', data_str)
-    if m:
-        a, b, y = int(m.group(1)), int(m.group(2)), m.group(3)
-        if len(y) == 2:
-            y = "20" + y
-        if a > 12:
-            # a não pode ser mês → é dia: DD/MM/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
-            except Exception:
-                pass
-        elif b > 12:
-            # b não pode ser mês → é dia, a é mês: MM/DD/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%m/%d/%Y")
-            except Exception:
-                pass
-        else:
-            # Ambos ≤ 12: padrão pt-BR → DD/MM/YYYY
-            try:
-                return pd.to_datetime(f"{a:02d}/{b:02d}/{y}", format="%d/%m/%Y")
-            except Exception:
-                pass
-
-    # Fallback genérico
-    try:
-        return pd.to_datetime(data_str, errors="coerce")
-    except Exception:
-        return pd.NaT
+# Datas do Lençol são tratadas no loader (utils.lencol_loader_smart) via
+# utils.date_parser.parse_date_series. Não há parser de data local aqui.
 
 def lencol_delta_icon(v):
     if v > 0:
@@ -684,127 +579,101 @@ def lencol_delta_icon(v):
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_corte_lencol() -> pd.DataFrame:
     """
-    Carrega lançamentos de lençol via XLSX (não CSV).
+    Carrega lançamentos de lençol via CSV (NOT XLSX).
 
-    Motivação: exportações CSV do Google Sheets produzem datas em formato textual
-    cujo locale (DD/MM vs M/D) varia por célula — causava meses incorretos em
-    registros mais antigos, com impacto direto em totais financeiros.
-    XLSX armazena datas como seriais numéricos IEEE; o pandas retorna datetime64[ns]
-    diretamente, sem qualquer parsing de texto, eliminando a ambiguidade de forma
-    definitiva.
+    Razão: XLSX export tima timeout (60+ segundos). CSV via gviz/tq é rápido e confiável.
+    O parser robusto em utils.lencol_loader_smart já detecta datas corretamente
+    por conteúdo (padrão M/D/YYYY com ano >= 2020) e converte com dayfirst=False.
     """
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{LENCOL_SPREADSHEET_ID}"
-        f"/export?format=xlsx"
-    )
     try:
-        r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        if len(r.content) < 500:
-            raise ValueError("Resposta XLSX muito pequena — planilha vazia ou acesso negado.")
+        from utils.lencol_loader_smart import load_lencol_smart_csv
+        df = load_lencol_smart_csv()
+        
+        if df.empty:
+            st.error("❌ Não foi possível baixar dados da planilha de lençol: DataFrame vazio")
+            raise ConnectionError("Lençol loader retornou DataFrame vazio")
+        
+        # Garante colunas esperadas
+        expected_cols = [
+            "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
+            "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
+        ]
+        missing = [c for c in expected_cols if c not in df.columns]
+        if missing:
+            st.error(f"❌ Colunas faltando: {missing}")
+            raise ValueError(f"Colunas esperadas faltando: {missing}")
+        
+        # DATA já vem como datetime do loader, mas normaliza para ter certeza
+        df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
+        before_count = len(df)
+        df = df[df["DATA"].notna()]
+        removed_nat = before_count - len(df)
+        if removed_nat > 0:
+            logging.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
+
+        # Colunas numéricas: CSV já retorna string — pd.to_numeric() garante conversão
+        df["QUANT"] = pd.to_numeric(df["QUANT"], errors="coerce").fillna(0).astype(int)
+        df["VALOR_PECA"] = pd.to_numeric(df["VALOR_PECA"], errors="coerce").fillna(0.0)
+        df["VALOR_RECEBER"] = pd.to_numeric(df["VALOR_RECEBER"], errors="coerce").fillna(0.0)
+        df["RETALHO_KG"] = pd.to_numeric(df["RETALHO_KG"], errors="coerce").fillna(0.0)
+
+        df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip()
+        df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()
+        df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip().str.upper()
+        df["CATEGORIA"] = df["CATEGORIA"].apply(
+            lambda x: re.sub(r"\s+", " ", str(x))
+            if pd.notna(x) and str(x).strip() not in ("", "nan", "none") else ""
+        )
+        df["TECIDO"] = df["TECIDO"].astype(str).str.strip()
+        df["OP"] = df["OP"].astype(str).str.strip()
+
+        invalidos = {"", "NAN", "NONE", "N/A", "NAO", "NAO INFORMADO"}
+        
+        # Log antes das remoções
+        registros_antes = len(df)
+        
+        # Remover prestadores inválidos
+        df = df[~df["PRESTADOR"].str.upper().isin(invalidos)]
+        removidos_prestador = registros_antes - len(df)
+        if removidos_prestador > 0:
+            logging.debug(f"Removidos {removidos_prestador} registros com PRESTADOR inválido em load_corte_lencol()")
+        
+        # Remover empresas inválidas
+        registros_antes_empresa = len(df)
+        df = df[~df["EMPRESA"].str.upper().isin(invalidos)]
+        removidos_empresa = registros_antes_empresa - len(df)
+        if removidos_empresa > 0:
+            logging.debug(f"Removidos {removidos_empresa} registros com EMPRESA inválida em load_corte_lencol()")
+        
+        # Remover quantidade zero
+        registros_antes_quant = len(df)
+        df = df[df["QUANT"] > 0]
+        removidos_quant = registros_antes_quant - len(df)
+        if removidos_quant > 0:
+            logging.debug(f"Removidos {removidos_quant} registros com QUANT <= 0 em load_corte_lencol()")
+        
+        df = df.reset_index(drop=True)
+
+        mask0 = df["VALOR_RECEBER"] == 0
+        df.loc[mask0, "VALOR_RECEBER"] = df.loc[mask0, "QUANT"] * df.loc[mask0, "VALOR_PECA"]
+
+        df["CAT_BASE"] = df["CATEGORIA"].apply(lencol_cat_base)
+        df["ANO"] = df["DATA"].dt.year
+        df["MES"] = df["DATA"].dt.month
+        df["MES_NOME"] = df["MES"].map(LENCOL_MESES_PT)
+        df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)
+        df["SEMANA"] = df["DATA"].dt.isocalendar().week.astype(int)
+        df["DIA_SEMANA"] = df["DATA"].dt.day_name()
+        df["DIA_SEMANA_PT"] = df["DIA_SEMANA"].map(LENCOL_DIAS_PT)
+        return df
+        
     except Exception as e:
         st.error(f"❌ Não foi possível baixar dados da planilha de lençol: {e}")
-        raise ConnectionError(f"Falha ao baixar lençol XLSX: {e}") from e
-
-    xls = pd.ExcelFile(io.BytesIO(r.content), engine="openpyxl")
-
-    # Localiza a aba + linha de header que contém "DATA" e "PRESTADOR"
-    target_sheet: str | None = None
-    header_row = 0
-    for sheet_name in xls.sheet_names:
-        for skip in range(6):
-            try:
-                df_probe = pd.read_excel(
-                    xls, sheet_name=sheet_name, skiprows=skip, nrows=0, header=0,
-                )
-                cols_upper = [str(c).strip().upper() for c in df_probe.columns]
-                if "DATA" in cols_upper and "PRESTADOR" in cols_upper:
-                    target_sheet = sheet_name
-                    header_row = skip
-                    break
-            except Exception:
-                continue
-        if target_sheet:
-            break
-
-    if target_sheet is None:
-        target_sheet = xls.sheet_names[0]
-        header_row = 0
-        logging.warning(
-            "load_corte_lencol: aba com colunas DATA+PRESTADOR não encontrada; "
-            "usando primeira aba sem skiprows."
-        )
-
-    df = pd.read_excel(xls, sheet_name=target_sheet, skiprows=header_row, header=0)
-    df = df.iloc[:, :11].copy()
-    df.columns = [
-        "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
-        "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
-    ]
-
-    # DATA: Excel retorna datetime64 — pd.to_datetime() apenas normaliza edge-cases
-    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-    before_count = len(df)
-    df = df[df["DATA"].notna()]
-    removed_nat = before_count - len(df)
-    if removed_nat > 0:
-        logging.debug(f"Removidos {removed_nat} registros com DATA inválida no Lençol")
-
-    # Colunas numéricas: Excel retorna float — pd.to_numeric() apenas para garantia
-    df["QUANT"] = pd.to_numeric(df["QUANT"], errors="coerce").fillna(0).astype(int)
-    df["VALOR_PECA"] = pd.to_numeric(df["VALOR_PECA"], errors="coerce").fillna(0.0)
-    df["VALOR_RECEBER"] = pd.to_numeric(df["VALOR_RECEBER"], errors="coerce").fillna(0.0)
-    df["RETALHO_KG"] = pd.to_numeric(df["RETALHO_KG"], errors="coerce").fillna(0.0)
-
-    df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip()
-    df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()
-    df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip().str.upper()
-    df["CATEGORIA"] = df["CATEGORIA"].apply(
-        lambda x: re.sub(r"\s+", " ", str(x))
-        if pd.notna(x) and str(x).strip() not in ("", "nan", "none") else ""
-    )
-    df["TECIDO"] = df["TECIDO"].astype(str).str.strip()
-    df["OP"] = df["OP"].astype(str).str.strip()
-
-    invalidos = {"", "NAN", "NONE", "N/A", "NAO", "NAO INFORMADO"}
-    
-    # Log antes das remoções
-    registros_antes = len(df)
-    
-    # Remover prestadores inválidos
-    df = df[~df["PRESTADOR"].str.upper().isin(invalidos)]
-    removidos_prestador = registros_antes - len(df)
-    if removidos_prestador > 0:
-        logging.debug(f"Removidos {removidos_prestador} registros com PRESTADOR inválido em load_corte_lencol()")
-    
-    # Remover empresas inválidas
-    registros_antes_empresa = len(df)
-    df = df[~df["EMPRESA"].str.upper().isin(invalidos)]
-    removidos_empresa = registros_antes_empresa - len(df)
-    if removidos_empresa > 0:
-        logging.debug(f"Removidos {removidos_empresa} registros com EMPRESA inválida em load_corte_lencol()")
-    
-    # Remover quantidade zero
-    registros_antes_quant = len(df)
-    df = df[df["QUANT"] > 0]
-    removidos_quant = registros_antes_quant - len(df)
-    if removidos_quant > 0:
-        logging.debug(f"Removidos {removidos_quant} registros com QUANT <= 0 em load_corte_lencol()")
-    
-    df = df.reset_index(drop=True)
-
-    mask0 = df["VALOR_RECEBER"] == 0
-    df.loc[mask0, "VALOR_RECEBER"] = df.loc[mask0, "QUANT"] * df.loc[mask0, "VALOR_PECA"]
-
-    df["CAT_BASE"] = df["CATEGORIA"].apply(lencol_cat_base)
-    df["ANO"] = df["DATA"].dt.year
-    df["MES"] = df["DATA"].dt.month
-    df["MES_NOME"] = df["MES"].map(LENCOL_MESES_PT)
-    df["ANO_MES"] = df["DATA"].dt.to_period("M").astype(str)
-    df["SEMANA"] = df["DATA"].dt.isocalendar().week.astype(int)
-    df["DIA_SEMANA"] = df["DATA"].dt.day_name()
-    df["DIA_SEMANA_PT"] = df["DIA_SEMANA"].map(LENCOL_DIAS_PT)
-    return df
+        logging.debug(f"Erro completo: {e}")
+        return pd.DataFrame(columns=[
+            "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
+            "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
+        ])
 
 @st.cache_data(ttl=LENCOL_CACHE_TTL, show_spinner=False)
 def load_metas_lencol() -> pd.DataFrame:
@@ -1135,7 +1004,9 @@ elif screen == 'iacanga_rendimento':
                 f"📅 {df_corte_iac['DATA'].min().strftime('%d/%m/%Y')} → "
                 f"{df_corte_iac['DATA'].max().strftime('%d/%m/%Y')}"
             )
-        if st.sidebar.button("🔄 Limpar Cache", key="iac_clear_cache", use_container_width=True):
+        if st.sidebar.button("🔄 Atualizar Dados", key="iac_clear_cache", use_container_width=True):
+            from utils.cache_manager import invalidate_all
+            invalidate_all()
             st.cache_data.clear()
             st.rerun()
         st.sidebar.metric("📊 Registros", f"{len(df_corte_iac):,}".replace(",", "."))
@@ -1841,7 +1712,9 @@ elif screen == 'arealva_manta':
     # sidebar filters
     with st.sidebar:
         st.info(f"📅 {df_corte['DATA'].min().strftime('%d/%m/%Y')} → {df_corte['DATA'].max().strftime('%d/%m/%Y')}")
-        if st.sidebar.button("🔄 Limpar Cache", use_container_width=True):
+        if st.sidebar.button("🔄 Atualizar Dados", use_container_width=True):
+            from utils.cache_manager import invalidate_all
+            invalidate_all()
             st.cache_data.clear()
             st.rerun()
         st.sidebar.metric("📊 Registros", f"{len(df_corte):,}".replace(",", "."))

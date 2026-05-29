@@ -209,16 +209,12 @@ def _load_metas_lookup_pg() -> dict:
 
     NÃO usa @st.cache_data — chamado de dentro de load_all_data() que já é cacheada.
     """
-    import requests as _req
-
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{_METAS_SHEET_ID_PG}"
-        f"/export?format=csv&gid={_METAS_GID_PG}"
-    )
+    from utils.cache_manager import get_raw as _get_raw
+    content = _get_raw(_METAS_SHEET_ID_PG, _METAS_GID_PG, ttl=300)
     try:
-        r = _req.get(url, timeout=20)
-        r.raise_for_status()
-        df_raw = pd.read_csv(io.StringIO(r.text), dtype=str)
+        if not content:
+            raise ValueError("Planilha de metas indisponível")
+        df_raw = pd.read_csv(io.StringIO(content), dtype=str)
         df_raw.columns = [c.strip().upper() for c in df_raw.columns]
     except Exception as e:
         print(f"[METAS_LOOKUP] Erro ao carregar planilha de metas: {e}")
@@ -303,16 +299,12 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
     - Produto é normalizado com _norm_produto_niazi (sem corte de sufixos)
     - Meta Diaria é preenchida posteriormente por _load_metas_lookup_pg()
     """
-    import requests as _req
-
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{_LITEX_GERAL_ID}"
-        f"/export?format=csv&gid={_LITEX_GERAL_GID}"
-    )
+    from utils.cache_manager import get_raw as _get_raw
+    content = _get_raw(_LITEX_GERAL_ID, _LITEX_GERAL_GID, ttl=120)
     try:
-        r = _req.get(url, timeout=20)
-        r.raise_for_status()
-        raw_full = pd.read_csv(io.StringIO(r.text), header=None, dtype=str)
+        if not content:
+            raise ValueError("LITEX_GERAL indisponível")
+        raw_full = pd.read_csv(io.StringIO(content), header=None, dtype=str)
     except Exception as e:
         logging.warning(f"LITEX_GERAL não carregado: {e}")
         return pd.DataFrame()
@@ -345,7 +337,8 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
               f"DATA={col_data} QTD={col_qtd} PROD={col_prod} CLI={col_cli}")
         return pd.DataFrame()
 
-    raw["_DATA"] = pd.to_datetime(raw[col_data], dayfirst=True, errors="coerce")
+    from utils.date_parser import parse_date_series
+    raw["_DATA"] = parse_date_series(raw[col_data])
     raw["_QTD"]  = pd.to_numeric(
         raw[col_qtd].str.replace(",", ".", regex=False), errors="coerce"
     ).fillna(0)
@@ -1050,6 +1043,8 @@ def render_home(all_data):
             ]
 
         if st.button("🔄 Atualizar Dados", use_container_width=True):
+            from utils.cache_manager import invalidate_all
+            invalidate_all()
             st.cache_data.clear()
             st.rerun()
 

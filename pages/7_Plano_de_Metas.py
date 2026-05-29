@@ -291,24 +291,19 @@ def _csv_url(sheet_id: str, gid: str) -> str:
 # ─
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _load_csv(sheet_id: str, gid: str) -> pd.DataFrame:
-    url = _csv_url(sheet_id, gid)
+    from utils.cache_manager import get_raw
+    content = get_raw(sheet_id, gid, ttl=METAS_CACHE_TTL)
+    if not content:
+        st.warning(f"⚠ Não foi possível carregar planilha {sheet_id}/{gid} (sem cache disponível).")
+        return pd.DataFrame()
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            raw = resp.read()
-        df = pd.read_csv(io.BytesIO(raw), dtype=str)
-        df.columns = [c.strip() for c in df.columns]
+        df = pd.read_csv(io.StringIO(content), dtype=str)
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how="all")
         return df
-    except Exception:
-        try:
-            r = requests.get(url, timeout=20)
-            r.raise_for_status()
-            df = pd.read_csv(io.StringIO(r.text), dtype=str)
-            df.columns = [c.strip() for c in df.columns]
-            return df
-        except Exception as e:
-            st.warning(f"Falha ao carregar planilha {sheet_id}/{gid}: {e}")
-            return pd.DataFrame()
+    except Exception as e:
+        st.warning(f"Erro ao parsear planilha {sheet_id}/{gid}: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=METAS_CACHE_TTL)
 def _load_producao_geral() -> pd.DataFrame:
@@ -317,13 +312,12 @@ def _load_producao_geral() -> pd.DataFrame:
     Cada aba = empresa; FACCAO column = contractor/facção (= RESPONSAVEL no plano de metas).
     Datas são cabeçalhos de coluna — trata Timestamp, date e string.
     """
-    url = f"https://docs.google.com/spreadsheets/d/{PRODUCAO_SHEETS_ID}/export?format=xlsx"
+    from utils.sheets_loader import load_sheets_with_retry
     xlsx_data = None
-    try:
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        xlsx_data = io.BytesIO(r.content)
-    except Exception:
+    content = load_sheets_with_retry(PRODUCAO_SHEETS_ID, "0", "xlsx", max_retries=3, timeout=45)
+    if content:
+        xlsx_data = io.BytesIO(content)
+    else:
         local = os.path.join(_ROOT, "data", "planilha_producao.xlsx")
         if os.path.exists(local):
             xlsx_data = local
@@ -426,7 +420,8 @@ def _load_lancamentos(centro_custo_norm: str) -> pd.DataFrame:
         sub = raw.copy()
         sub["_PRESTADOR"] = sub[col_w].apply(_norm) if col_w else ""
         sub["_EMPRESA"] = sub[col_e].apply(_norm) if col_e else ""
-        sub["_DATA"] = pd.to_datetime(sub[col_d], dayfirst=True, errors="coerce").dt.date
+        from utils.date_parser import parse_date_series
+        sub["_DATA"] = parse_date_series(sub[col_d]).dt.date
         sub["_QUANTIDADE"] = sub[col_q].apply(_parse_num)
         sub = sub.dropna(subset=["_DATA"])
         sub = sub[sub["_QUANTIDADE"] > 0]

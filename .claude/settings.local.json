@@ -29,7 +29,15 @@
       "WebFetch(domain:doc-0g-6k-sheets.googleusercontent.com)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados\" -Recurse -Filter \"*.py\")",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados\" -Recurse -Include \"*.py\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\erick\\\\OneDrive\\\\Área de Trabalho\\\\Trabalho\\\\Projeto Unificação dos Dados\\\\cache\\\\sheets\")",
+      "Bash(python -c \"from utils.cache_manager import get_raw, invalidate_all, cache_status; print\\('cache_manager OK'\\)\")",
+      "Bash(python -c \"from utils.sheets_loader import read_csv_from_sheets, load_sheets_with_retry; print\\('sheets_loader OK'\\)\")",
+      "Bash(python -c \"from utils.lencol_loader_smart import load_lencol_smart_xlsx; print\\('lencol_loader OK'\\)\")",
+      "Bash(python -c \"from components.eficiencia_corte import carregar_manta_arealva; print\\('eficiencia_corte OK'\\)\")",
+      "Bash(python -c \"from utils.date_parser import parse_date_series; from utils.lencol_loader_smart import load_lencol_smart_xlsx; print\\('imports OK'\\)\")",
+      "Bash(python -)"
     ],
     "additionalDirectories": [
       "c:\\Users\\erick\\.claude\\projects\\c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados\\memory"

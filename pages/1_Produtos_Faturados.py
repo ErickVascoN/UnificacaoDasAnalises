@@ -444,9 +444,10 @@ def parse_br_number(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors="coerce")
 
 def parse_best_date(series: pd.Series) -> pd.Series:
-    # Fixed: Use dayfirst=True (Brazilian format DD/MM/YYYY) only
-    # Removed ambiguous dual-parsing logic that could invert 50% of dates
-    return pd.to_datetime(series, errors="coerce", dayfirst=True)
+    # Detecção de formato por coluna (D/M vs M/D) — evita inverter dia/mês
+    # quando o Google Sheets exporta em formato diferente do esperado.
+    from utils.date_parser import parse_date_series
+    return parse_date_series(series)
 
 def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFD", str(text)).encode("ascii", "ignore").decode("utf-8")
@@ -579,33 +580,29 @@ def canonical_column_names(columns: list[str]) -> dict[str, str]:
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def load_data(sheet_url: str) -> pd.DataFrame:
-    """Carrega dados com retry exponencial e fallback local (TIER 3 Melhoria)."""
-    export_url = build_export_url(sheet_url)
-    
-    # Retry com backoff exponencial (TIER 3 FIX)
-    max_retries = 3
-    base_delay = 2  # segundos
-    for attempt in range(max_retries):
-        try:
-            response = requests.get(export_url, timeout=45)
-            response.raise_for_status()
-            csv_text = response.content.decode("utf-8-sig", errors="ignore")
-            break  # Sucesso, sai do loop
-        except Exception as e:
-            if attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)  # 2, 4, 8 segundos
-                st.warning(f"Tentativa {attempt + 1} falhou. Retentando em {delay}s... ({str(e)[:50]})")
-                import time
-                time.sleep(delay)
-            else:
-                # Fallback: tenta carregar arquivo local se existir
-                fallback_file = "cache_data.csv"
-                if os.path.exists(fallback_file):
-                    st.warning(f"Falha permanente. Carregando dados em cache (mais recente).")
-                    with open(fallback_file, "r", encoding="utf-8-sig") as f:
-                        csv_text = f.read()
-                else:
-                    raise ValueError("Não foi possível carregar do Google Sheets e sem cache local disponível.")
+    """Carrega dados via cache em disco com fallback para dado obsoleto."""
+    import re as _re
+    from utils.cache_manager import get_raw
+
+    # Extrai sheet_id e gid da URL
+    id_match = _re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url)
+    sheet_id = id_match.group(1) if id_match else None
+    gid_match = _re.search(r"gid=([0-9]+)", sheet_url)
+    gid = gid_match.group(1) if gid_match else "0"
+
+    csv_text = None
+    if sheet_id:
+        csv_text = get_raw(sheet_id, gid, ttl=CACHE_TTL_SECONDS)
+
+    if not csv_text:
+        # Último fallback: arquivo local legado
+        fallback_file = "cache_data.csv"
+        if os.path.exists(fallback_file):
+            st.warning("⚠ Usando cache local (Google Sheets indisponível).")
+            with open(fallback_file, "r", encoding="utf-8-sig") as f:
+                csv_text = f.read()
+        else:
+            raise ValueError("Não foi possível carregar do Google Sheets e sem cache local disponível.")
     
     df = pd.read_csv(io.StringIO(csv_text), dtype=str)
     df = df.rename(columns=canonical_column_names(list(df.columns)))
@@ -1308,6 +1305,8 @@ def main() -> None:
         st.caption("Atualização automática em cache a cada 5 minutos.")
 
     if refresh_click:
+        from utils.cache_manager import invalidate_all
+        invalidate_all()
         st.cache_data.clear()
 
     try:

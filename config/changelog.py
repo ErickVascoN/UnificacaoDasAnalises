@@ -6,6 +6,85 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "28/05/2026",
+        "tag": "melhoria",
+        "title": "Padronização: OP prefixo-insensível + módulos únicos de data/cache/normalização",
+        "description": (
+            "Para impedir que os bugs recentes voltem em qualquer parte do projeto, as soluções "
+            "foram centralizadas em módulos compartilhados e aplicadas em todas as páginas: "
+            "(1) utils/normalize.py — normalize_op() ignora prefixos de OP (PROG, PGR, OP) e "
+            "espaços, então 'PROG 82', 'PGR 10' e '82'/'10' casam automaticamente no cruzamento "
+            "programação×corte (não precisa mais tirar prefixo na mão). A OP do modelo é o "
+            "PED. CLIENTE; OP INTERNA só substitui quando não há PED. CLIENTE. "
+            "(2) utils/date_parser.py é agora a ÚNICA forma de converter datas — aplicado também "
+            "no Plano de Metas (lançamentos) e na Eficiência de Corte. "
+            "(3) Removidos os parsers de data locais e duplicados (parse_date_safe, _parse_data_corte, "
+            "lencol_parse_date) que faziam do jeito antigo e podiam ser reusados por engano. "
+            "(4) Criado PADROES.md documentando as regras (cache, datas, OP, filtro de linhas) "
+            "para todo desenvolvimento futuro."
+        ),
+    },
+    {
+        "date": "28/05/2026",
+        "tag": "correção",
+        "title": "Controladoria de Programação: OPs faltando e cortes do Lençol não cruzando",
+        "description": (
+            "Dois bugs na comparação previsto × realizado: "
+            "(1) OPs SUMINDO — load_programacao() descartava toda linha sem PED. CLIENTE, "
+            "mas ~88 linhas (22 OPs, ex: FATTEX) usam OP INTERNA / PED. INT como identificador. "
+            "A programação caía de ~910 para 888 OPs e a semana 22 perdia 1 OP. Agora PED. CLIENTE "
+            "vazio recebe fallback de OP INTERNA → PED. INT, recuperando todas as OPs (910 totais, "
+            "semana 22 com 22). "
+            "(2) CORTES DO LENÇOL NÃO CRUZAVAM — load_cortes() fazia parsing próprio e lia a coluna "
+            "chamada 'DATA' do Lençol, que na verdade contém o nome da EMPRESA (a data real está "
+            "noutra coluna). Com isso TODOS os cortes do Lençol ficavam com semana ISO nula e não "
+            "casavam no join por (OP, semana) — o realizado do Lençol aparecia como zero. Agora "
+            "load_cortes() usa o loader dedicado (lencol_loader_smart) para o Lençol, trazendo 767 "
+            "registros com semanas corretas (1–22). Resultado: cortes do Lençol passam a casar com a "
+            "programação (ex: OPs 81 e 82 na semana 22)."
+        ),
+    },
+    {
+        "date": "28/05/2026",
+        "tag": "correção",
+        "title": "Datas invertidas (dia/mês) e linhas de produção sumindo dos dashboards",
+        "description": (
+            "Dois bugs graves que faziam dados corretos não aparecerem: "
+            "(1) DATAS INVERTIDAS — o Google Sheets exporta datas conforme o locale de cada planilha "
+            "(Iacanga em DD/MM/YY, Manta/Faturamento/Litex em MM/DD/YYYY). Os parsers antigos decidiam "
+            "o formato valor-a-valor ou assumiam um formato fixo, invertendo dia/mês nas datas ambíguas. "
+            "Efeito visível: Iacanga mostrava cortes até 'dezembro/2026' (12/05 lido como 5/dez) e o "
+            "Litex/Niazitex na Produção Geral tinha 15 datas no mês errado. Criado utils/date_parser.py "
+            "que detecta o formato olhando a COLUNA inteira (se algum valor tem 1º componente >12 a coluna "
+            "é DD/MM; se algum tem 2º >12 é MM/DD) e aplica o mesmo formato a todos — determinístico e "
+            "consistente. Aplicado em: Faturados, Produção Geral (Litex), Controle de Corte (Manta+Iacanga), "
+            "Controladoria (semana ISO) e loader do Lençol. "
+            "(2) LINHAS SUMINDO NO LENÇOL — o loader descartava toda linha sem número de OP, mas cortes "
+            "reais às vezes não têm OP preenchida. Resultado: ~190 linhas de produção válidas eram perdidas "
+            "(ex: corte de 28/05 do prestador JAPA/FABRICIO, 4005 peças CORTTEX, não aparecia). Agora OP "
+            "vazia vira 'SEM OP' e só são removidas linhas sem nenhum dado real (sem quantidade, sem "
+            "prestador e sem categoria — lixo/totais do fim da planilha). Lençol passou de 603 para 793 "
+            "linhas válidas. Também corrigido _col() em eficiencia_corte.py para casar nomes de coluna por "
+            "substring (a planilha de Lençol Arealva tem CLIENTE embutido num cabeçalho longo)."
+        ),
+    },
+    {
+        "date": "28/05/2026",
+        "tag": "melhoria",
+        "title": "Cache em disco — fim dos timeouts e dados inconsistentes entre dashboards",
+        "description": (
+            "Criado utils/cache_manager.py: ponto único de download para todas as planilhas Google Sheets. "
+            "Fluxo: (1) verifica cache em disco cache/sheets/<id>_<gid>.csv; se fresco (< TTL), retorna sem tocar a rede; "
+            "(2) se obsoleto, tenta download com retry e backoff; (3) se o Sheets der timeout ou erro, usa o cache anterior "
+            "sem derrubar o dashboard. Todos os loaders (pages 1, 2, 3, 4, 7, eficiencia_corte, lencol_loader_smart, "
+            "sheets_loader) foram atualizados para usar o cache_manager. Resultado: "
+            "páginas que precisam das mesmas planilhas (ex: Manta/Iacanga/Lençol nas páginas 3 e 4) agora compartilham "
+            "o mesmo arquivo em disco — sem downloads duplicados, sem versões diferentes dos dados. "
+            "Botões 'Atualizar Dados' também limpam o cache em disco para forçar refresh completo. "
+            "Leitura do cache: ~0.015s vs ~1.6s de download direto (100x mais rápido)."
+        ),
+    },
+    {
         "date": "27/05/2026",
         "tag": "correção",
         "title": "Relatório diário de corte — peças zeradas no e-mail",

@@ -37,20 +37,10 @@ _FONT     = dict(color="#E2E8F0", size=11)
 # HELPERS
 
 def _fetch(sheet_id: str, gid: str) -> str:
-    headers = {"User-Agent": "Mozilla/5.0"}
-    urls = [
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}",
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}",
-    ]
-    for url in urls:
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30) as r:
-                txt = r.read().decode("utf-8")
-                if txt.strip():
-                    return txt
-        except (HTTPError, URLError, TimeoutError) as e:
-            logging.debug(f"fetch {sheet_id[:20]}: {e}")
+    from utils.cache_manager import get_raw
+    content = get_raw(sheet_id, gid, ttl=EFICIENCIA_CACHE_TTL)
+    if content:
+        return content
     raise RuntimeError(f"Não foi possível baixar a planilha {sheet_id}")
 
 def _detect_header(texto: str, marcadores: list[str]) -> int:
@@ -70,12 +60,19 @@ def _num(series: pd.Series) -> pd.Series:
     ).fillna(0)
 
 def _col(df: pd.DataFrame, candidatos: list[str]) -> str | None:
-    """Retorna o primeiro nome de coluna encontrado (case-insensitive)."""
+    """Retorna o primeiro nome de coluna encontrado (exato ou substring, case-insensitive)."""
     mapa = {c.upper().strip(): c for c in df.columns}
+    # Tentativa 1: match exato
     for c in candidatos:
         found = mapa.get(c.upper().strip())
         if found:
             return found
+    # Tentativa 2: substring — coluna contém o candidato
+    for c in candidatos:
+        cu = c.upper().strip()
+        for col_upper, col_real in mapa.items():
+            if cu in col_upper:
+                return col_real
     return None
 
 def _kpi(col, label: str, valor: str, delta: str = "", color: str = "#E2E8F0"):
@@ -163,7 +160,8 @@ def carregar_manta_arealva() -> pd.DataFrame:
     df["BABYS_KG"]      = (df["BABYS (Peças)"] * 0.1955).round(3)
 
     if "DATA INICIO" in df.columns:
-        df["DATA INICIO"] = pd.to_datetime(df["DATA INICIO"], errors="coerce")
+        from utils.date_parser import parse_date_series
+        df["DATA INICIO"] = parse_date_series(df["DATA INICIO"])
 
     invalidos = {"", "NAN", "NONE", "N/A"}
     df = df[~df["NUM OP"].astype(str).str.upper().str.strip().isin(invalidos)].reset_index(drop=True)
