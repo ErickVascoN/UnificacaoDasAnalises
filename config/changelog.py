@@ -7,6 +7,22 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "28/05/2026",
+        "tag": "correção",
+        "title": "Lençol: erro 'Colunas faltando: EMPRESA' por cabeçalho instável do Google",
+        "description": (
+            "O Lençol falhava intermitentemente com 'Colunas faltando: [EMPRESA]'. Causa: a "
+            "planilha tem título mesclado na linha 1 e os cabeçalhos reais na linha 3 — o "
+            "endpoint gviz/tq do Google ADIVINHA qual é a linha de cabeçalho e essa adivinhação "
+            "varia entre downloads (às vezes junta o título na coluna A, deslocando os nomes). "
+            "Como o loader mapeava colunas pelo nome, quebrava quando o nome vinha diferente. "
+            "Correção: o loader agora lê a grade crua e DETECTA a linha de cabeçalho pelo conteúdo "
+            "(procura a linha com PRESTADOR + OP), ignorando o palpite do Google. Também passou a "
+            "reconhecer a coluna da empresa por 'EMPRESA'/'EMPESA' além do antigo 'DATA'. "
+            "Imune à variação do CSV a cada download."
+        ),
+    },
+    {
+        "date": "28/05/2026",
         "tag": "melhoria",
         "title": "Padronização: OP prefixo-insensível + módulos únicos de data/cache/normalização",
         "description": (

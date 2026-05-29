@@ -30,15 +30,26 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
             logger.error("CSV vazio ou indisponível")
             return pd.DataFrame()
         
-        # ── Lê CSV com header=0 (linha 0 é o header) ────────────────────────────────
-        df = pd.read_csv(io.StringIO(conteudo), header=0, dtype=str)
-        
-        logger.debug(f"CSV carregado: {len(df)} linhas")
-        logger.debug(f"Colunas originais: {list(df.columns)[:6]}")
-        
-        # ── Normaliza nomes de colunas ───────────────────────────────────────────────
-        df.columns = [c.strip() if isinstance(c, str) else f"COL_{i}" 
-                      for i, c in enumerate(df.columns)]
+        # ── Detecta a LINHA do cabeçalho pelo conteúdo ──────────────────────────────
+        # O Google (gviz/tq) adivinha o cabeçalho de forma instável quando há título
+        # mesclado na linha 1. Em vez de confiar nisso, lemos a grade crua (header=None)
+        # e localizamos a linha que contém os rótulos reais (PRESTADOR + OP).
+        raw = pd.read_csv(io.StringIO(conteudo), header=None, dtype=str)
+        hdr_idx = 0
+        for i in range(min(12, len(raw))):
+            vals = [str(v).strip().upper() for v in raw.iloc[i].tolist()]
+            if any("PRESTADOR" in v for v in vals) and any(v == "OP" for v in vals):
+                hdr_idx = i
+                break
+        df = raw.iloc[hdr_idx + 1:].copy().reset_index(drop=True)
+        df.columns = [
+            str(c).strip() if (c is not None and str(c).strip() and str(c) != "nan")
+            else f"COL_{i}"
+            for i, c in enumerate(raw.iloc[hdr_idx].tolist())
+        ]
+
+        logger.debug(f"CSV carregado: {len(df)} linhas (cabeçalho na linha {hdr_idx})")
+        logger.debug(f"Colunas: {list(df.columns)[:6]}")
         
         # ── Mapeia colunas por CONTEÚDO (não por nome confuso) ─────────────────────────
         col_map = {}
@@ -79,10 +90,12 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
                 col_map["CATEGORIA"] = col
                 logger.debug(f"  Col[{i}] '{col}' → CATEGORIA")
             
-            elif col_upper in ("DATA ", "DATA") and "EMPRESA" not in col_map:
-                # Coluna com nome "DATA" geralmente contém EMPRESA
+            elif (col_upper in ("EMPRESA", "EMPESA")  # nome correto (ou typo comum)
+                  or col_upper in ("DATA ", "DATA")) and "EMPRESA" not in col_map:
+                # Coluna da empresa. Historicamente vinha rotulada como "DATA" (confuso);
+                # hoje pode estar correta como "EMPRESA"/"EMPESA". Cobre os dois casos.
                 col_map["EMPRESA"] = col
-                logger.debug(f"  Col[{i}] '{col}' → EMPRESA (por nome DATA)")
+                logger.debug(f"  Col[{i}] '{col}' → EMPRESA")
             
             elif col_upper in ("TECIDO/PRODUTO", "TECIDO/PRODUTO "):
                 col_map["TECIDO"] = col
