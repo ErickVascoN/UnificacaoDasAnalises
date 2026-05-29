@@ -38,7 +38,8 @@
       "Bash(python -c \"from components.eficiencia_corte import carregar_manta_arealva; print\\('eficiencia_corte OK'\\)\")",
       "Bash(python -c \"from utils.date_parser import parse_date_series; from utils.lencol_loader_smart import load_lencol_smart_xlsx; print\\('imports OK'\\)\")",
       "Bash(python -)",
-      "Bash(python -c 'import sys *)"
+      "Bash(python -c 'import sys *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('pages/4_Controladoria_Programacao.py',encoding='utf-8'\\).read\\(\\)\\); print\\('Sintaxe OK'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\erick\\.claude\\projects\\c--Users-erick-OneDrive--rea-de-Trabalho-Trabalho-Projeto-Unifica--o-dos-Dados\\memory"

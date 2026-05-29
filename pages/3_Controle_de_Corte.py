@@ -401,7 +401,8 @@ def baixar_csv_google_sheets():
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados():
     csv_data = baixar_csv_google_sheets()
-    df_corte = pd.read_csv(csv_data, header=0)
+    # dtype=str evita que OP numérica vire float ("10" → "10.0").
+    df_corte = pd.read_csv(csv_data, header=0, dtype=str)
     df_corte.columns = df_corte.columns.str.strip()
     df_corte = df_corte.drop(
         columns=[col for col in df_corte.columns if 'Unnamed' in col or 'Coluna' in col],
@@ -446,7 +447,8 @@ def baixar_csv_google_sheets_iacanga():
 @st.cache_data(ttl=CACHE_TTL)
 def carregar_dados_iacanga():
     csv_data = baixar_csv_google_sheets_iacanga()
-    df_full = pd.read_csv(csv_data, header=0)
+    # dtype=str evita que OP numérica vire float ("10" → "10.0").
+    df_full = pd.read_csv(csv_data, header=0, dtype=str)
     df_full.columns = df_full.columns.str.strip()
 
     faltantes = [c for c in COLUNAS_USADAS_IACANGA if c not in df_full.columns]
