@@ -388,24 +388,17 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
         ped = row["_PEDN"]
         sem = row["_SEM"]
 
-        if not ped:
-            return 0.0  # linha sem OP → não há como cruzar com corte
+        pass  # não usado — ver mapeamento direto abaixo
 
-        # Usa o total cortado da OP em TODAS as semanas — garante que cortes
-        # realizados fora da semana programada (adiantamento ou atraso) apareçam.
-        return float(_op_map.get(ped, 0))
+    df = df.drop(columns=["_SEM"])
 
-    df["_CORTADO_ROW"] = df.apply(_get_cortado, axis=1)
-    df = df.drop(columns=["_SEM", "_PEDN"])
-
-    # Soma por _CHAVE → valor único distribuído a todas as linhas da OP
+    # Mapeia cortado DIRETAMENTE por OP (_PEDN) → sem transform("sum") que
+    # multiplicaria o valor pelo número de linhas da mesma OP na programação.
+    # Cada linha recebe o total cortado da sua OP em todas as semanas.
     df["QNT_CORTADA"] = (
-        df.groupby("_CHAVE")["_CORTADO_ROW"]
-        .transform("sum")
-        .fillna(0)
-        .astype(int)
+        df["_PEDN"].map(_op_map).fillna(0).astype(int)
     )
-    df = df.drop(columns=["_CORTADO_ROW"])
+    df = df.drop(columns=["_PEDN"])
 
     df["STATUS_PROD"]  = df["QNT_CORTADA"].apply(
         lambda x: "Liberado" if x > 0 else "Não Iniciado"
