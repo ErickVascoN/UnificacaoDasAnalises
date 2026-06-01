@@ -6,6 +6,64 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "01/06/2026",
+        "tag": "melhoria",
+        "title": "Lençol: tabela de OPs enriquecida com Jogo Duplo, Fundo, Diferença e status de caseamento",
+        "description": (
+            "A tabela 'Resumo por OP' na aba de OPs do dashboard Arealva Lençol agora inclui "
+            "as colunas Jogo Duplo, Fundo, Diferença e Casea para cada OP. OPs sem corte de fundo "
+            "exibem '—' nessas colunas, explicando por que não aparecem na seção de caseamento abaixo. "
+            "OPs com fundo mostram a quantidade de jogos duplos, fundos, a diferença líquida "
+            "(FUNDO − JOGO) e o ícone de status (✅ caseado / 🔴 faltam fundos / 🟠 sobram fundos). "
+            "A coluna 'Peças' continua exibindo o total bruto (jogo + fundo + outros) com legenda "
+            "explicativa abaixo da tabela. A seção de Caseamento abaixo da tabela é calculada uma "
+            "única vez e reutilizada, eliminando computação duplicada."
+        ),
+    },
+    {
+        "date": "01/06/2026",
+        "tag": "novo",
+        "title": "Lençol: caseamento Jogo Duplo × Fundo (jogo vs fundo por OP e tamanho)",
+        "description": (
+            "Cada jogo duplo precisa de um fundo correspondente (corte à parte). Agora o "
+            "dashboard de Lençol separa os fundos do total: o KPI principal passa a mostrar "
+            "'Peças (s/ fundo)' e os fundos aparecem em destaque próprio. Nova seção "
+            "'🔄 Caseamento Jogo Duplo × Fundo' na Visão Geral mostra jogos duplos, fundos, "
+            "a diferença líquida (jogo − fundo) e quantas OPs divergem — com tabela das "
+            "divergências por OP e tamanho (🔴 faltam fundos / 🟠 sobram fundos). Na aba de OPs, "
+            "tabela de caseamento por OP+tamanho com filtro de divergências, e ao selecionar "
+            "uma OP, o caseamento específico dela. O relatório PDF de fechamento ganhou a seção "
+            "de caseamento com resumo e tabela colorida. O caseamento considera apenas OPs que "
+            "tiveram corte de fundo (evita falsos alarmes nas OPs que não usam fundo) e casa "
+            "JOGO DUPLO ↔ FUNDO por tamanho (CS/QE/ST/KING); jogo simples não entra. "
+            "A identificação de fundo usa CATEGORIA + TECIDO com prioridade ao TECIDO: na "
+            "prática a categoria frequentemente diz 'JOGO DUPLO CS' enquanto é o tecido que "
+            "revela 'FUNDO CASAL 4PÇS' (e vice-versa, categoria 'FUNDO JOGO ST' com tecido "
+            "'JOGO SOLTEIRO...'). O universo é restrito aos jogos de cama (categoria menciona "
+            "JOGO), deixando porta-travesseiro, lençol avulso e fronha de fora do caseamento. "
+            "A diferença é o saldo de fundos (FUNDO − JOGO): negativo = faltam fundos, "
+            "positivo = sobram (ex.: jogo 6.391 vs fundo 6.290 → −101)."
+        ),
+    },
+    {
+        "date": "01/06/2026",
+        "tag": "novo",
+        "title": "Relatórios PDF de fechamento de mês em todos os dashboards de corte e produção",
+        "description": (
+            "Adicionado botão '📄 Gerar Relatório PDF de Fechamento' nos dashboards de "
+            "Arealva Manta, Iacanga Manta, Arealva Lençol e Produção Geral. "
+            "Cada relatório inclui: capa com fundo navy e período, resumo executivo com "
+            "KPIs em destaque (total de peças, dias trabalhados, média/dia, % meta), "
+            "tabela de desempenho por estação/empresa com status colorido (✔ META / ⚠ PERTO / ✘ ABAIXO), "
+            "gráfico de produção diária com linha de meta e tendência, tabela detalhada diária, "
+            "análise de distribuição por estação/cor/empresa, análise de tamanhos (Iacanga e Arealva), "
+            "detalhe por OP e conclusão narrativa do período. "
+            "Novo módulo utils/pdf_report.py usa ReportLab (layout) + Matplotlib (gráficos) — "
+            "sem kaleido, 100% offline. Geração on-demand via session_state, com botão 🗑️ para limpar e "
+            "regenerar com novos filtros."
+        ),
+    },
+    {
         "date": "29/05/2026",
         "tag": "novo",
         "title": "Análise de Produção: hub Por Cliente / Por Colaborador (Interno com 4 guias)",

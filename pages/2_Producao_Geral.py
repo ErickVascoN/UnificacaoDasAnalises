@@ -1275,6 +1275,48 @@ def render_home(all_data):
     st.dataframe(df_resumo.style.format({"Total Produzido": _fmt_int, "Média Diária": _fmt_int}),
                  width="stretch", hide_index=True)
 
+    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────
+    st.markdown("---")
+    _col_pdf_l_pg, _col_pdf_c_pg, _col_pdf_r_pg = st.columns([2, 4, 2])
+    with _col_pdf_c_pg:
+        # Período efetivo = faixa de datas presentes nos dados filtrados
+        _all_dates_pg = pd.concat([df["Data"] for df in filtered_data.values()])
+        _ini_pg = _all_dates_pg.min().date()
+        _fim_pg = _all_dates_pg.max().date()
+        _filtros_pg = f"Empresas: {', '.join(list(filtered_data.keys())[:5])}{'...' if len(filtered_data) > 5 else ''}"
+
+        if st.button(
+            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_pg",
+            use_container_width=True, type="primary",
+            help="Gera relatório completo de produção de todas as empresas em PDF",
+        ):
+            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
+                from utils.pdf_report import gerar_pdf_producao_geral, nome_arquivo_pdf
+                _pdf_bytes_pg = gerar_pdf_producao_geral(
+                    filtered_data, _ini_pg, _fim_pg, _filtros_pg,
+                )
+            st.session_state["pdf_pg_bytes"] = _pdf_bytes_pg
+            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf(
+                "producao_geral", _ini_pg, _fim_pg
+            )
+
+        if st.session_state.get("pdf_pg_bytes"):
+            _col_dl_pg, _col_clr_pg = st.columns([5, 1])
+            with _col_dl_pg:
+                st.download_button(
+                    label="⬇️  Baixar Relatório PDF",
+                    data=st.session_state["pdf_pg_bytes"],
+                    file_name=st.session_state.get("pdf_pg_nome", "relatorio.pdf"),
+                    mime="application/pdf",
+                    key="dl_pdf_pg",
+                    use_container_width=True,
+                )
+            with _col_clr_pg:
+                if st.button("🗑️", key="clr_pdf_pg", use_container_width=True,
+                             help="Limpar e gerar novamente"):
+                    st.session_state.pop("pdf_pg_bytes", None)
+                    st.rerun()
+
 # ─
 # PAGINA DA EMPRESA (ANALISE DETALHADA)
 # ─

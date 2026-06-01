@@ -203,6 +203,32 @@ def calcular_meta_total_ponderada_arealva(df_subset: pd.DataFrame) -> float:
         total += meta_diaria_por_estacao_arealva(df_subset, est)
     return total
 
+# ── Utilitário de análise de dias trabalhados ─────────────────────────────────
+
+def _analisa_dias(datas_trabalhadas, data_ini, data_fim):
+    """
+    Analisa os dias trabalhados em um período.
+
+    Retorna dict:
+      sabados         : int  — sábados presentes em datas_trabalhadas
+      uteis_esperados : int  — dias Seg-Sex no intervalo [data_ini, data_fim]
+      ausentes        : list[date] — dias úteis sem registro
+                        (lista vazia se >15 ausentes, para não poluir)
+    """
+    from datetime import timedelta as _td
+    trabalhadas = set(datas_trabalhadas)
+    sabados = sum(1 for d in trabalhadas if d.weekday() == 5)
+    uteis = []
+    cur = data_ini
+    while cur <= data_fim:
+        if cur.weekday() < 5:   # Seg(0)…Sex(4)
+            uteis.append(cur)
+        cur += _td(days=1)
+    ausentes = [d for d in uteis if d not in trabalhadas]
+    if len(ausentes) > 15:
+        ausentes = []
+    return {'sabados': sabados, 'uteis_esperados': len(uteis), 'ausentes': ausentes}
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 try:
@@ -662,6 +688,115 @@ def lencol_cat_base(cat):
 
 def lencol_cor_empresa(emp):
     return LENCOL_CORES_EMPRESA.get(emp.upper().strip(), "#718096")
+
+# ── Caseamento Jogo Duplo × Fundo ─────────────────────────────────────────────
+# Um JOGO DUPLO precisa de um FUNDO correspondente (corte separado). As
+# quantidades devem casear por OP + tamanho. Quando não caseiam, apontamos a
+# diferença. JOGO SIMPLES não tem fundo.
+
+def lencol_classifica_jogo_fundo(cat: str, tecido: str = "") -> tuple[str, str]:
+    """Classifica um registro em (tipo, tamanho) a partir da CATEGORIA + TECIDO.
+
+    tipo    ∈ {FUNDO, JOGO_DUPLO, JOGO_SIMPLES, OUTRO}
+    tamanho ∈ {SOLTEIRO, CASAL, QUEEN, KING, ''}
+
+    Regras descobertas nos dados reais:
+      • O universo de caseamento são os JOGOS DE CAMA → a CATEGORIA menciona "JOGO"
+        (ex.: "JOGO DUPLO CS", "FUNDO JOGO ST"). Porta-travesseiro, lençol avulso,
+        fronha etc. ficam de fora (tipo OUTRO), mesmo tendo "fundo".
+      • Dentro do universo, o TECIDO é a fonte autoritativa de jogo vs fundo:
+        a categoria pode dizer "JOGO DUPLO CS" enquanto o tecido diz
+        "FUNDO CASAL 4PÇS"  → é FUNDO; e pode dizer "FUNDO JOGO ST" enquanto o
+        tecido diz "JOGO SOLTEIRO..."  → é JOGO. O tecido manda; a categoria é só
+        fallback quando o tecido não esclarece.
+    """
+    c = re.sub(r"\s+", " ", str(cat).upper().strip())
+    t = re.sub(r"\s+", " ", str(tecido).upper().strip())
+    # Fora do universo jogo-cama (categoria não menciona JOGO) → não caseia
+    if "JOGO" not in c:
+        return ("OUTRO", "")
+    txt = c + " " + t
+    tamanho = ""
+    if "KING" in txt:
+        tamanho = "KING"
+    elif "QUEEN" in txt or re.search(r"\bQE\b", txt):
+        tamanho = "QUEEN"
+    elif "CASAL" in txt or re.search(r"\bCS\b", txt):
+        tamanho = "CASAL"
+    elif "SOLT" in txt or re.search(r"\bST\b", txt):
+        tamanho = "SOLTEIRO"
+    tipo_jogo = "JOGO_SIMPLES" if ("SIMPLES" in c or "SIMPLES" in t) else "JOGO_DUPLO"
+    # TECIDO manda
+    if "FUNDO" in t:
+        return ("FUNDO", tamanho)
+    if "JOGO" in t:
+        return (tipo_jogo, tamanho)
+    # Tecido não esclarece → usa a categoria (ex.: "FUNDO JOGO QE")
+    if "FUNDO" in c:
+        return ("FUNDO", tamanho)
+    return (tipo_jogo, tamanho)
+
+
+def _lencol_tipos_tams(df: pd.DataFrame) -> tuple[list, list]:
+    """Classifica todas as linhas do df em (tipos, tamanhos) de forma determinística.
+
+    Usa zip sobre as colunas em vez de df.apply(axis=1) — este último expande tuplas
+    em DataFrame de forma inconsistente e quebra a indexação.
+    """
+    n = len(df)
+    cats = df["CATEGORIA"].astype(str).tolist() if "CATEGORIA" in df.columns else [""] * n
+    tecs = df["TECIDO"].astype(str).tolist() if "TECIDO" in df.columns else [""] * n
+    tipos, tams = [], []
+    for c, t in zip(cats, tecs):
+        tp, tm = lencol_classifica_jogo_fundo(c, t)
+        tipos.append(tp)
+        tams.append(tm)
+    return tipos, tams
+
+
+def lencol_caseamento(df: pd.DataFrame, apenas_com_fundo: bool = True) -> pd.DataFrame:
+    """Reconcilia JOGO DUPLO × FUNDO por (OP, TAMANHO).
+
+    Retorna DataFrame com colunas: OP, TAMANHO, JOGO, FUNDO, DIFERENCA, STATUS.
+    DIFERENCA = FUNDO − JOGO (saldo de fundos): negativo = faltam fundos;
+    positivo = sobram fundos; zero = caseado.
+
+    apenas_com_fundo=True restringe às OPs que tiveram ao menos 1 corte de fundo —
+    evita marcar como divergentes as centenas de OPs que simplesmente não usam fundo.
+    """
+    cols = ["OP", "TAMANHO", "JOGO", "FUNDO", "DIFERENCA", "STATUS"]
+    if df is None or df.empty or "CATEGORIA" not in df.columns:
+        return pd.DataFrame(columns=cols)
+    d = df.copy()
+    _tipos, _tams = _lencol_tipos_tams(d)
+    d["_TIPO"] = _tipos
+    d["_TAM"] = _tams
+    d_rel = d[d["_TIPO"].isin(["JOGO_DUPLO", "FUNDO"])]
+    if d_rel.empty:
+        return pd.DataFrame(columns=cols)
+    if apenas_com_fundo:
+        ops_com_fundo = set(d_rel.loc[d_rel["_TIPO"] == "FUNDO", "OP"].unique())
+        d_rel = d_rel[d_rel["OP"].isin(ops_com_fundo)]
+        if d_rel.empty:
+            return pd.DataFrame(columns=cols)
+    jogo = (d_rel[d_rel["_TIPO"] == "JOGO_DUPLO"]
+            .groupby(["OP", "_TAM"])["QUANT"].sum().rename("JOGO"))
+    fundo = (d_rel[d_rel["_TIPO"] == "FUNDO"]
+             .groupby(["OP", "_TAM"])["QUANT"].sum().rename("FUNDO"))
+    rec = pd.concat([jogo, fundo], axis=1).fillna(0).reset_index()
+    rec = rec.rename(columns={"_TAM": "TAMANHO"})
+    rec["TAMANHO"] = rec["TAMANHO"].replace("", "—")
+    rec["JOGO"] = rec["JOGO"].astype(int)
+    rec["FUNDO"] = rec["FUNDO"].astype(int)
+    rec["DIFERENCA"] = rec["FUNDO"] - rec["JOGO"]
+    rec["STATUS"] = rec["DIFERENCA"].apply(
+        lambda x: "✅ Caseado" if x == 0
+        else ("🔴 Faltam fundos" if x < 0 else "🟠 Sobram fundos")
+    )
+    rec = rec.reindex(
+        rec["DIFERENCA"].abs().sort_values(ascending=False).index
+    ).reset_index(drop=True)
+    return rec[cols]
 
 # Datas do Lençol são tratadas no loader (utils.lencol_loader_smart) via
 # utils.date_parser.parse_date_series. Não há parser de data local aqui.
@@ -1233,6 +1368,10 @@ elif screen == 'iacanga_rendimento':
         unsafe_allow_html=True,
     )
 
+    # Período efetivo para análise de dias úteis / sábados (Iacanga)
+    _ini_iac = filtro_datas_iac[0] if (isinstance(filtro_datas_iac, tuple) and filtro_datas_iac[0]) else data_min_iac
+    _fim_iac = filtro_datas_iac[1] if (isinstance(filtro_datas_iac, tuple) and filtro_datas_iac[1]) else data_max_iac
+
     # tabs
     tab1_iac, tab2_iac, tab3_iac = st.tabs([
         "📊 Visão Geral",
@@ -1260,7 +1399,10 @@ elif screen == 'iacanga_rendimento':
         cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas_iac:,.0f}".replace(",", "."))
         cols_kpi[1].metric("📋 Total de OPs", f"{total_ops_iac}")
         cols_kpi[2].metric("🎨 Cores Diferentes", f"{total_cores_iac}")
-        cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trab_iac}")
+        _info_iac = _analisa_dias(df_filtrado_iac['DATA'].dt.date.unique(), _ini_iac, _fim_iac)
+        _delta_iac = f"+{_info_iac['sabados']} sáb." if _info_iac['sabados'] > 0 else None
+        _help_iac = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_iac['ausentes'])) if _info_iac['ausentes'] else None
+        cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trab_iac}", delta=_delta_iac, delta_color="off", help=_help_iac)
 
         cols_kpi2 = st.columns(4)
         cols_kpi2[0].metric(
@@ -1568,8 +1710,11 @@ elif screen == 'iacanga_rendimento':
                     meta_e = meta_diaria_por_estacao_iacanga(df_filtrado_iac, estacao)
                     pct_meta = (media_pe / meta_e * 100) if meta_e > 0 else 0
                     delta_e = media_pe - meta_e
+                    _info_est_iac = _analisa_dias(df_est['DATA'].dt.date.unique(), _ini_iac, _fim_iac)
+                    _delta_est_iac = f"+{_info_est_iac['sabados']} sáb." if _info_est_iac['sabados'] > 0 else None
+                    _help_est_iac = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_est_iac['ausentes'])) if _info_est_iac['ausentes'] else None
                     st.metric("Total Peças", f"{pecas_est:,.0f}".replace(",", "."))
-                    st.metric("Dias Trabalhados", f"{dias_est}")
+                    st.metric("Dias Trabalhados", f"{dias_est}", delta=_delta_est_iac, delta_color="off", help=_help_est_iac)
                     st.metric(
                         "Média Peças/Dia", f"{media_pe:,.0f}".replace(",", "."),
                         delta=f"{delta_e:+,.0f} vs Meta {meta_e:,.0f}".replace(",", "."),
@@ -1767,6 +1912,54 @@ elif screen == 'iacanga_rendimento':
             fig_sem_iac.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
             st.plotly_chart(fig_sem_iac, use_container_width=True)
 
+    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
+    st.markdown("---")
+    _col_pdf_l_iac, _col_pdf_c_iac, _col_pdf_r_iac = st.columns([2, 4, 2])
+    with _col_pdf_c_iac:
+        _filtros_iac = []
+        if ops_sel_iac:
+            _filtros_iac.append(f"OPs: {', '.join(map(str, ops_sel_iac[:3]))}{'...' if len(ops_sel_iac) > 3 else ''}")
+        if est_sel_iac:
+            _filtros_iac.append(f"Estações: {', '.join(est_sel_iac)}")
+        if prod_sel_iac:
+            _filtros_iac.append(f"Produtos: {', '.join(prod_sel_iac[:3])}{'...' if len(prod_sel_iac) > 3 else ''}")
+        if tam_sel_iac:
+            _filtros_iac.append(f"Tamanhos: {', '.join(tam_sel_iac)}")
+        _filtros_iac_str = '  |  '.join(_filtros_iac) if _filtros_iac else 'Nenhum filtro adicional'
+
+        if st.button(
+            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_iac",
+            use_container_width=True, type="primary",
+            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
+        ):
+            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
+                from utils.pdf_report import gerar_pdf_iacanga_manta, nome_arquivo_pdf
+                _pdf_bytes_iac = gerar_pdf_iacanga_manta(
+                    df_filtrado_iac, _ini_iac, _fim_iac,
+                    META_TOTAL_IAC, METAS_POR_TAMANHO, _filtros_iac_str,
+                )
+            st.session_state["pdf_iac_bytes"] = _pdf_bytes_iac
+            st.session_state["pdf_iac_nome"] = nome_arquivo_pdf(
+                "iacanga_manta", _ini_iac, _fim_iac
+            )
+
+        if st.session_state.get("pdf_iac_bytes"):
+            _col_dl_iac, _col_clr_iac = st.columns([5, 1])
+            with _col_dl_iac:
+                st.download_button(
+                    label="⬇️  Baixar Relatório PDF",
+                    data=st.session_state["pdf_iac_bytes"],
+                    file_name=st.session_state.get("pdf_iac_nome", "relatorio.pdf"),
+                    mime="application/pdf",
+                    key="dl_pdf_iac",
+                    use_container_width=True,
+                )
+            with _col_clr_iac:
+                if st.button("🗑️", key="clr_pdf_iac", use_container_width=True,
+                             help="Limpar e gerar novamente"):
+                    st.session_state.pop("pdf_iac_bytes", None)
+                    st.rerun()
+
     # footer
     st.markdown("---")
     st.markdown(
@@ -1923,6 +2116,10 @@ elif screen == 'arealva_manta':
     # Meta total ponderada para o recorte atual (substitui META_TOTAL fixo)
     META_TOTAL_AREALVA = calcular_meta_total_ponderada_arealva(df_filtrado)
 
+    # Período efetivo para análise de dias úteis / sábados
+    _ini_periodo = filtro_datas[0] if (isinstance(filtro_datas, tuple) and filtro_datas[0]) else data_min
+    _fim_periodo = filtro_datas[1] if (isinstance(filtro_datas, tuple) and filtro_datas[1]) else data_max
+
     # dashboard header
     st.markdown('<div class="dash-header">✂️ Arealva — Manta</div>', unsafe_allow_html=True)
     st.markdown('<div class="dash-sub">Acompanhamento de produção e desempenho por estação</div>', unsafe_allow_html=True)
@@ -1944,7 +2141,10 @@ elif screen == 'arealva_manta':
         cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas:,.0f}".replace(",", "."))
         cols_kpi[1].metric("📋 Total de OPs", f"{total_ops}")
         cols_kpi[2].metric("🎨 Cores Diferentes", f"{total_cores}")
-        cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trabalhados}")
+        _info_dias = _analisa_dias(df_filtrado['DATA'].dt.date.unique(), _ini_periodo, _fim_periodo)
+        _delta_dias = f"+{_info_dias['sabados']} sáb." if _info_dias['sabados'] > 0 else None
+        _help_dias = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_dias['ausentes'])) if _info_dias['ausentes'] else None
+        cols_kpi[3].metric("📆 Dias Trabalhados", f"{dias_trabalhados}", delta=_delta_dias, delta_color="off", help=_help_dias)
 
         _ICONS_EST = {"MAQUINA": "🔧", "MESA 1": "📐", "MESA 2": "📐"}
         cols_kpi2 = st.columns(1 + len(METAS))
@@ -2145,7 +2345,10 @@ elif screen == 'arealva_manta':
                 pct_meta = (media_pecas_est / meta_est * 100) if meta_est > 0 else 0
                 delta_meta = media_pecas_est - meta_est
                 st.metric("Total Peças", f"{pecas_est:,.0f}".replace(",", "."))
-                st.metric("Dias Trabalhados", f"{dias_est}")
+                _info_est = _analisa_dias(df_est['DATA'].dt.date.unique(), _ini_periodo, _fim_periodo)
+                _delta_est = f"+{_info_est['sabados']} sáb." if _info_est['sabados'] > 0 else None
+                _help_est = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_est['ausentes'])) if _info_est['ausentes'] else None
+                st.metric("Dias Trabalhados", f"{dias_est}", delta=_delta_est, delta_color="off", help=_help_est)
                 st.metric("Média Peças/Dia", f"{media_pecas_est:,.0f}".replace(",", "."),
                           delta=f"{delta_meta:+,.0f} vs Meta {meta_est:,.0f}".replace(",", "."))
                 st.metric("% da Meta", f"{pct_meta:.1f}%")
@@ -2308,6 +2511,54 @@ elif screen == 'arealva_manta':
         fig_sem.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
         fig_sem.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
         st.plotly_chart(fig_sem, use_container_width=True)
+
+    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
+    st.markdown("---")
+    _col_pdf_l_am, _col_pdf_c_am, _col_pdf_r_am = st.columns([2, 4, 2])
+    with _col_pdf_c_am:
+        _filtros_am = []
+        if ops_selecionadas:
+            _filtros_am.append(f"OPs: {', '.join(map(str, ops_selecionadas[:3]))}{'...' if len(ops_selecionadas) > 3 else ''}")
+        if estacoes_selecionadas:
+            _filtros_am.append(f"Estações: {', '.join(estacoes_selecionadas)}")
+        if produtos_selecionados:
+            _filtros_am.append(f"Produtos: {', '.join(produtos_selecionados[:3])}{'...' if len(produtos_selecionados) > 3 else ''}")
+        if tamanhos_selecionados:
+            _filtros_am.append(f"Tamanhos: {', '.join(tamanhos_selecionados)}")
+        _filtros_am_str = '  |  '.join(_filtros_am) if _filtros_am else 'Nenhum filtro adicional'
+
+        if st.button(
+            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_am",
+            use_container_width=True, type="primary",
+            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
+        ):
+            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
+                from utils.pdf_report import gerar_pdf_arealva_manta, nome_arquivo_pdf
+                _pdf_bytes_am = gerar_pdf_arealva_manta(
+                    df_filtrado, _ini_periodo, _fim_periodo,
+                    META_TOTAL_AREALVA, METAS, _filtros_am_str,
+                )
+            st.session_state["pdf_am_bytes"] = _pdf_bytes_am
+            st.session_state["pdf_am_nome"] = nome_arquivo_pdf(
+                "arealva_manta", _ini_periodo, _fim_periodo
+            )
+
+        if st.session_state.get("pdf_am_bytes"):
+            _col_dl_am, _col_clr_am = st.columns([5, 1])
+            with _col_dl_am:
+                st.download_button(
+                    label="⬇️  Baixar Relatório PDF",
+                    data=st.session_state["pdf_am_bytes"],
+                    file_name=st.session_state.get("pdf_am_nome", "relatorio.pdf"),
+                    mime="application/pdf",
+                    key="dl_pdf_am",
+                    use_container_width=True,
+                )
+            with _col_clr_am:
+                if st.button("🗑️", key="clr_pdf_am", use_container_width=True,
+                             help="Limpar e gerar novamente"):
+                    st.session_state.pop("pdf_am_bytes", None)
+                    st.rerun()
 
     # footer
     st.markdown("---")
@@ -2557,9 +2808,19 @@ elif screen == 'arealva_lencol':
     # métricas globais
     total_pecas_ln = int(df_ln["QUANT"].sum())
     total_valor_ln = df_ln["VALOR_RECEBER"].sum()
+
+    # Caseamento jogo × fundo — separa os fundos do total de peças
+    # (usa CATEGORIA + TECIDO: o fundo muitas vezes só aparece no TECIDO)
+    _tipos_jf_ln, _tams_jf_ln = _lencol_tipos_tams(df_ln)
+    df_ln = df_ln.assign(_TIPO_JF=_tipos_jf_ln, _TAM_JF=_tams_jf_ln)
+    total_fundos_ln = int(df_ln.loc[df_ln["_TIPO_JF"] == "FUNDO", "QUANT"].sum())
+    total_jogos_duplo_ln = int(df_ln.loc[df_ln["_TIPO_JF"] == "JOGO_DUPLO", "QUANT"].sum())
+    total_sem_fundo_ln = total_pecas_ln - total_fundos_ln
+
     dias_trab_ln = (p_fim_ln - p_ini_ln).days + 1
     dias_com_dados_ln = df_ln["DATA"].dt.date.nunique()
-    media_diaria_ln = total_pecas_ln / dias_com_dados_ln if dias_com_dados_ln else 0
+    # Média diária baseada nas peças SEM fundo (consistente com o KPI principal)
+    media_diaria_ln = total_sem_fundo_ln / dias_com_dados_ln if dias_com_dados_ln else 0
     n_prestadores_ln = df_ln["PRESTADOR"].nunique()
     n_empresas_ln = df_ln["EMPRESA"].nunique()
     ticket_medio_ln = total_valor_ln / total_pecas_ln if total_pecas_ln else 0
@@ -2578,7 +2839,15 @@ elif screen == 'arealva_lencol':
     if sel_cat_ln:   df_ant_ln = df_ant_ln[df_ant_ln["CAT_BASE"].isin(sel_cat_ln)]
     pecas_ant_ln = int(df_ant_ln["QUANT"].sum()) if not df_ant_ln.empty else 0
     valor_ant_ln = df_ant_ln["VALOR_RECEBER"].sum() if not df_ant_ln.empty else 0
-    delta_pecas_ln = ((total_pecas_ln - pecas_ant_ln) / pecas_ant_ln * 100) if (pecas_ant_ln and periodo_opt_ln != "Todo o período") else None
+    # Peças do período anterior também sem fundo (delta do KPI principal)
+    if not df_ant_ln.empty:
+        _tipos_ant_ln, _ = _lencol_tipos_tams(df_ant_ln)
+        _mask_fundo_ant = np.array([tp == "FUNDO" for tp in _tipos_ant_ln])
+        _fundos_ant_ln = int(df_ant_ln.loc[_mask_fundo_ant, "QUANT"].sum())
+    else:
+        _fundos_ant_ln = 0
+    pecas_ant_sf_ln = pecas_ant_ln - _fundos_ant_ln
+    delta_pecas_ln = ((total_sem_fundo_ln - pecas_ant_sf_ln) / pecas_ant_sf_ln * 100) if (pecas_ant_sf_ln and periodo_opt_ln != "Todo o período") else None
     delta_valor_ln = ((total_valor_ln - valor_ant_ln) / valor_ant_ln * 100) if (valor_ant_ln and periodo_opt_ln != "Todo o período") else None
 
     status_pg_ln = "Pago" if p_fim_ln < data_max_ln else "A Pagar"
@@ -2606,9 +2875,17 @@ elif screen == 'arealva_lencol':
         c1, c2, c3, c4 = st.columns(4)
         kd_p = lencol_delta_icon(delta_pecas_ln) if delta_pecas_ln is not None else None
         kd_v = lencol_delta_icon(delta_valor_ln) if delta_valor_ln is not None else None
-        c1.metric("🧵 Total de Peças", lencol_fmt_num(total_pecas_ln), kd_p)
+        _help_pecas_ln = (
+            f"Total bruto: {lencol_fmt_num(total_pecas_ln)} peças. "
+            f"Exclui {lencol_fmt_num(total_fundos_ln)} fundos de jogo de cama "
+            f"(cortados à parte, identificados pelo tecido). Veja o caseamento abaixo."
+        ) if total_fundos_ln > 0 else None
+        c1.metric("🧵 Peças (s/ fundo)", lencol_fmt_num(total_sem_fundo_ln), kd_p, help=_help_pecas_ln)
         c2.metric(f"💰 Total {status_pg_ln}", lencol_fmt_brl(total_valor_ln), kd_v)
-        c3.metric("📆 Dias no Período", str(dias_trab_ln))
+        _info_ln = _analisa_dias(df_ln["DATA"].dt.date.unique(), p_ini_ln, p_fim_ln)
+        _delta_ln = f"+{_info_ln['sabados']} sáb." if _info_ln['sabados'] > 0 else None
+        _help_ln = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_ln['ausentes'])) if _info_ln['ausentes'] else None
+        c3.metric("📆 Dias Trabalhados", str(dias_com_dados_ln), delta=_delta_ln, delta_color="off", help=_help_ln)
         c4.metric("📈 Média Diária", lencol_fmt_num(media_diaria_ln, 0) + " pç/dia")
 
         c5, c6, c7, c8 = st.columns(4)
@@ -2616,6 +2893,64 @@ elif screen == 'arealva_lencol':
         c6.metric("🏭 Empresas", str(n_empresas_ln))
         c7.metric("🥇 Top Prestador", top_prestador_ln)
         c8.metric("🏆 Top Empresa", top_empresa_ln)
+
+        # ── Caseamento Jogo Duplo × Fundo ────────────────────────────────────
+        _casea_ln = lencol_caseamento(df_ln)
+        if total_fundos_ln > 0 or not _casea_ln.empty:
+            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo Duplo × Fundo</div>", unsafe_allow_html=True)
+            st.caption(
+                "Cada jogo duplo precisa de um fundo correspondente (corte à parte). "
+                "As quantidades devem casear por OP e tamanho. "
+                "⚠️ Este caseamento olha **só os jogos duplos das OPs que tiveram fundo** — "
+                "por isso é menor que o KPI 'Peças (s/ fundo)', que inclui também jogos "
+                "simples e outros produtos (fronha, lençol avulso, etc.)."
+            )
+            _jogo_em_op_fundo = int(_casea_ln["JOGO"].sum()) if not _casea_ln.empty else 0
+            _fundo_em_op_fundo = int(_casea_ln["FUNDO"].sum()) if not _casea_ln.empty else 0
+            # Saldo de fundos = FUNDO − JOGO (negativo = faltam fundos)
+            _dif_liq_ln = _fundo_em_op_fundo - _jogo_em_op_fundo
+            _ops_diverg_ln = int((_casea_ln["DIFERENCA"] != 0).sum()) if not _casea_ln.empty else 0
+            _ops_total_casea = _casea_ln["OP"].nunique() if not _casea_ln.empty else 0
+
+            cj1, cj2, cj3, cj4 = st.columns(4)
+            cj1.metric("🧩 Jogos Duplos", lencol_fmt_num(total_jogos_duplo_ln),
+                       help="Total de jogos duplos no período (todas as OPs).")
+            cj2.metric("🔄 Fundos", lencol_fmt_num(total_fundos_ln),
+                       help="Total de fundos de jogo cortados no período.")
+            cj3.metric("⚖️ Saldo de fundos (OPs c/ fundo)",
+                       f"{'+' if _dif_liq_ln > 0 else ''}{lencol_fmt_num(_dif_liq_ln)}",
+                       delta=("Caseado" if _dif_liq_ln == 0
+                              else (f"Faltam {lencol_fmt_num(abs(_dif_liq_ln))} fundos" if _dif_liq_ln < 0
+                                    else f"Sobram {lencol_fmt_num(_dif_liq_ln)} fundos")),
+                       delta_color=("off" if _dif_liq_ln == 0 else "inverse"),
+                       help="Fundo − Jogo somando as OPs que tiveram fundo. "
+                            "Negativo = faltam fundos; positivo = sobram.")
+            cj4.metric("🚩 OPs divergentes", f"{_ops_diverg_ln}/{_ops_total_casea}",
+                       help="OPs (com fundo) onde jogo e fundo não caseiam por tamanho.")
+
+            if not _casea_ln.empty:
+                _div_ln = _casea_ln[_casea_ln["DIFERENCA"] != 0]
+                if not _div_ln.empty:
+                    with st.expander(f"🔎 Ver {len(_div_ln)} divergência(s) de caseamento", expanded=False):
+                        _casea_show = _div_ln.copy()
+                        _casea_show["JOGO"] = _casea_show["JOGO"].apply(lencol_fmt_num)
+                        _casea_show["FUNDO"] = _casea_show["FUNDO"].apply(lencol_fmt_num)
+                        _casea_show["DIFERENCA"] = _casea_show["DIFERENCA"].apply(
+                            lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
+                        )
+                        st.dataframe(
+                            _casea_show.rename(columns={
+                                "OP": "OP", "TAMANHO": "Tamanho", "JOGO": "Jogo",
+                                "FUNDO": "Fundo", "DIFERENCA": "Diferença", "STATUS": "Status",
+                            }),
+                            use_container_width=True, hide_index=True,
+                        )
+                        st.caption(
+                            "🔴 Faltam fundos = cortou jogo mas não cortou fundo suficiente.  "
+                            "🟠 Sobram fundos = cortou fundo a mais que o jogo."
+                        )
+                else:
+                    st.success("✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).")
 
         st.divider()
         col_a_ln, col_b_ln = st.columns([2, 1])
@@ -2999,7 +3334,10 @@ elif screen == 'arealva_lencol':
         col_f0_ln.metric("💰 Total R$", lencol_fmt_brl(total_r_ln))
         col_f1_ln.metric("📅 Média Diária R$", lencol_fmt_brl(media_dia_r_ln))
         col_f2_ln.metric("🧵 R$/Peça Médio", f"R$ {lencol_fmt_num(media_peca_r_ln, 4)}")
-        col_f3_ln.metric("🗓️ Dias no Período", str(dias_trab_ln))
+        _info_ln2 = _analisa_dias(df_ln["DATA"].dt.date.unique(), p_ini_ln, p_fim_ln)
+        _delta_ln2 = f"+{_info_ln2['sabados']} sáb." if _info_ln2['sabados'] > 0 else None
+        _help_ln2 = ("⚠️ Sem registro: " + ", ".join(d.strftime('%d/%m') for d in _info_ln2['ausentes'])) if _info_ln2['ausentes'] else None
+        col_f3_ln.metric("🗓️ Dias Trabalhados", str(dias_com_dados_ln), delta=_delta_ln2, delta_color="off", help=_help_ln2)
 
         st.divider()
         col_fa_ln, col_fb_ln = st.columns(2)
@@ -3217,21 +3555,106 @@ elif screen == 'arealva_lencol':
             .sort_values("Peças", ascending=False)
         )
 
+        # ── Enriquecer resumo com Jogo Duplo / Fundo / Caseamento ────────────
+        # Calcula uma única vez — reutilizado na seção de caseamento abaixo
+        _casea_op_ln = lencol_caseamento(df_ln)
+        if not _casea_op_ln.empty:
+            _casea_por_op_ln = (
+                _casea_op_ln.groupby("OP", as_index=False)
+                .agg(Jogo_Duplo=("JOGO", "sum"), Fundo=("FUNDO", "sum"), Diferenca=("DIFERENCA", "sum"))
+            )
+            _casea_por_op_ln["Casea"] = _casea_por_op_ln["Diferenca"].apply(
+                lambda x: "✅" if x == 0 else ("🔴" if x < 0 else "🟠")
+            )
+            resumo_op_ln = resumo_op_ln.merge(
+                _casea_por_op_ln[["OP", "Jogo_Duplo", "Fundo", "Diferenca", "Casea"]],
+                on="OP", how="left"
+            )
+        else:
+            resumo_op_ln["Jogo_Duplo"] = 0
+            resumo_op_ln["Fundo"] = 0
+            resumo_op_ln["Diferenca"] = 0
+            resumo_op_ln["Casea"] = "—"
+        for _c in ["Jogo_Duplo", "Fundo", "Diferenca"]:
+            resumo_op_ln[_c] = resumo_op_ln[_c].fillna(0).astype(int)
+        resumo_op_ln["Casea"] = resumo_op_ln["Casea"].fillna("—")
+
         resumo_op_show_ln = resumo_op_ln.copy()
         resumo_op_show_ln["Peças"] = resumo_op_show_ln["Peças"].apply(lencol_fmt_num)
         resumo_op_show_ln["Valor"] = resumo_op_show_ln["Valor"].apply(lencol_fmt_brl)
         resumo_op_show_ln["Data_Inicio"] = resumo_op_show_ln["Data_Inicio"].dt.strftime("%d/%m/%Y")
         resumo_op_show_ln["Ultimo_Corte"] = resumo_op_show_ln["Ultimo_Corte"].dt.strftime("%d/%m/%Y")
+        resumo_op_show_ln["Jogo_Duplo"] = resumo_op_show_ln["Jogo_Duplo"].apply(
+            lambda v: lencol_fmt_num(v) if v > 0 else "—"
+        )
+        resumo_op_show_ln["Fundo"] = resumo_op_show_ln["Fundo"].apply(
+            lambda v: lencol_fmt_num(v) if v > 0 else "—"
+        )
+        resumo_op_show_ln["Diferenca"] = resumo_op_show_ln.apply(
+            lambda r: (f"+{lencol_fmt_num(r['Diferenca'])}" if r["Diferenca"] > 0
+                       else lencol_fmt_num(r["Diferenca"])) if r["Casea"] != "—" else "—",
+            axis=1
+        )
         st.dataframe(
             resumo_op_show_ln.rename(columns={
-                "OP": "OP", "Peças": "Peças", "Valor": "Valor R$",
-                "Prestadores": "Prestadores", "Empresas": "Empresas",
+                "OP": "OP", "Peças": "Peças", "Jogo_Duplo": "Jogo Duplo",
+                "Fundo": "Fundo", "Diferenca": "Diferença", "Casea": "Casea",
+                "Valor": "Valor R$", "Prestadores": "Prestadores", "Empresas": "Empresas",
                 "Tecido": "Tecido", "Categoria": "Categoria",
                 "Data_Inicio": "Início", "Ultimo_Corte": "Último Corte",
                 "Registros": "Registros",
-            }),
+            })[[
+                "OP", "Peças", "Jogo Duplo", "Fundo", "Diferença", "Casea",
+                "Valor R$", "Prestadores", "Empresas", "Tecido", "Categoria",
+                "Início", "Último Corte", "Registros",
+            ]],
             use_container_width=True, height=380, hide_index=True,
         )
+        st.caption(
+            "**Peças** = total bruto (jogo + fundo + outros).  "
+            "**Jogo Duplo** / **Fundo** = cortes classificados por tipo.  "
+            "**Casea**: ✅ caseado · 🔴 faltam fundos · 🟠 sobram fundos · — sem fundo."
+        )
+
+        # ── Caseamento Jogo × Fundo por OP ───────────────────────────────────
+        # _casea_op_ln já foi calculado acima
+        if not _casea_op_ln.empty:
+            st.divider()
+            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo Duplo × Fundo (por OP)</div>", unsafe_allow_html=True)
+            _div_op_ln = _casea_op_ln[_casea_op_ln["DIFERENCA"] != 0]
+            _n_ok = int((_casea_op_ln["DIFERENCA"] == 0).sum())
+            _n_div = len(_div_op_ln)
+            cc1, cc2, cc3 = st.columns(3)
+            cc1.metric("✅ Pares caseados", str(_n_ok))
+            cc2.metric("🚩 Pares divergentes", str(_n_div))
+            _saldo_op_ln = int(_casea_op_ln["DIFERENCA"].sum())
+            cc3.metric("⚖️ Saldo de fundos",
+                       f"{'+' if _saldo_op_ln > 0 else ''}{lencol_fmt_num(_saldo_op_ln)}",
+                       help="FUNDO − JOGO no total. Negativo = faltam fundos; positivo = sobram.")
+            _mostrar_so_div = st.checkbox(
+                "Mostrar apenas divergências", value=True, key="ln_casea_so_div"
+            )
+            _tab_casea = _div_op_ln if _mostrar_so_div else _casea_op_ln
+            if _tab_casea.empty:
+                st.success("✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).")
+            else:
+                _casea_op_show = _tab_casea.copy()
+                _casea_op_show["JOGO"] = _casea_op_show["JOGO"].apply(lencol_fmt_num)
+                _casea_op_show["FUNDO"] = _casea_op_show["FUNDO"].apply(lencol_fmt_num)
+                _casea_op_show["DIFERENCA"] = _casea_op_show["DIFERENCA"].apply(
+                    lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
+                )
+                st.dataframe(
+                    _casea_op_show.rename(columns={
+                        "OP": "OP", "TAMANHO": "Tamanho", "JOGO": "Jogo",
+                        "FUNDO": "Fundo", "DIFERENCA": "Diferença", "STATUS": "Status",
+                    }),
+                    use_container_width=True, height=320, hide_index=True,
+                )
+                st.caption(
+                    "🔴 Faltam fundos = jogo cortado sem fundo suficiente.  "
+                    "🟠 Sobram fundos = fundo cortado a mais que o jogo."
+                )
 
         st.divider()
 
@@ -3249,6 +3672,33 @@ elif screen == 'arealva_lencol':
                 col_o2.metric("💰 Total R$", lencol_fmt_brl(df_op_ln["VALOR_RECEBER"].sum()))
                 col_o3.metric("👷 Prestadores", str(df_op_ln["PRESTADOR"].nunique()))
                 col_o4.metric("📅 Dias em Produção", str(df_op_ln["DATA"].dt.date.nunique()))
+
+                # Caseamento desta OP específica
+                _casea_sel_ln = lencol_caseamento(df_op_ln, apenas_com_fundo=False)
+                _casea_sel_ln = _casea_sel_ln[
+                    (_casea_sel_ln["JOGO"] > 0) | (_casea_sel_ln["FUNDO"] > 0)
+                ]
+                if not _casea_sel_ln.empty and (_casea_sel_ln["FUNDO"].sum() > 0):
+                    _dif_sel = int(_casea_sel_ln["DIFERENCA"].sum())
+                    if _dif_sel == 0:
+                        st.success(f"✅ OP {op_sel_ln}: jogo e fundo caseados por tamanho.")
+                    else:
+                        _txt_sel = (f"faltam {lencol_fmt_num(abs(_dif_sel))} fundos" if _dif_sel < 0
+                                    else f"sobram {lencol_fmt_num(_dif_sel)} fundos")
+                        st.warning(f"⚠️ OP {op_sel_ln}: caseamento divergente — {_txt_sel} no total.")
+                    _casea_sel_show = _casea_sel_ln.copy()
+                    _casea_sel_show["JOGO"] = _casea_sel_show["JOGO"].apply(lencol_fmt_num)
+                    _casea_sel_show["FUNDO"] = _casea_sel_show["FUNDO"].apply(lencol_fmt_num)
+                    _casea_sel_show["DIFERENCA"] = _casea_sel_show["DIFERENCA"].apply(
+                        lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
+                    )
+                    st.dataframe(
+                        _casea_sel_show.rename(columns={
+                            "TAMANHO": "Tamanho", "JOGO": "Jogo", "FUNDO": "Fundo",
+                            "DIFERENCA": "Diferença", "STATUS": "Status",
+                        }).drop(columns=["OP"]),
+                        use_container_width=True, hide_index=True,
+                    )
 
                 col_oa, col_ob = st.columns(2)
                 with col_oa:
@@ -3351,6 +3801,58 @@ elif screen == 'arealva_lencol':
                     }),
                     use_container_width=True, height=320, hide_index=True,
                 )
+
+    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
+    st.markdown("---")
+    _col_pdf_l_ln, _col_pdf_c_ln, _col_pdf_r_ln = st.columns([2, 4, 2])
+    with _col_pdf_c_ln:
+        _filtros_ln = []
+        if sel_prest_ln:
+            _filtros_ln.append(f"Prestadores: {', '.join(sel_prest_ln[:3])}{'...' if len(sel_prest_ln) > 3 else ''}")
+        if sel_emp_ln:
+            _filtros_ln.append(f"Empresas: {', '.join(sel_emp_ln)}")
+        if sel_cat_ln:
+            _filtros_ln.append(f"Categorias: {', '.join(sel_cat_ln[:3])}{'...' if len(sel_cat_ln) > 3 else ''}")
+        _filtros_ln_str = '  |  '.join(_filtros_ln) if _filtros_ln else 'Nenhum filtro adicional'
+
+        if st.button(
+            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_ln",
+            use_container_width=True, type="primary",
+            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
+        ):
+            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
+                from utils.pdf_report import gerar_pdf_lencol, nome_arquivo_pdf
+                _pdf_bytes_ln = gerar_pdf_lencol(
+                    df_ln, p_ini_ln, p_fim_ln, _filtros_ln_str,
+                    caseamento_df=lencol_caseamento(df_ln),
+                    totais_jf={
+                        "total_pecas": total_pecas_ln,
+                        "total_sem_fundo": total_sem_fundo_ln,
+                        "total_fundos": total_fundos_ln,
+                        "total_jogos_duplo": total_jogos_duplo_ln,
+                    },
+                )
+            st.session_state["pdf_ln_bytes"] = _pdf_bytes_ln
+            st.session_state["pdf_ln_nome"] = nome_arquivo_pdf(
+                "lencol", p_ini_ln, p_fim_ln
+            )
+
+        if st.session_state.get("pdf_ln_bytes"):
+            _col_dl_ln, _col_clr_ln = st.columns([5, 1])
+            with _col_dl_ln:
+                st.download_button(
+                    label="⬇️  Baixar Relatório PDF",
+                    data=st.session_state["pdf_ln_bytes"],
+                    file_name=st.session_state.get("pdf_ln_nome", "relatorio.pdf"),
+                    mime="application/pdf",
+                    key="dl_pdf_ln",
+                    use_container_width=True,
+                )
+            with _col_clr_ln:
+                if st.button("🗑️", key="clr_pdf_ln", use_container_width=True,
+                             help="Limpar e gerar novamente"):
+                    st.session_state.pop("pdf_ln_bytes", None)
+                    st.rerun()
 
     # Footer
     st.markdown("---")
