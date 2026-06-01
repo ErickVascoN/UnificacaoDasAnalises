@@ -206,6 +206,9 @@ def _parse_num_pg(val) -> float | None:
     # Formato brasileiro: ponto como milhar, vírgula como decimal
     if "," in s:
         s = s.replace(".", "").replace(",", ".")
+    elif re.search(r"\.\d{3}$", s):
+        # "3.000" → ponto é separador de milhar, não decimal
+        s = s.replace(".", "")
     try:
         return float(s)
     except ValueError:

@@ -26,6 +26,14 @@ except ImportError:
     META_TOTAL = sum(METAS.values())
     CACHE_TTL = 60
 
+# Metas variáveis por (estação, tamanho) — Arealva Manta
+# MAQUINA não varia por tamanho: usa _DEFAULT=7000 para qualquer tamanho
+# MESA 1 varia conforme o tamanho da manta cortada
+METAS_AREALVA_POR_TAMANHO: dict[str, dict] = {
+    "MAQUINA": {"_DEFAULT": 7000},
+    "MESA 1":  {"SOLTEIRO": 4700, "CASAL": 4000, "QUEEN": 2500, "KING": 2200, "_DEFAULT": 4000},
+}
+
 # config iacanga (Setor 2 - Mantas Giattex)
 GOOGLE_SHEETS_ID_IACANGA = "1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU"
 GOOGLE_SHEETS_GID_IACANGA = "0"
@@ -119,6 +127,83 @@ def calcular_meta_total_ponderada_iacanga(df_subset: pd.DataFrame) -> float:
     for est in df_subset['ESTACAO'].unique():
         total += meta_diaria_por_estacao_iacanga(df_subset, est)
     return total
+
+# ── Helpers de meta por tamanho — Arealva Manta ──────────────────────────────
+
+def meta_por_registro_arealva(estacao: str, tamanho: str) -> float:
+    """Meta diária para um par (estação Arealva, tamanho).
+
+    Fallback:
+      1. METAS_AREALVA_POR_TAMANHO[estacao][tamanho]
+      2. METAS_AREALVA_POR_TAMANHO[estacao]['_DEFAULT']
+      3. METAS[estacao]  ← backward-compat para estações não mapeadas
+      4. 0
+    """
+    est = str(estacao).strip().upper()
+    # Reutiliza a normalização do Iacanga (SOLTEIRO/CASAL/QUEEN/KING)
+    tam = normaliza_tamanho_iacanga(tamanho)
+    if est not in METAS_AREALVA_POR_TAMANHO:
+        return METAS.get(estacao, 0)
+    metas_g = METAS_AREALVA_POR_TAMANHO[est]
+    return metas_g.get(tam, metas_g.get("_DEFAULT", METAS.get(estacao, 0)))
+
+
+def meta_ponderada_arealva(df_subset: pd.DataFrame) -> float:
+    """Meta ponderada pelo mix real de tamanhos no subset (Arealva Manta).
+
+    Se a coluna TAMANHO não existir ou estiver toda vazia, cai no fallback
+    da meta fixa por estação — garante compatibilidade com registros históricos.
+    """
+    if df_subset.empty:
+        return 0.0
+
+    def _meta_fixa_ponderada(df: pd.DataFrame) -> float:
+        """Fallback: meta fixa de METAS ponderada pela qtd de cada estação."""
+        total = df['QUANTIDADE'].sum()
+        if total <= 0:
+            return 0.0
+        soma = 0.0
+        for est, g in df.groupby('ESTACAO'):
+            soma += METAS.get(est, 0) * (g['QUANTIDADE'].sum() / total)
+        return soma
+
+    # Sem coluna TAMANHO → fallback histórico
+    if 'TAMANHO' not in df_subset.columns:
+        return _meta_fixa_ponderada(df_subset)
+
+    tem_tamanho = (
+        df_subset['TAMANHO'].notna()
+        & (df_subset['TAMANHO'].astype(str).str.strip() != '')
+        & (df_subset['TAMANHO'].astype(str).str.lower() != 'nan')
+    )
+    if not tem_tamanho.any():
+        return _meta_fixa_ponderada(df_subset)
+
+    # Mix com tamanhos: ponderação real
+    total = df_subset['QUANTIDADE'].sum()
+    if total <= 0:
+        return 0.0
+    soma = 0.0
+    for (est, tam), grupo in df_subset.groupby(['ESTACAO', 'TAMANHO']):
+        soma += meta_por_registro_arealva(est, tam) * (grupo['QUANTIDADE'].sum() / total)
+    return soma
+
+
+def meta_diaria_por_estacao_arealva(df_subset: pd.DataFrame, estacao: str) -> float:
+    """Meta ponderada restrita a uma estação específica (Arealva Manta)."""
+    return meta_ponderada_arealva(df_subset[df_subset['ESTACAO'] == estacao])
+
+
+def calcular_meta_total_ponderada_arealva(df_subset: pd.DataFrame) -> float:
+    """Soma das metas ponderadas de cada estação presente no subset (Arealva Manta)."""
+    if df_subset.empty:
+        return 0.0
+    total = 0.0
+    for est in df_subset['ESTACAO'].unique():
+        total += meta_diaria_por_estacao_arealva(df_subset, est)
+    return total
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -433,6 +518,16 @@ def carregar_dados():
     df_corte['SEMANA'] = df_corte['DATA'].dt.isocalendar().week.astype(int)
     df_corte['MES'] = df_corte['DATA'].dt.month
     df_corte['DIA_SEMANA'] = df_corte['DATA'].dt.day_name()
+    # TAMANHO — coluna opcional (adicionada à planilha após o histórico inicial)
+    # normaliza_tamanho_iacanga reutilizada: mesmos valores SOLTEIRO/CASAL/QUEEN/KING
+    if 'TAMANHO' in df_corte.columns:
+        df_corte['TAMANHO'] = (
+            df_corte['TAMANHO'].astype(str).str.strip()
+            .apply(normaliza_tamanho_iacanga)
+        )
+    else:
+        # Schema uniforme; funções de meta detectam '' e usam fallback fixo
+        df_corte['TAMANHO'] = ''
     return df_corte
 
 # DATA LOADING — IACANGA (planilha própria)
@@ -1729,6 +1824,8 @@ elif screen == 'arealva_manta':
         st.session_state.filtro_estacoes = []
     if 'filtro_produtos' not in st.session_state:
         st.session_state.filtro_produtos = []
+    if 'filtro_tamanhos' not in st.session_state:
+        st.session_state.filtro_tamanhos = []
     if 'filtro_data_ini' not in st.session_state:
         st.session_state.filtro_data_ini = df_trabalho['DATA'].min().date() if not df_trabalho.empty else None
     if 'filtro_data_fim' not in st.session_state:
@@ -1748,6 +1845,21 @@ elif screen == 'arealva_manta':
     default_prod = [p for p in st.session_state.filtro_produtos if p in produtos_disponiveis]
     produtos_selecionados = st.sidebar.multiselect("📦 Filtrar por Produto", options=produtos_disponiveis, default=default_prod)
     st.session_state.filtro_produtos = produtos_selecionados
+
+    # Filtro de Tamanho — exibido apenas quando a planilha tem valores preenchidos
+    tamanhos_disponiveis = sorted(
+        v for v in df_trabalho['TAMANHO'].dropna().unique()
+        if str(v).strip() not in ('', 'nan', 'NAN')
+    )
+    if tamanhos_disponiveis:
+        default_tam = [t for t in st.session_state.filtro_tamanhos if t in tamanhos_disponiveis]
+        tamanhos_selecionados = st.sidebar.multiselect(
+            "📏 Filtrar por Tamanho", options=tamanhos_disponiveis, default=default_tam,
+        )
+        st.session_state.filtro_tamanhos = tamanhos_selecionados
+    else:
+        tamanhos_selecionados = []
+        st.session_state.filtro_tamanhos = []
 
     st.sidebar.markdown("### 📅 Filtro de Dias")
     if 'filtro_tipo_data' not in st.session_state:
@@ -1805,6 +1917,11 @@ elif screen == 'arealva_manta':
             (df_filtrado['DATA'].dt.date >= filtro_datas[0]) &
             (df_filtrado['DATA'].dt.date <= filtro_datas[1])
         ]
+    if tamanhos_selecionados:
+        df_filtrado = df_filtrado[df_filtrado['TAMANHO'].isin(tamanhos_selecionados)]
+
+    # Meta total ponderada para o recorte atual (substitui META_TOTAL fixo)
+    META_TOTAL_AREALVA = calcular_meta_total_ponderada_arealva(df_filtrado)
 
     # dashboard header
     st.markdown('<div class="dash-header">✂️ Arealva — Manta</div>', unsafe_allow_html=True)
@@ -1821,7 +1938,7 @@ elif screen == 'arealva_manta':
         total_cores = df_filtrado['COR'].nunique()
         dias_trabalhados = df_filtrado['DATA'].dt.date.nunique()
         media_dia = total_pecas / max(dias_trabalhados, 1)
-        delta_media = ((media_dia / META_TOTAL) - 1) * 100 if META_TOTAL > 0 else 0
+        delta_media = ((media_dia / META_TOTAL_AREALVA) - 1) * 100 if META_TOTAL_AREALVA > 0 else 0
 
         cols_kpi = st.columns(4)
         cols_kpi[0].metric("✂️ Total de Peças", f"{total_pecas:,.0f}".replace(",", "."))
@@ -1831,7 +1948,7 @@ elif screen == 'arealva_manta':
 
         _ICONS_EST = {"MAQUINA": "🔧", "MESA 1": "📐", "MESA 2": "📐"}
         cols_kpi2 = st.columns(1 + len(METAS))
-        cols_kpi2[0].metric("⚡ Média Peças/Dia", f"{media_dia:,.0f}".replace(",", "."), delta=f"{delta_media:+.1f}% vs Meta {META_TOTAL:,}".replace(",", "."))
+        cols_kpi2[0].metric("⚡ Média Peças/Dia", f"{media_dia:,.0f}".replace(",", "."), delta=f"{delta_media:+.1f}% vs Meta {META_TOTAL_AREALVA:,.0f}".replace(",", "."))
         for _j, (_est, _) in enumerate(METAS.items()):
             _icon = _ICONS_EST.get(_est, "🏭")
             _pecas = df_filtrado[df_filtrado['ESTACAO'] == _est]['QUANTIDADE'].sum()
@@ -1840,7 +1957,7 @@ elif screen == 'arealva_manta':
         st.markdown("---")
         st.markdown("#### 📈 Produção Diária (Peças)")
         prod_diaria = df_filtrado.groupby('DATA')['QUANTIDADE'].sum().reset_index().sort_values('DATA')
-        prod_diaria['ACIMA_META'] = prod_diaria['QUANTIDADE'] >= META_TOTAL
+        prod_diaria['ACIMA_META'] = prod_diaria['QUANTIDADE'] >= META_TOTAL_AREALVA
 
         fig1 = go.Figure()
         df_acima = prod_diaria[prod_diaria['ACIMA_META']]
@@ -1853,8 +1970,8 @@ elif screen == 'arealva_manta':
             prod_diaria['MM5'] = prod_diaria['QUANTIDADE'].rolling(5, min_periods=1).mean()
             fig1.add_trace(go.Scatter(x=prod_diaria['DATA'], y=prod_diaria['MM5'],
                                       name='Tendência (5d)', line=dict(color='#ff7f0e', width=3), mode='lines'))
-        fig1.add_hline(y=META_TOTAL, line_dash="dash", line_color="#aaa", line_width=2,
-                       annotation_text=f"Meta: {META_TOTAL:,}".replace(",", "."), annotation_font_size=12,
+        fig1.add_hline(y=META_TOTAL_AREALVA, line_dash="dash", line_color="#aaa", line_width=2,
+                       annotation_text=f"Meta: {META_TOTAL_AREALVA:,.0f}".replace(",", "."), annotation_font_size=12,
                        annotation_font_color="#aaa")
         fig1.update_layout(height=420, margin=dict(l=20, r=20, t=30, b=20),
                            legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0.5, xanchor='center'),
@@ -1972,13 +2089,21 @@ elif screen == 'arealva_manta':
             df_est_b = df_filtrado[df_filtrado['ESTACAO'] == estacao]
             dias_b = df_est_b['DATA'].dt.date.nunique()
             media_b = df_est_b['QUANTIDADE'].sum() / max(dias_b, 1)
-            meta_b = METAS[estacao]
+            meta_b = meta_diaria_por_estacao_arealva(df_filtrado, estacao)
+            if meta_b == 0:
+                meta_b = METAS.get(estacao, 0)
             pct = min((media_b / meta_b * 100), 150) if meta_b > 0 else 0
             diff = media_b - meta_b
             cor_prog = '#2ca02c' if pct >= 100 else ('#ff7f0e' if pct >= 80 else '#d62728')
             status = '✅ META ATINGIDA' if pct >= 100 else ('⚠️ PRÓXIMO DA META' if pct >= 80 else '❌ ABAIXO DA META')
             pct_bar = min(pct, 100)
             _fn = lambda v: f"{int(v):,}".replace(",", ".")
+            # Nota "(ponderada)" quando há tamanhos preenchidos na estação
+            _tem_tam_b = (
+                'TAMANHO' in df_est_b.columns
+                and df_est_b['TAMANHO'].str.strip().replace('', pd.NA).notna().any()
+            )
+            _nota_meta = ' <span style="font-size:0.7rem;color:#888;">(ponderada)</span>' if _tem_tam_b else ''
             with cols_meta[i]:
                 card_html = (
                     '<div style="background:#1a1a2e; border-radius:14px; padding:20px; color:white; '
@@ -1988,7 +2113,7 @@ elif screen == 'arealva_manta':
                     f'<div style="font-size:2.2rem; font-weight:800; color:white; margin:4px 0;">'
                     f'{_fn(media_b)}</div>'
                     f'<div style="font-size:0.85rem; color:#bbb; margin-bottom:10px;">'
-                    f'Meta: {_fn(meta_b)} pçs/dia</div>'
+                    f'Meta: {_fn(meta_b)} pçs/dia{_nota_meta}</div>'
                     '<div style="background:#333; border-radius:8px; height:14px; '
                     'overflow:hidden; margin:8px 0;">'
                     f'<div style="width:{pct_bar:.0f}%; height:100%; background:{cor_prog}; '
@@ -2014,13 +2139,15 @@ elif screen == 'arealva_manta':
                 dias_est = df_est['DATA'].dt.date.nunique()
                 pecas_est = df_est['QUANTIDADE'].sum()
                 media_pecas_est = pecas_est / max(dias_est, 1)
-                meta_est = METAS[estacao]
+                meta_est = meta_diaria_por_estacao_arealva(df_filtrado, estacao)
+                if meta_est == 0:
+                    meta_est = METAS.get(estacao, 0)
                 pct_meta = (media_pecas_est / meta_est * 100) if meta_est > 0 else 0
                 delta_meta = media_pecas_est - meta_est
                 st.metric("Total Peças", f"{pecas_est:,.0f}".replace(",", "."))
                 st.metric("Dias Trabalhados", f"{dias_est}")
                 st.metric("Média Peças/Dia", f"{media_pecas_est:,.0f}".replace(",", "."),
-                          delta=f"{delta_meta:+,.0f} vs Meta {meta_est:,}".replace(",", "."))
+                          delta=f"{delta_meta:+,.0f} vs Meta {meta_est:,.0f}".replace(",", "."))
                 st.metric("% da Meta", f"{pct_meta:.1f}%")
 
         st.markdown("---")
@@ -2029,14 +2156,20 @@ elif screen == 'arealva_manta':
         fig_est1 = px.line(prod_est_dia, x='DATA', y='QUANTIDADE', color='ESTACAO',
                            labels={'DATA': 'Data', 'QUANTIDADE': 'Peças', 'ESTACAO': 'Estação'},
                            color_discrete_map=cores_estacao, markers=True)
-        for est_nome, meta_val in METAS.items():
-            fig_est1.add_hline(y=meta_val, line_dash="dot", line_width=1.5,
-                               line_color=cores_estacao[est_nome],
-                               annotation_text=f"Meta {est_nome}: {meta_val:,}".replace(",", "."),
-                               annotation_position="top left",
-                               annotation_font_size=10,
-                               annotation_font_color=cores_estacao[est_nome],
-                               opacity=0.5)
+        # Meta ponderada diária por estação (flutua conforme mix de tamanhos)
+        for est_nm in estacoes:
+            _df_est_d = df_filtrado[df_filtrado['ESTACAO'] == est_nm]
+            _linhas_meta = []
+            for _data, _g in _df_est_d.groupby('DATA'):
+                _linhas_meta.append({'DATA': _data, 'META': meta_ponderada_arealva(_g)})
+            if _linhas_meta:
+                _df_meta_est = pd.DataFrame(_linhas_meta).sort_values('DATA')
+                fig_est1.add_trace(go.Scatter(
+                    x=_df_meta_est['DATA'], y=_df_meta_est['META'],
+                    name=f'Meta {est_nm}',
+                    line=dict(color=cores_estacao.get(est_nm, '#aaa'), dash='dot', width=2),
+                    mode='lines', showlegend=True,
+                ))
         fig_est1.update_layout(height=500, margin=dict(l=20, r=20, t=30, b=20),
                                paper_bgcolor='rgba(0,0,0,0)', font_color='#E0E0E0',
                                plot_bgcolor='rgba(0,0,0,0)')
@@ -2052,7 +2185,15 @@ elif screen == 'arealva_manta':
             with st.expander(f"📐 {estacao} — Análise Detalhada", expanded=False):
                 col_e1, col_e2 = st.columns(2)
                 with col_e1:
-                    prod_dia_est = df_est.groupby('DATA')['QUANTIDADE'].sum().reset_index().sort_values('DATA')
+                    # Calcula META_DIA ponderada por data (padrão Iacanga)
+                    _linhas_d_exp = []
+                    for _data_d, _g_d in df_est.groupby('DATA'):
+                        _linhas_d_exp.append({
+                            'DATA': _data_d,
+                            'QUANTIDADE': _g_d['QUANTIDADE'].sum(),
+                            'META_DIA': meta_ponderada_arealva(_g_d),
+                        })
+                    prod_dia_est = pd.DataFrame(_linhas_d_exp).sort_values('DATA') if _linhas_d_exp else pd.DataFrame(columns=['DATA', 'QUANTIDADE', 'META_DIA'])
                     fig_tend = go.Figure()
                     fig_tend.add_trace(go.Bar(x=prod_dia_est['DATA'], y=prod_dia_est['QUANTIDADE'],
                                               name='Peças/Dia', marker_color=cores_estacao[estacao], opacity=0.7))
@@ -2060,14 +2201,16 @@ elif screen == 'arealva_manta':
                         prod_dia_est['MM5'] = prod_dia_est['QUANTIDADE'].rolling(5).mean()
                         fig_tend.add_trace(go.Scatter(x=prod_dia_est['DATA'], y=prod_dia_est['MM5'],
                                                       name='Média Móvel (5d)', line=dict(color='red', width=2)))
-                    media_est_val = prod_dia_est['QUANTIDADE'].mean()
+                    media_est_val = prod_dia_est['QUANTIDADE'].mean() if not prod_dia_est.empty else 0
                     fig_tend.add_hline(y=media_est_val, line_dash="dash", line_color="gray",
                                        annotation_text=f"Média: {media_est_val:,.0f}".replace(",", "."))
-                    meta_estacao = METAS.get(estacao, 0)
-                    if meta_estacao > 0:
-                        fig_tend.add_hline(y=meta_estacao, line_dash="dot", line_color="green",
-                                           line_width=2, annotation_text=f"🎯 Meta: {meta_estacao:,}".replace(",", "."),
-                                           annotation_position="top left")
+                    if not prod_dia_est.empty and 'META_DIA' in prod_dia_est.columns:
+                        fig_tend.add_trace(go.Scatter(
+                            x=prod_dia_est['DATA'], y=prod_dia_est['META_DIA'],
+                            name='Meta (ponderada)',
+                            line=dict(color='#2ca02c', width=2, dash='dot'),
+                            mode='lines+markers', marker=dict(symbol='diamond', size=7),
+                        ))
                     fig_tend.update_layout(title=f"Produção Diária — {estacao}", height=400,
                                            margin=dict(l=20, r=20, t=40, b=20),
                                            paper_bgcolor='rgba(0,0,0,0)', font_color='#E0E0E0',
@@ -2081,10 +2224,12 @@ elif screen == 'arealva_manta':
                     fig_box = px.box(prod_dia_est2, y='QUANTIDADE',
                                      color_discrete_sequence=[cores_estacao[estacao]],
                                      labels={'QUANTIDADE': 'Peças/Dia'})
-                    meta_box = METAS.get(estacao, 0)
+                    meta_box = meta_diaria_por_estacao_arealva(df_filtrado, estacao)
+                    if meta_box == 0:
+                        meta_box = METAS.get(estacao, 0)
                     if meta_box > 0:
                         fig_box.add_hline(y=meta_box, line_dash="dot", line_color="green",
-                                          line_width=2, annotation_text=f"🎯 Meta: {meta_box:,}".replace(",", "."),
+                                          line_width=2, annotation_text=f"🎯 Meta: {meta_box:,.0f}".replace(",", "."),
                                           annotation_position="top left")
                     fig_box.update_layout(title=f"Consistência — {estacao}", height=400,
                                           margin=dict(l=20, r=20, t=40, b=20),
@@ -2093,16 +2238,23 @@ elif screen == 'arealva_manta':
                     st.plotly_chart(fig_box, use_container_width=True)
 
                 prod_dia_stats = df_est.groupby('DATA')['QUANTIDADE'].sum()
-                meta_est_v = METAS.get(estacao, 0)
+                meta_est_v = meta_diaria_por_estacao_arealva(df_filtrado, estacao)
+                if meta_est_v == 0:
+                    meta_est_v = METAS.get(estacao, 0)
                 pct_meta_est = (prod_dia_stats.mean() / meta_est_v * 100) if meta_est_v > 0 else 0
-                dias_acima = (prod_dia_stats >= meta_est_v).sum() if meta_est_v > 0 else 0
+                # Dias acima da meta: compara com meta ponderada de cada dia (padrão Iacanga)
+                dias_acima = 0
+                for _data_a, _g_a in df_est.groupby('DATA'):
+                    _meta_dia_a = meta_ponderada_arealva(_g_a)
+                    if _g_a['QUANTIDADE'].sum() >= _meta_dia_a and _meta_dia_a > 0:
+                        dias_acima += 1
                 dias_total_est = len(prod_dia_stats)
                 stats_df = pd.DataFrame({
-                    'Estatística': ['🎯 META DIÁRIA', '📊 Média/Dia', '% da Meta',
+                    'Estatística': ['🎯 META DIÁRIA (ponderada)', '📊 Média/Dia', '% da Meta',
                                     'Dias Acima da Meta', 'Mediana/Dia', 'Desvio Padrão',
                                     'Mínimo/Dia', 'Máximo/Dia', 'Coef. Variação (%)', 'Total Peças'],
                     'Valor': [
-                        f"{meta_est_v:,} peças".replace(",", "."),
+                        f"{meta_est_v:,.0f} peças".replace(",", "."),
                         f"{prod_dia_stats.mean():,.0f}".replace(",", "."),
                         f"{pct_meta_est:.1f}%",
                         f"{dias_acima} de {dias_total_est} ({(dias_acima / max(dias_total_est, 1) * 100):.0f}%)",
@@ -2125,9 +2277,20 @@ elif screen == 'arealva_manta':
             .reset_index(name='DIAS')
         )
         prod_semanal = prod_semanal.merge(dias_por_semana, on=['SEMANA', 'ESTACAO'], how='left')
-        prod_semanal['META_SEMANAL'] = prod_semanal.apply(
-            lambda r: METAS.get(r['ESTACAO'], 0) * r['DIAS'], axis=1
-        )
+        # Meta semanal ponderada: soma da meta ponderada de cada dia dentro da semana
+        _metas_sem = []
+        for (_sem, _est_s), _g_s in df_filtrado.groupby(['SEMANA', 'ESTACAO']):
+            _meta_sem_total = 0.0
+            for _data_s, _g_dia_s in _g_s.groupby('DATA'):
+                _meta_sem_total += meta_ponderada_arealva(_g_dia_s)
+            _metas_sem.append({'SEMANA': _sem, 'ESTACAO': _est_s, 'META_SEMANAL': _meta_sem_total})
+        if _metas_sem:
+            prod_semanal = prod_semanal.merge(
+                pd.DataFrame(_metas_sem), on=['SEMANA', 'ESTACAO'], how='left',
+            )
+            prod_semanal['META_SEMANAL'] = prod_semanal['META_SEMANAL'].fillna(0)
+        else:
+            prod_semanal['META_SEMANAL'] = 0
         fig_sem = go.Figure()
         for est in estacoes:
             df_s = prod_semanal[prod_semanal['ESTACAO'] == est]
@@ -2336,6 +2499,10 @@ elif screen == 'arealva_lencol':
         elif periodo_opt_ln == "Mês atual":
             p_ini_ln = hoje_ln.replace(day=1)
             p_fim_ln = hoje_ln
+            # Início de mês: ainda não há dados do mês corrente → recua para o mês anterior
+            if p_ini_ln > data_max_ln:
+                p_fim_ln = p_ini_ln - timedelta(days=1)   # último dia do mês anterior
+                p_ini_ln = p_fim_ln.replace(day=1)
         elif periodo_opt_ln == "Todo o período":
             p_ini_ln, p_fim_ln = data_min_ln, data_max_ln
         else:
@@ -2355,8 +2522,9 @@ elif screen == 'arealva_lencol':
             if p_ini_ln > p_fim_ln:
                 st.error("❌ Data 'De' não pode ser maior que 'Até'")
 
+        # Clamp apenas ao mínimo disponível; não corta o fim (evita range invertido)
         p_ini_ln = max(p_ini_ln, data_min_ln)
-        p_fim_ln = min(p_fim_ln, data_max_ln)
+        # p_fim_ln não é clampeado para data_max_ln: o filtro retorna só o que existe
 
         st.markdown("**🔍 Filtros**")
         todos_prest_ln = sorted([x for x in df_raw_ln["PRESTADOR"].unique() if pd.notna(x) and str(x).strip()])
