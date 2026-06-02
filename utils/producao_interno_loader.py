@@ -45,6 +45,16 @@ def _achar_coluna(colunas, *termos) -> str | None:
 
 _TEXTO_VAZIO = {"", "NAN", "NONE", "N/A", "NA", "NAT", "-", "--"}
 
+# ── GGTTEX_JOGOS: mapeamento de tamanhos reconhecidos na coluna DESCRIÇÃO ──
+# Para costureiras (SETOR starts with "COSTURA"), DESCRIÇÃO = tamanho costurado.
+# Para MESA, DESCRIÇÃO = atividade (DOBRA E EMPAPELA, FRONHA DOBRADA, etc.).
+_TAMANHOS_JOGO_NORM: dict[str, str] = {
+    "CASAL": "CASAL", "CS": "CASAL",
+    "SOLTEIRO": "SOLTEIRO", "ST": "SOLTEIRO", "SOL": "SOLTEIRO",
+    "QUEEN": "QUEEN", "QE": "QUEEN",
+    "KING": "KING", "KG": "KING",
+}
+
 
 def _limpar_texto(serie: pd.Series) -> pd.Series:
     """Strip + transforma valores 'vazios' (nan/none/-/...) em string vazia ''."""
@@ -100,7 +110,9 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
         col_qtd   = _achar_coluna(cols, "TOTAL PRODUZIDO", "TOTAL CONFERIDO", "TOTAL")
         col_setor = _achar_coluna(cols, "SETOR")
         col_func  = _achar_coluna(cols, "FUNCAO")          # "FUNÇÃO" → normaliza p/ FUNCAO
-        col_prod  = _achar_coluna(cols, "PRODUTO", "DESCRICAO")
+        # DESCRICAO tem prioridade sobre PRODUTO para evitar colunas como
+        # "RETORNO PRODUTO MANUFATURADO..." que contêm "PRODUTO" mas não são o campo certo.
+        col_prod  = _achar_coluna(cols, "DESCRICAO") or _achar_coluna(cols, "PRODUTO")
         col_cli   = _achar_coluna(cols, "CLIENTE") or _achar_coluna(cols, "EMPRESA")
 
         if not col_colab or not col_qtd or not col_data:
@@ -113,7 +125,15 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
 
         out = pd.DataFrame()
         out["DATA"]        = raw[col_data]
-        out["COLABORADOR"] = raw[col_colab].astype(str).str.strip()
+        # Canonicaliza o nome: colapsa espaços internos + strip + UPPER.
+        # Resolve duplicatas visuais como "LUÊNIA" vs "LUêNIA" (acento em caixa
+        # diferente) e "MARIA  EDUARDA" vs "MARIA EDUARDA" (espaço duplo).
+        out["COLABORADOR"] = (
+            raw[col_colab].astype(str)
+            .str.replace(r"\s+", " ", regex=True)
+            .str.strip()
+            .str.upper()
+        )
         out["QUANTIDADE"]  = _limpar_qtd(raw[col_qtd])
         out["SETOR"]       = _limpar_texto(raw[col_setor]) if col_setor else ""
         if col_func:
@@ -146,6 +166,28 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
                     f"(≠ {_ano_dom}) descartada(s): {_descartadas[:8]}"
                 )
                 out = out[~_bad].reset_index(drop=True)
+
+        # ── GGTTEX_JOGOS: extrair FUNCAO e TAMANHO de SETOR + DESCRIÇÃO ───────
+        # SETOR identifica o tipo de trabalho (COSTURA RETA, COSTURA GALONEIRA,
+        # COSTURA CANTO, MESA). DESCRIÇÃO contém o tamanho (CASAL/SOLTEIRO/QUEEN)
+        # para costureiras e a atividade (DOBRA E EMPAPELA, FRONHA DOBRADA…) para
+        # a MESA. Separamos os dois para permitir análises independentes.
+        if chave == "GGTTEX_JOGOS" and "SETOR" in out.columns and "PRODUTO" in out.columns:
+            _setor_u = out["SETOR"].astype(str).str.strip().str.upper()
+            _descr_u = out["PRODUTO"].astype(str).str.strip().str.upper()
+            _is_costura = _setor_u.str.startswith("COSTURA")
+            # Função: costureiras → tipo de costura (SETOR); MESA → atividade (DESCRIÇÃO)
+            out["FUNCAO"] = _setor_u.where(_is_costura, _descr_u).fillna("")
+            # Tamanho: só para costureiras, quando DESCRIÇÃO é tamanho reconhecido
+            out["TAMANHO"] = (
+                _descr_u.map(lambda v: _TAMANHOS_JOGO_NORM.get(v, ""))
+                .where(_is_costura, "")
+                .fillna("")
+            )
+            logger.info(
+                f"{chave}: FUNCAO extraída — "
+                f"{out['FUNCAO'].value_counts().head(6).to_dict()}"
+            )
 
         logger.info(f"✓ {chave}: {len(out)} linhas válidas")
         return out

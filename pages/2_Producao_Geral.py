@@ -2071,6 +2071,56 @@ def _render_interno_tab(chave: str, cfg: dict):
                             xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
         st.plotly_chart(fig_s, use_container_width=True)
 
+        # ── Setor como Função: Mix Setor × Colaborador ───────────────────────────
+        # Só quando a unidade NÃO tem coluna de função dedicada (ex.: Littex) e há
+        # mais de um setor — aqui o SETOR faz o papel de "função" do colaborador.
+        if "FUNCAO" not in dff.columns and setor["SETOR"].nunique() >= 2:
+            st.markdown('<p class="section-title">🧩 Mix Setor × Colaborador</p>',
+                        unsafe_allow_html=True)
+            st.caption("Cada colaborador e os setores em que atuou no período "
+                       "(o setor funciona como a função da pessoa).")
+            colabs_foco_s = (
+                [c for c in sel if c in setor["COLABORADOR"].unique()]
+                if sel else
+                setor.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                .sort_values(ascending=False).head(15).index.tolist()
+            )
+            mix_s = setor[setor["COLABORADOR"].isin(colabs_foco_s)]
+            if not mix_s.empty:
+                mix_s_agg = (mix_s.groupby(["COLABORADOR", "SETOR"])["QUANTIDADE"]
+                             .sum().reset_index())
+                ordem_s = (mix_s_agg.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                           .sort_values(ascending=True).index.tolist())
+                fig_ms = px.bar(mix_s_agg, x="QUANTIDADE", y="COLABORADOR", color="SETOR",
+                                orientation="h", barmode="stack",
+                                category_orders={"COLABORADOR": ordem_s})
+                fig_ms.update_layout(height=max(280, len(ordem_s) * 38),
+                                     margin=dict(l=0, r=30, t=10, b=0),
+                                     xaxis_title="Quantidade", yaxis_title="",
+                                     legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                                 xanchor="right", x=1, title="Setor"),
+                                     **DARK_LAYOUT)
+                st.plotly_chart(fig_ms, use_container_width=True)
+
+                # Versatilidade: nº de setores + setor principal por colaborador
+                st.markdown('<p class="section-title">⭐ Setor Principal por Colaborador</p>',
+                            unsafe_allow_html=True)
+                idx_princ_s = mix_s_agg.groupby("COLABORADOR")["QUANTIDADE"].idxmax()
+                principal_s = (mix_s_agg.loc[idx_princ_s, ["COLABORADOR", "SETOR"]]
+                               .set_index("COLABORADOR")["SETOR"])
+                vers_s = (mix_s.groupby("COLABORADOR")
+                          .agg(**{"Nº de Setores": ("SETOR", "nunique"),
+                                  "Total": ("QUANTIDADE", "sum")})
+                          .reset_index())
+                vers_s["Setor Principal"] = vers_s["COLABORADOR"].map(principal_s)
+                vers_s = vers_s.sort_values("Total", ascending=False)
+                vers_s = vers_s.rename(columns={"COLABORADOR": "Colaborador"})
+                vers_s["Total"] = vers_s["Total"].map(lambda x: f"{x:,.0f}".replace(",", "."))
+                st.dataframe(
+                    vers_s[["Colaborador", "Setor Principal", "Nº de Setores", "Total"]],
+                    use_container_width=True, hide_index=True,
+                )
+
     # ── Análise por Função (apenas se a unidade tiver coluna de função) ──────────
     if "FUNCAO" in dff.columns:
         func = escopo[escopo["FUNCAO"].astype(str).str.strip() != ""]
@@ -2136,6 +2186,69 @@ def _render_interno_tab(chave: str, cfg: dict):
                     vers[["Colaborador", "Nº de Funções", "Função Principal", "Total"]],
                     use_container_width=True, hide_index=True,
                 )
+
+    # ── Análise por Tamanho (apenas se a unidade tiver TAMANHO preenchido) ──────
+    if "TAMANHO" in dff.columns and escopo["TAMANHO"].astype(str).str.strip().ne("").any():
+        tam = escopo[escopo["TAMANHO"].astype(str).str.strip() != ""].copy()
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<p class="section-title">📐 Produção por Tamanho (Costura)</p>',
+                    unsafe_allow_html=True)
+        st.caption("Registros das costureiras — tamanho informado na coluna DESCRIÇÃO da planilha.")
+
+        agg_t = (tam.groupby("TAMANHO")["QUANTIDADE"].sum()
+                 .sort_values(ascending=True).reset_index())
+        _TAM_CORES = {"CASAL": "#4ECDC4", "SOLTEIRO": "#45B7D1",
+                      "QUEEN": "#96CEB4", "KING": "#FFEAA7"}
+        fig_t = px.bar(agg_t, x="QUANTIDADE", y="TAMANHO", orientation="h",
+                       text="QUANTIDADE",
+                       color="TAMANHO", color_discrete_map=_TAM_CORES)
+        fig_t.update_traces(texttemplate="%{text:,.0f}", textposition="outside",
+                            textfont=dict(color="#CBD5E0"))
+        fig_t.update_layout(height=max(220, len(agg_t) * 50), showlegend=False,
+                            margin=dict(l=0, r=80, t=10, b=0),
+                            xaxis_title="Quantidade", yaxis_title="", **DARK_LAYOUT)
+        st.plotly_chart(fig_t, use_container_width=True)
+
+        # Mix Tamanho × Costureira
+        costureiras_foco = (
+            [c for c in sel if c in tam["COLABORADOR"].unique()]
+            if sel else
+            tam.groupby("COLABORADOR")["QUANTIDADE"].sum()
+            .sort_values(ascending=False).head(12).index.tolist()
+        )
+        mix_t = tam[tam["COLABORADOR"].isin(costureiras_foco)]
+        if not mix_t.empty:
+            st.markdown('<p class="section-title">🧵 Mix Tamanho × Costureira</p>',
+                        unsafe_allow_html=True)
+            mix_t_agg = (mix_t.groupby(["COLABORADOR", "TAMANHO"])["QUANTIDADE"]
+                         .sum().reset_index())
+            ordem_t = (mix_t_agg.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                       .sort_values(ascending=True).index.tolist())
+            fig_mt = px.bar(mix_t_agg, x="QUANTIDADE", y="COLABORADOR", color="TAMANHO",
+                            orientation="h", barmode="stack",
+                            category_orders={"COLABORADOR": ordem_t},
+                            color_discrete_map=_TAM_CORES)
+            fig_mt.update_layout(height=max(280, len(ordem_t) * 44),
+                                 margin=dict(l=0, r=30, t=10, b=0),
+                                 xaxis_title="Quantidade", yaxis_title="",
+                                 legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                             xanchor="right", x=1, title="Tamanho"),
+                                 **DARK_LAYOUT)
+            st.plotly_chart(fig_mt, use_container_width=True)
+
+            # Tabela pivot: Costureira × Tamanho
+            st.markdown('<p class="section-title">📋 Resumo Costureira × Tamanho</p>',
+                        unsafe_allow_html=True)
+            pivot_t = (mix_t_agg
+                       .pivot(index="COLABORADOR", columns="TAMANHO", values="QUANTIDADE")
+                       .fillna(0).astype(int))
+            pivot_t["Total"] = pivot_t.sum(axis=1)
+            pivot_t = pivot_t.sort_values("Total", ascending=False).reset_index()
+            pivot_t.columns.name = None
+            for _col in pivot_t.columns[1:]:
+                pivot_t[_col] = pivot_t[_col].map(lambda x: f"{x:,.0f}".replace(",", "."))
+            st.dataframe(pivot_t.rename(columns={"COLABORADOR": "Costureira"}),
+                         use_container_width=True, hide_index=True)
 
     # ── Produção por Cliente (quando houver) ─────────────────────────────────────
     if "CLIENTE" in dff.columns and escopo["CLIENTE"].astype(str).str.strip().ne("").any():

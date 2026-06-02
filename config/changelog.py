@@ -6,6 +6,53 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "02/06/2026",
+        "tag": "correção",
+        "title": "Colaboradores Internos: nomes duplicados por acento/espaço unificados",
+        "description": (
+            "Nomes de colaboradores que apareciam duplicados por diferença de caixa no acento "
+            "(ex.: 'LUÊNIA' com Ê maiúsculo vs 'LUêNIA' com ê minúsculo) ou por espaços duplos "
+            "agora são canonicalizados no carregamento (colapsa espaços + UPPER). Isso unifica "
+            "a produção da pessoa num único registro em todos os gráficos e rankings das 4 "
+            "unidades internas (Littex, Jogo, Fronha, Cortina)."
+        ),
+    },
+    {
+        "date": "02/06/2026",
+        "tag": "novo",
+        "title": "Littex (Colaboradores Internos): análise Setor × Colaborador (setor como função)",
+        "description": (
+            "Nas unidades sem coluna de função dedicada (Littex e Cortina), o SETOR passa a "
+            "funcionar como a 'função' do colaborador. A seção '🏭 Produção por Setor' ganhou "
+            "duas análises novas: '🧩 Mix Setor × Colaborador' (barras empilhadas mostrando os "
+            "setores em que cada colaborador atuou) e '⭐ Setor Principal por Colaborador' "
+            "(tabela com setor principal, nº de setores e total por colaborador). Aparece apenas "
+            "quando a unidade tem 2+ setores e não possui coluna de função própria — assim "
+            "Jogo e Fronha, que já têm o mix por função, não duplicam a análise."
+        ),
+    },
+    {
+        "date": "02/06/2026",
+        "tag": "novo",
+        "title": "Jogo (Colaboradores Internos): análise por Função e Tamanho separados",
+        "description": (
+            "A coluna DESCRIÇÃO da planilha GGTTEX Jogos continha a função misturada ao "
+            "tamanho costurado. A extração agora separa os dois: para costureiras (SETOR = "
+            "COSTURA RETA / GALONEIRA / CANTO), FUNCAO = tipo de costura e TAMANHO = tamanho "
+            "da peça (CASAL, SOLTEIRO, QUEEN, KING); para a MESA, FUNCAO = atividade "
+            "(DOBRA E EMPAPELA, DOBRA FUNDO, CASEADO, EMBALAGEM, etc.) e TAMANHO fica vazio. "
+            "O dashboard 'Por Colaborador → GGTTEX Jogos' ganhou três novas seções: "
+            "'📐 Produção por Tamanho (Costura)' com gráfico de barras por tamanho, "
+            "'🧵 Mix Tamanho × Costureira' com barras empilhadas e "
+            "'📋 Resumo Costureira × Tamanho' com tabela pivot. "
+            "A análise por Função já existente agora exibe os tipos reais (COSTURA RETA, "
+            "COSTURA GALONEIRA, COSTURA CANTO, DOBRA E EMPAPELA, etc.) em vez dos tamanhos. "
+            "Corrigido também bug de detecção de coluna: 'RETORNO PRODUTO MANUFATURADO...' "
+            "era identificada erroneamente como coluna de produto; agora DESCRIÇÃO tem "
+            "prioridade na busca."
+        ),
+    },
+    {
         "date": "01/06/2026",
         "tag": "melhoria",
         "title": "Lençol: tabela de OPs enriquecida com Jogo Duplo, Fundo, Diferença e status de caseamento",

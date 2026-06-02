@@ -2912,11 +2912,14 @@ elif screen == 'arealva_lencol':
             _ops_diverg_ln = int((_casea_ln["DIFERENCA"] != 0).sum()) if not _casea_ln.empty else 0
             _ops_total_casea = _casea_ln["OP"].nunique() if not _casea_ln.empty else 0
 
+            # Jogos duplos de OPs que NÃO tiveram fundo no período = ficam fora do caseamento
+            _jogos_sem_par = total_sem_fundo_ln - _jogo_em_op_fundo
+
             cj1, cj2, cj3, cj4 = st.columns(4)
-            cj1.metric("🧩 Jogos Duplos", lencol_fmt_num(total_jogos_duplo_ln),
-                       help="Total de jogos duplos no período (todas as OPs).")
-            cj2.metric("🔄 Fundos", lencol_fmt_num(total_fundos_ln),
-                       help="Total de fundos de jogo cortados no período.")
+            cj1.metric("🧩 Jogos Duplos", lencol_fmt_num(_jogo_em_op_fundo),
+                       help="Jogos duplos das OPs que tiveram fundo (universo do caseamento).")
+            cj2.metric("🔄 Fundos", lencol_fmt_num(_fundo_em_op_fundo),
+                       help="Fundos de jogo cortados nas OPs que tiveram fundo.")
             cj3.metric("⚖️ Saldo de fundos (OPs c/ fundo)",
                        f"{'+' if _dif_liq_ln > 0 else ''}{lencol_fmt_num(_dif_liq_ln)}",
                        delta=("Caseado" if _dif_liq_ln == 0
@@ -2927,6 +2930,14 @@ elif screen == 'arealva_lencol':
                             "Negativo = faltam fundos; positivo = sobram.")
             cj4.metric("🚩 OPs divergentes", f"{_ops_diverg_ln}/{_ops_total_casea}",
                        help="OPs (com fundo) onde jogo e fundo não caseiam por tamanho.")
+
+            if _jogos_sem_par > 0:
+                st.info(
+                    f"ℹ️ **{lencol_fmt_num(_jogos_sem_par)} peças** são jogos duplos de OPs que **não tiveram "
+                    f"corte de fundo no período filtrado** — por isso ficam fora do caseamento acima. "
+                    f"O fundo dessas OPs pode ter sido cortado em outro período ou ainda não foi cortado.",
+                    icon=None,
+                )
 
             if not _casea_ln.empty:
                 _div_ln = _casea_ln[_casea_ln["DIFERENCA"] != 0]

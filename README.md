@@ -1,34 +1,33 @@
-# Dashboard Unificado
+# Central de Análise Zanattex
 
-Aplicação Streamlit que centraliza os três dashboards da operação em uma única
-interface multipágina, com página inicial (Home) e navegação por setor.
+Aplicação **Streamlit** que centraliza os dados operacionais e comerciais da Zanattex
+e do Grupo Giattex em uma única interface multipágina, com página inicial (Home) e
+navegação por setor. Os dados vêm direto do **Google Sheets** (exportação CSV), sem
+banco de dados intermediário.
 
-## Setores integrados
+> 📖 Documentação completa do projeto no **GUIA.md** (local — contém dados sensíveis,
+> fora do versionamento) · padrões da camada de dados em **[PADROES.md](PADROES.md)**.
 
-- **📦 Produtos Faturados** — Análise comercial e faturamento
-- **🏭 Produção Geral** — Acompanhamento multi-empresas
-- **✂️ Controle de Corte** — Mantas, estações e desempenho
+## Dashboards integrados
 
-> Cada dashboard foi preservado **exatamente** como o original. A unificação
-> apenas adiciona a Home e organiza os dashboards como páginas do Streamlit.
+- **📦 Produtos Faturados** — Análise comercial e faturamento *(admin)*
+- **🏭 Produção** — Por empresa + por colaborador (interno: Littex, Jogo, Fronha, Cortina)
+- **✂️ Controle de Corte** — Manta Arealva, Iacanga e Lençol (com caseamento Jogo × Fundo e relatórios PDF)
+- **🗂️ Programação de Corte** — Planejado × realizado por OP
+- **🎯 Plano de Metas** — Metas × produção real e previsão de custos
 
 ## Estrutura
 
 ```
-DashboardUnificado/
-├── app.py                          # Página inicial (Home)
-├── config.py                       # Configurações do dashboard de Corte
-├── gid_detector.py                 # Utilitário do dashboard de Corte
-├── planilha_producao.xlsx          # Fallback local (Produção Geral)
-├── requirements.txt
-├── README.md
-├── Abrir Dashboard.bat             # Atalho Windows
-├── .streamlit/
-│   └── config.toml                 # Tema unificado
-└── pages/
-    ├── 1_📦_Produtos_Faturados.py
-    ├── 2_🏭_Producao_Geral.py
-    └── 3_✂️_Controle_de_Corte.py
+app.py                          # Página inicial (Home)
+config/                         # Configurações: settings, sectors, changelog
+pages/                          # Dashboards (1, 2, 3, 4, 7)
+components/                     # Hero, KPIs, cards, sidebar, eficiência de corte
+utils/                          # Loaders, cache, parser de datas, normalização, PDF
+styles/                         # CSS da Home e temas
+scripts/                        # Script de e-mail (relatório diário de corte)
+data/                           # Fallback local (planilha_producao.xlsx)
+GUIA.md  ·  PADROES.md          # Documentação
 ```
 
 ## Como executar
@@ -36,11 +35,11 @@ DashboardUnificado/
 1. Crie e ative um ambiente virtual (recomendado):
 
    ```bash
-   python -m venv .venv
+   python -m venv venv
    # Windows
-   .venv\Scripts\activate
+   venv\Scripts\activate
    # Linux/Mac
-   source .venv/bin/activate
+   source venv/bin/activate
    ```
 
 2. Instale as dependências:
@@ -55,26 +54,25 @@ DashboardUnificado/
    streamlit run app.py
    ```
 
-4. O navegador abrirá em `http://localhost:8501`. Use o menu lateral
-   esquerdo ou os cards da Home para navegar entre os setores.
+4. O navegador abrirá em `http://localhost:8501`. Use o menu lateral esquerdo ou os
+   cards da Home para navegar entre os setores.
 
-## Paleta de cores
+> No Windows há também o atalho **`Abrir Dashboard.bat`**.
 
-A Home utiliza um tema escuro elegante que harmoniza com os três dashboards:
+## Acesso
 
-- Fundo profundo `#0E1117` (base Produção Geral)
-- Destaque turquesa `#4ECDC4` (Produção Geral)
-- Azul marinho `#1D3557` (Faturados)
-- Coral `#E76F51` e dourado `#F4A261` (Faturados)
-- Azul claro `#45B7D1` (Corte)
+O acesso é controlado por senha digitada na Home, em dois níveis:
 
-Cada dashboard mantém **sua própria paleta interna** (light/dark) — apenas a
-Home foi estilizada para servir como hub.
+- **Usuário** — todos os dashboards, exceto Faturamento
+- **Admin** — acesso total
+
+As senhas ficam em `config/settings.py`. Veja o `GUIA.md` (documentação local) para
+detalhes de autenticação, configuração de planilhas, metas e cache.
 
 ## Observações
 
-- As páginas usam `st.set_page_config` e seu próprio CSS — Streamlit suporta
-  isso em apps multipage.
-- Os dashboards continuam consumindo dados diretamente do Google Sheets.
-- `planilha_producao.xlsx` serve como fallback local para o dashboard de
-  Produção Geral.
+- Cada dashboard usa `st.set_page_config` e seu próprio CSS — suportado em apps multipage.
+- Os dashboards consumem dados diretamente do Google Sheets (as planilhas precisam estar
+  com compartilhamento público para o download via CSV funcionar).
+- `data/planilha_producao.xlsx` serve como fallback local para o dashboard de Produção.
+- O botão **🔄 Limpar Cache** nas sidebars força a atualização imediata dos dados.

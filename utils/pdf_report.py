@@ -108,6 +108,12 @@ def _estilos():
         fontName='Helvetica-Oblique', fontSize=8,
         textColor=C_GRAY_TEXT, spaceAfter=4,
     )
+    estilos['destaque'] = ParagraphStyle(
+        'destaque', parent=base['Normal'],
+        fontName='Helvetica-Bold', fontSize=9,
+        textColor=colors.HexColor('#1A5276'), spaceAfter=4,
+        leftIndent=8, borderPad=4,
+    )
     estilos['tabela_header'] = ParagraphStyle(
         'tabela_header', parent=base['Normal'],
         fontName='Helvetica-Bold', fontSize=8,
@@ -1298,6 +1304,12 @@ def gerar_pdf_lencol(
         total_sem_fundo = total_pecas
         total_jogos_duplo = 0
 
+    # Jogos duplos somente das OPs que tiveram fundo (= universo do caseamento)
+    _jogo_em_op_fundo_pdf = (int(caseamento_df['JOGO'].sum())
+                             if caseamento_df is not None and not caseamento_df.empty else 0)
+    # Diferença: jogos duplos de OPs SEM fundo no período (ficam fora do caseamento)
+    _jogos_sem_par_pdf = max(0, total_sem_fundo - _jogo_em_op_fundo_pdf)
+
     dias_trab = df['DATA'].dt.date.nunique()
     media_diaria = total_sem_fundo / max(dias_trab, 1)
     n_prest = df['PRESTADOR'].nunique() if 'PRESTADOR' in df.columns else 0
@@ -1316,14 +1328,14 @@ def gerar_pdf_lencol(
 
     _label_pecas = '🧵 Peças (s/ fundo)' if total_fundos > 0 else '🧵 Total de Peças'
     kpis = [
-        {'label': _label_pecas, 'valor': _fmt(total_sem_fundo), 'cor': C_TEAL_LT},
-        {'label': '🔄 Fundos de Jogo', 'valor': _fmt(total_fundos), 'cor': C_AMBER_LT},
-        {'label': '💰 Total a Pagar/Pago', 'valor': f'R$ {_fmt(total_valor, 2)}', 'cor': C_GREEN_LT},
-        {'label': '📆 Dias Trabalhados', 'valor': str(dias_trab), 'cor': C_GRAY_BG},
-        {'label': '📈 Média Diária', 'valor': f'{_fmt(media_diaria, 0)} pç/dia', 'cor': C_GRAY_BG},
-        {'label': '👷 Prestadores', 'valor': str(n_prest), 'cor': C_GRAY_BG},
-        {'label': '🏭 Empresas', 'valor': str(n_emp), 'cor': C_GRAY_BG},
-        {'label': '💲 Ticket Médio', 'valor': f'R$ {_fmt(ticket_medio, 4)}', 'cor': C_GRAY_BG},
+        {'label': _label_pecas,             'valor': _fmt(total_sem_fundo),            'cor': C_TEAL_LT},
+        {'label': '🧩 Jogos Duplos (c/ fundo)', 'valor': _fmt(_jogo_em_op_fundo_pdf),  'cor': C_TEAL_LT},
+        {'label': '🔄 Fundos de Jogo',      'valor': _fmt(total_fundos),               'cor': C_AMBER_LT},
+        {'label': '💰 Total a Pagar/Pago',  'valor': f'R$ {_fmt(total_valor, 2)}',     'cor': C_GREEN_LT},
+        {'label': '📆 Dias Trabalhados',    'valor': str(dias_trab),                   'cor': C_GRAY_BG},
+        {'label': '📈 Média Diária',        'valor': f'{_fmt(media_diaria, 0)} pç/dia','cor': C_GRAY_BG},
+        {'label': '👷 Prestadores',         'valor': str(n_prest),                     'cor': C_GRAY_BG},
+        {'label': '🏭 Empresas',            'valor': str(n_emp),                       'cor': C_GRAY_BG},
     ]
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.4*cm))
@@ -1360,12 +1372,19 @@ def gerar_pdf_lencol(
         resumo_cas += f'  ({_n_div} par(es) divergente(s), {_n_ok} caseado(s)).'
         story.append(Paragraph(resumo_cas, e['corpo']))
         story.append(Paragraph(
-            f'<i>Observação: este caseamento cobre apenas os jogos duplos das OPs que tiveram '
-            f'fundo. O KPI "Peças (s/ fundo)" ({_fmt(total_sem_fundo)}) é mais amplo — inclui '
-            f'também jogos simples e outros produtos (fronha, lençol avulso), por isso é maior '
-            f'que os {_fmt(_jogo_tot)} jogos duplos mostrados aqui.</i>',
+            f'<i>Observação: este caseamento cobre apenas as OPs que tiveram corte de fundo '
+            f'({_fmt(_jogo_tot)} jogos duplos). OPs em que só o jogo foi cortado no período '
+            f'ficam fora para evitar falsos alarmes.</i>',
             e['nota'],
         ))
+        if _jogos_sem_par_pdf > 0:
+            story.append(Spacer(1, 0.15*cm))
+            story.append(Paragraph(
+                f'<b>ℹ  {_fmt(_jogos_sem_par_pdf)} peças fora do caseamento</b> — são jogos '
+                f'duplos de OPs que <b>não tiveram corte de fundo neste período</b>. O fundo '
+                f'dessas OPs pode ter sido cortado em outro período ou ainda não foi realizado.',
+                e['destaque'] if 'destaque' in e else e['corpo'],
+            ))
         story.append(Spacer(1, 0.2*cm))
 
         # Tabela de divergências (ou todos se poucos)
