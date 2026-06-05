@@ -542,7 +542,7 @@ def canonical_column_names(columns: list[str]) -> dict[str, str]:
     for original in columns:
         # Converter para string (caso seja NaN/float)
         original_str = str(original).strip() if pd.notna(original) else ""
-        key = normalize_text(original_str)
+        key = normalize_text(original_str).lower()
 
         if "data" in key and "emiss" in key:
             renamed[original] = "data_emissao"
