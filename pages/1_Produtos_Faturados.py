@@ -625,7 +625,7 @@ def load_data(sheet_url: str) -> pd.DataFrame:
 
     for col in required_cols:
         if col not in df.columns:
-            df[col] = np.nan
+            df[col] = None  # None cria dtype object; np.nan criaria float64 e quebraria .str
 
     # Criar colunas dinamicamente baseado no nome do produto
     df["grupo_produto"] = df["descricao_produto"].apply(categorize_product)
@@ -656,7 +656,7 @@ def load_data(sheet_url: str) -> pd.DataFrame:
     df["ano_mes"] = df["data_emissao"].dt.to_period("M").dt.to_timestamp()
     df["dia_semana"] = df["data_emissao"].dt.day_name()
 
-    cidade_estado = df["municipio"].fillna("-").str.rsplit("-", n=1, expand=True)
+    cidade_estado = df["municipio"].fillna("-").astype(str).str.rsplit("-", n=1, expand=True)
     if cidade_estado.shape[1] == 2:
         df["cidade"] = cidade_estado[0].str.strip()
         df["estado"] = cidade_estado[1].str.strip().str.upper()
