@@ -606,11 +606,6 @@ def load_data(sheet_url: str) -> pd.DataFrame:
     
     df = pd.read_csv(io.StringIO(csv_text), dtype=str)
     df = df.rename(columns=canonical_column_names(list(df.columns)))
-    
-    # Criar colunas dinamicamente baseado no nome do produto
-    df["grupo_produto"] = df["descricao_produto"].apply(categorize_product)
-    df["tamanho"] = df["descricao_produto"].apply(categorize_size)
-    df["cor"] = df["descricao_produto"].apply(categorize_color)
 
     required_cols = [
         "data_emissao",
@@ -631,6 +626,11 @@ def load_data(sheet_url: str) -> pd.DataFrame:
     for col in required_cols:
         if col not in df.columns:
             df[col] = np.nan
+
+    # Criar colunas dinamicamente baseado no nome do produto
+    df["grupo_produto"] = df["descricao_produto"].apply(categorize_product)
+    df["tamanho"] = df["descricao_produto"].apply(categorize_size)
+    df["cor"] = df["descricao_produto"].apply(categorize_color)
 
     for col in df.columns:
         if df[col].dtype == "object":
