@@ -542,7 +542,7 @@ def canonical_column_names(columns: list[str]) -> dict[str, str]:
     for original in columns:
         # Converter para string (caso seja NaN/float)
         original_str = str(original).strip() if pd.notna(original) else ""
-        key = normalize_text(original_str)
+        key = normalize_text(original_str).lower()
 
         if "data" in key and "emiss" in key:
             renamed[original] = "data_emissao"
@@ -606,11 +606,6 @@ def load_data(sheet_url: str) -> pd.DataFrame:
     
     df = pd.read_csv(io.StringIO(csv_text), dtype=str)
     df = df.rename(columns=canonical_column_names(list(df.columns)))
-    
-    # Criar colunas dinamicamente baseado no nome do produto
-    df["grupo_produto"] = df["descricao_produto"].apply(categorize_product)
-    df["tamanho"] = df["descricao_produto"].apply(categorize_size)
-    df["cor"] = df["descricao_produto"].apply(categorize_color)
 
     required_cols = [
         "data_emissao",
@@ -630,7 +625,12 @@ def load_data(sheet_url: str) -> pd.DataFrame:
 
     for col in required_cols:
         if col not in df.columns:
-            df[col] = np.nan
+            df[col] = None  # None cria dtype object; np.nan criaria float64 e quebraria .str
+
+    # Criar colunas dinamicamente baseado no nome do produto
+    df["grupo_produto"] = df["descricao_produto"].apply(categorize_product)
+    df["tamanho"] = df["descricao_produto"].apply(categorize_size)
+    df["cor"] = df["descricao_produto"].apply(categorize_color)
 
     for col in df.columns:
         if df[col].dtype == "object":
@@ -656,7 +656,7 @@ def load_data(sheet_url: str) -> pd.DataFrame:
     df["ano_mes"] = df["data_emissao"].dt.to_period("M").dt.to_timestamp()
     df["dia_semana"] = df["data_emissao"].dt.day_name()
 
-    cidade_estado = df["municipio"].fillna("-").str.rsplit("-", n=1, expand=True)
+    cidade_estado = df["municipio"].fillna("-").astype(str).str.rsplit("-", n=1, expand=True)
     if cidade_estado.shape[1] == 2:
         df["cidade"] = cidade_estado[0].str.strip()
         df["estado"] = cidade_estado[1].str.strip().str.upper()
