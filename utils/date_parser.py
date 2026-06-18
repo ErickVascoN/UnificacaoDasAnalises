@@ -36,13 +36,18 @@ def _only_date_part(value) -> str:
     return s.split(" ")[0].strip()
 
 
-def detectar_ordem(series: pd.Series) -> str:
+def detectar_ordem(series: pd.Series, default: str = "DMY") -> str:
     """
     Analisa a coluna e retorna 'DMY', 'MDY' ou 'ISO'.
 
     DMY  → dia primeiro  (DD/MM/YYYY)
     MDY  → mês primeiro  (MM/DD/YYYY)
     ISO  → ano primeiro  (YYYY-MM-DD)
+
+    Args:
+        default: ordem assumida quando todas as datas são ambíguas
+                 (ambos componentes ≤ 12). Use "MDY" para planilhas com
+                 locale US (ex: LITTEX, GGTTEX). Padrão "DMY" (brasileiro).
     """
     tem_iso = False
     primeiro_maior_12 = False  # força DMY
@@ -73,8 +78,8 @@ def detectar_ordem(series: pd.Series) -> str:
         return "DMY"
     if segundo_maior_12:
         return "MDY"
-    # Todos ambíguos → padrão brasileiro
-    return "DMY"
+    # Todos ambíguos → usa o default fornecido pelo chamador
+    return default
 
 
 def _parse_um(s: str, ordem: str) -> pd.Timestamp:
@@ -115,15 +120,19 @@ def _parse_um(s: str, ordem: str) -> pd.Timestamp:
         return pd.NaT
 
 
-def parse_date_series(series: pd.Series) -> pd.Series:
+def parse_date_series(series: pd.Series, default_order: str = "DMY") -> pd.Series:
     """
     Converte uma Series de datas (strings) em datetime, detectando o formato
     da coluna inteira primeiro. Use SEMPRE que carregar uma coluna de datas
     de planilha — garante consistência e evita inversão dia/mês.
+
+    Args:
+        default_order: ordem usada quando todas as datas são ambíguas.
+                       Passe "MDY" para planilhas com locale US (ex: LITTEX, GGTTEX).
     """
     if series is None or len(series) == 0:
         return pd.to_datetime(series, errors="coerce")
-    ordem = detectar_ordem(series)
+    ordem = detectar_ordem(series, default=default_order)
     limpa = series.map(_only_date_part)
     return limpa.map(lambda s: _parse_um(s, ordem))
 

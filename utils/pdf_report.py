@@ -805,8 +805,9 @@ def gerar_pdf_arealva_manta(
         buf_chart = _chart_producao_diaria(
             prod_diaria, meta_total,
             titulo=f'Produção Diária — Arealva Manta  |  Meta: {_fmt(meta_total)} pç/dia',
+            largura=17.0, altura=6.5,
         )
-        story.append(_imagem_de_buf(buf_chart, largura_cm=16.5))
+        story.append(_imagem_de_buf(buf_chart, largura_cm=17.0))
         story.append(Spacer(1, 0.5 * cm))
 
     # Tabela de produção diária
@@ -862,16 +863,16 @@ def gerar_pdf_arealva_manta(
         buf_cores = _chart_barras_h(
             prod_cor, 'COR', 'QUANTIDADE', 'Top 15 Cores Mais Cortadas', top_n=15,
         )
-        img_pizza = _imagem_de_buf(buf_pizza, largura_cm=8.0)
-        img_cores = _imagem_de_buf(buf_cores, largura_cm=8.0)
+        # Pizza centralizada
+        img_pizza = _imagem_de_buf(buf_pizza, largura_cm=11.0)
+        t_centro_p = Table([[img_pizza]], colWidths=[PAGE_W - 2 * MARGIN])
+        t_centro_p.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                                        ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
+        story.append(t_centro_p)
+        story.append(Spacer(1, 0.5 * cm))
 
-        t_imgs = Table([[img_pizza, img_cores]],
-                       colWidths=[(PAGE_W - 2 * MARGIN) / 2] * 2)
-        t_imgs.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ]))
-        story.append(t_imgs)
+        # Top cores em largura total
+        story.append(_imagem_de_buf(buf_cores, largura_cm=17.0))
         story.append(Spacer(1, 0.5 * cm))
 
     # Top 20 cores em tabela
@@ -1028,7 +1029,7 @@ def gerar_pdf_iacanga_manta(
     buf = io.BytesIO()
     doc = _RelatorioDoc(
         buf,
-        titulo_rel='✂  Relatório de Corte · Iacanga — Mantas Giattex',
+        titulo_rel='✂  Relatório de Corte · Iacanga Manta',
         subtitulo_rel='Controle de Produção — Manta (Giattex)',
         periodo=periodo_str,
         gerado_em=gerado_em,
@@ -1114,9 +1115,10 @@ def gerar_pdf_iacanga_manta(
     if not prod_diaria.empty:
         buf_chart = _chart_producao_diaria(
             prod_diaria, meta_total,
-            titulo=f'Produção Diária — Iacanga Mantas Giattex  |  Meta (ponderada): {_fmt(meta_total)} pç/dia',
+            titulo=f'Produção Diária — Iacanga Manta  |  Meta: {_fmt(meta_total)} pç/dia',
+            largura=17.0, altura=6.5,
         )
-        story.append(_imagem_de_buf(buf_chart, largura_cm=16.5))
+        story.append(_imagem_de_buf(buf_chart, largura_cm=17.0))
         story.append(Spacer(1, 0.4*cm))
 
     # Tabela diária
@@ -1165,7 +1167,7 @@ def gerar_pdf_iacanga_manta(
                 tam_validos.groupby('TAMANHO')['QUANTIDADE'].sum().reset_index(),
                 'TAMANHO', 'QUANTIDADE', 'Volume por Tamanho de Manta', top_n=10, cor='#D4860A',
             )
-            story.append(_imagem_de_buf(buf_tam, largura_cm=12))
+            story.append(_imagem_de_buf(buf_tam, largura_cm=17.0))
             story.append(Spacer(1, 0.4*cm))
 
             # Tabela est × tamanho
@@ -1442,40 +1444,42 @@ def gerar_pdf_lencol(
         story.append(_tabela_generica(cabec_pr, linhas_pr, e, cw_pr))
     story.append(PageBreak())
 
-    # ── Página 3: Gráficos ───────────────────────────────────────────────────
-    story.append(Paragraph('Análise Visual', e['titulo_secao']))
+    # ── Página 3: Produção Diária ────────────────────────────────────────────
+    story.append(Paragraph('Análise Visual — Produção Diária', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    # Gráfico produção diária
     if 'QUANT' in df.columns:
         prod_dia = df.groupby('DATA')['QUANT'].sum().reset_index().sort_values('DATA')
         prod_dia.columns = ['DATA', 'QUANTIDADE']
         buf_dia = _chart_producao_diaria(
             prod_dia, 0,
             titulo='Produção Diária — Lençol',
+            largura=17.0, altura=6.5,
         )
-        story.append(_imagem_de_buf(buf_dia, largura_cm=16.5))
-        story.append(Spacer(1, 0.4*cm))
+        story.append(_imagem_de_buf(buf_dia, largura_cm=17.0))
+    story.append(PageBreak())
 
-    # Gráficos: empresa + prestador
+    # ── Página 4: Distribuição — Prestadores e Empresas ──────────────────────
+    story.append(Paragraph('Análise Visual — Prestadores e Empresas', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
     if 'EMPRESA' in df.columns and 'PRESTADOR' in df.columns:
-        dist_emp = df.groupby('EMPRESA')['QUANT'].sum().reset_index()
-        buf_emp = _chart_pizza_estacao(dist_emp, 'EMPRESA', 'QUANT', 'Distribuição por Empresa')
-
+        # Gráfico prestadores (largura total)
         df_prest2 = df.groupby('PRESTADOR').agg(
             Peças=('QUANT', 'sum'), Valor=('VALOR_RECEBER', 'sum')
         ).reset_index()
         buf_prest = _chart_lencol_prestador_valor(df_prest2)
+        story.append(_imagem_de_buf(buf_prest, largura_cm=17.0))
+        story.append(Spacer(1, 0.6 * cm))
 
-        img_emp = _imagem_de_buf(buf_emp, largura_cm=7.0)
-        img_prest = _imagem_de_buf(buf_prest, largura_cm=9.0)
-        t_imgs = Table([[img_emp, img_prest]],
-                       colWidths=[7.5*cm, (PAGE_W - 2*MARGIN - 7.5*cm)])
-        t_imgs.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ]))
-        story.append(t_imgs)
+        # Pizza de empresas (centralizada, tamanho generoso)
+        dist_emp = df.groupby('EMPRESA')['QUANT'].sum().reset_index()
+        buf_emp = _chart_pizza_estacao(dist_emp, 'EMPRESA', 'QUANT', 'Distribuição por Empresa')
+        img_emp = _imagem_de_buf(buf_emp, largura_cm=11.0)
+        t_centro = Table([[img_emp]], colWidths=[PAGE_W - 2 * MARGIN])
+        t_centro.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                                      ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
+        story.append(t_centro)
     story.append(PageBreak())
 
     # ── Página 4: Categorias ─────────────────────────────────────────────────
@@ -1489,7 +1493,7 @@ def gerar_pdf_lencol(
         df_cat['%'] = (df_cat['QUANT'] / df_cat['QUANT'].sum() * 100).round(1)
 
         buf_cat = _chart_barras_h(df_cat, cat_col, 'QUANT', 'Peças por Categoria', top_n=12)
-        story.append(_imagem_de_buf(buf_cat, largura_cm=14))
+        story.append(_imagem_de_buf(buf_cat, largura_cm=17.0))
         story.append(Spacer(1, 0.4*cm))
 
         cabec_cat = ['Categoria', 'Peças', '% Total', 'Valor (R$)']
@@ -1745,13 +1749,24 @@ def gerar_pdf_producao_geral(
         n_facc = df['Faccao'].nunique() if 'Faccao' in df.columns else 0
         n_prod = df['Produto'].nunique() if 'Produto' in df.columns else 0
 
-        # Meta (se disponível)
+        # Meta/Dia = soma das metas apenas dos pares (Facção, Produto) com produção real.
+        # Ignora facções/produtos sem Quantidade > 0 para não inflar a meta.
         meta_col = 'Meta Diaria' if 'Meta Diaria' in df.columns else None
-        meta_e = 0
+        meta_e = 0.0
         if meta_col:
-            meta_vals = df[meta_col].dropna()
-            if not meta_vals.empty:
-                meta_e = meta_vals.mean()
+            _grp_m = [c for c in ['Faccao', 'Produto'] if c in df.columns]
+            _pares_ativos = (
+                df[df['Quantidade'].fillna(0) > 0][_grp_m].drop_duplicates()
+                if _grp_m else None
+            )
+            _sub_m = df[df[meta_col].fillna(0) > 0]
+            if _pares_ativos is not None and not _pares_ativos.empty:
+                _sub_m = _sub_m.merge(_pares_ativos, on=_grp_m, how='inner')
+            if not _sub_m.empty:
+                meta_e = float(
+                    _sub_m.groupby(_grp_m)[meta_col].mean().sum()
+                    if _grp_m else _sub_m[meta_col].mean()
+                )
         pct_meta = (media_e / meta_e * 100) if meta_e > 0 else 0
 
         resumo_rows.append({
@@ -1825,11 +1840,21 @@ def gerar_pdf_producao_geral(
         media_e = total_e / dias_e if dias_e > 0 else 0
 
         meta_col = 'Meta Diaria' if 'Meta Diaria' in df_emp.columns else None
-        meta_e = 0
+        meta_e = 0.0
         if meta_col:
-            meta_vals = df_emp[meta_col].dropna()
-            if not meta_vals.empty:
-                meta_e = float(meta_vals.mean())
+            _grp_e = [c for c in ['Faccao', 'Produto'] if c in df_emp.columns]
+            _pares_ativos_e = (
+                df_emp[df_emp['Quantidade'].fillna(0) > 0][_grp_e].drop_duplicates()
+                if _grp_e else None
+            )
+            _sub_e = df_emp[df_emp[meta_col].fillna(0) > 0]
+            if _pares_ativos_e is not None and not _pares_ativos_e.empty:
+                _sub_e = _sub_e.merge(_pares_ativos_e, on=_grp_e, how='inner')
+            if not _sub_e.empty:
+                meta_e = float(
+                    _sub_e.groupby(_grp_e)[meta_col].mean().sum()
+                    if _grp_e else _sub_e[meta_col].mean()
+                )
         meta_periodo_e = meta_e * dias_e if meta_e > 0 else 0
         pct_e = (media_e / meta_e * 100) if meta_e > 0 else 0
         saldo_e = total_e - meta_periodo_e if meta_periodo_e > 0 else 0
@@ -1905,3 +1930,682 @@ def gerar_pdf_producao_geral(
 
     doc.build(story)
     return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — PREVISÃO DE CARGAS
+# ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _chart_cargas_mensal(df_mes: pd.DataFrame) -> io.BytesIO:
+    """Barras agrupadas Previsão vs Realizado por mês + linha Aderência %."""
+    meses = df_mes['MES'].str[:3].tolist()
+    prev  = df_mes['PREVISAO'].tolist()
+    real  = df_mes['REALIZADO'].tolist()
+    adh   = df_mes['ADERENCIA'].tolist()
+    n     = len(meses)
+    x     = np.arange(n)
+    w     = 0.35
+
+    fig, ax1 = plt.subplots(figsize=(12, 5))
+    fig.patch.set_facecolor(MP_BG)
+    ax1.set_facecolor(MP_BG)
+
+    bars_p = ax1.bar(x - w / 2, prev, w, label='Previsão',  color='#2AA89A', alpha=0.85)
+    bars_r = ax1.bar(x + w / 2, real, w, label='Realizado', color='#45B7D1', alpha=0.85)
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, adh, color=MP_META, linewidth=2.5, marker='o', markersize=7,
+             label='Aderência %', zorder=5)
+    ax2.axhline(100, color=MP_META, linestyle='--', linewidth=1.2, alpha=0.5)
+    for xi, v in zip(x, adh):
+        if v > 0:
+            ax2.text(xi, v + 4, f"{v:.0f}%", ha='center', fontsize=7.5,
+                     color=MP_META, fontweight='bold')
+
+    max_v = max(max(prev, default=1), max(real, default=1))
+    for bar, v in zip(bars_p, prev):
+        if v > 0:
+            ax1.text(bar.get_x() + bar.get_width() / 2., v + max_v * 0.01,
+                     f"R$ {_fmt(int(v / 1000))}k", ha='center', va='bottom',
+                     fontsize=6, color=MP_TEXT, fontweight='bold')
+    for bar, v in zip(bars_r, real):
+        if v > 0:
+            ax1.text(bar.get_x() + bar.get_width() / 2., v + max_v * 0.01,
+                     f"R$ {_fmt(int(v / 1000))}k", ha='center', va='bottom',
+                     fontsize=6, color=MP_TEXT, fontweight='bold')
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(meses, fontsize=9, color=MP_TEXT)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda v, _: f"R$ {_fmt(int(v / 1000))}k"))
+    ax1.tick_params(colors=MP_TEXT)
+    ax1.set_ylabel('Valor (R$)', color=MP_TEXT, fontsize=9)
+    ax1.set_title('Previsão vs. Realizado por Mês', fontsize=12, fontweight='bold',
+                  color=MP_TEXT, pad=10)
+    ax1.grid(axis='y', color=MP_GRID, linewidth=0.7, alpha=0.8)
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['left'].set_color(MP_GRID)
+    ax1.spines['bottom'].set_color(MP_GRID)
+
+    ax2.set_ylabel('Aderência %', color=MP_META, fontsize=9)
+    ax2.set_ylim(0, 160)
+    ax2.tick_params(colors=MP_META)
+    ax2.spines['right'].set_color(MP_META)
+
+    lines1, labs1 = ax1.get_legend_handles_labels()
+    lines2, labs2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labs1 + labs2, fontsize=8, framealpha=0.9,
+               loc='upper left', edgecolor=MP_GRID)
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def _chart_cargas_destino(df_cargos: pd.DataFrame) -> io.BytesIO:
+    """Barras horizontais: top destinos por previsão."""
+    df_d = (
+        df_cargos[df_cargos['PREVISAO'] > 0]
+        .groupby('DESTINO_NORM')['PREVISAO'].sum()
+        .reset_index()
+        .sort_values('PREVISAO')
+        .tail(12)
+    )
+    n = len(df_d)
+    fig, ax = plt.subplots(figsize=(8, max(3.5, n * 0.4)))
+    fig.patch.set_facecolor(MP_BG)
+    ax.set_facecolor(MP_BG)
+
+    bars = ax.barh(range(n), df_d['PREVISAO'], color='#2AA89A', alpha=0.85, height=0.65)
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(df_d['DESTINO_NORM'].tolist(), fontsize=7.5, color=MP_TEXT)
+    max_v = df_d['PREVISAO'].max() if not df_d.empty else 1
+    for bar, v in zip(bars, df_d['PREVISAO']):
+        ax.text(v + max_v * 0.01, bar.get_y() + bar.get_height() / 2.,
+                f"R$ {_fmt(int(v / 1000))}k", va='center', fontsize=7,
+                color=MP_TEXT, fontweight='bold')
+    ax.set_title('Previsão de Faturamento por Destino', fontsize=11, fontweight='bold',
+                 color=MP_TEXT, pad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda v, _: f"R$ {_fmt(int(v / 1000))}k"))
+    ax.tick_params(colors=MP_TEXT, labelsize=7.5)
+    ax.grid(axis='x', color=MP_GRID, linewidth=0.7, alpha=0.8)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(MP_GRID)
+    ax.spines['bottom'].set_color(MP_GRID)
+    ax.set_xlim(right=max_v * 1.18)
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def gerar_pdf_previsao_cargas(
+    df_cargos: pd.DataFrame,
+    df_realizados: pd.DataFrame,
+    df_mes: pd.DataFrame,
+    total_prev: float,
+    total_real: float,
+    diferenca_g: float,
+    aderencia_g: float,
+    n_canceladas: int,
+    n_adiadas: int,
+    n_clientes: int,
+    sel_meses: list,
+) -> bytes:
+    """
+    Gera o relatório PDF de Previsão de Cargas.
+
+    Parameters
+    ----------
+    df_cargos     : registros de carga (STATUS != CARGO_REAL), já filtrados
+    df_realizados : registros CARGO_REAL por mês
+    df_mes        : resumo mensal (MES, MES_NUM, PREVISAO, REALIZADO, ADERENCIA, DIFERENCA)
+    total_prev    : previsão total global
+    total_real    : realizado total global
+    diferenca_g   : realizado - previsão
+    aderencia_g   : aderência % (só meses com realizado > 0)
+    n_canceladas  : qtd. canceladas
+    n_adiadas     : qtd. adiadas
+    n_clientes    : destinos únicos
+    sel_meses     : lista de meses selecionados
+    """
+    def _r(v: float) -> str:
+        return f"R$ {_fmt(int(v))}"
+
+    e = _estilos()
+    meses_str   = ', '.join(sel_meses) if sel_meses else 'Todos'
+    gerado_em   = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel='🚛  Relatório de Previsão de Cargas',
+        subtitulo_rel='Análise Logística · Previsão vs. Realizado',
+        periodo=meses_str,
+        gerado_em=gerado_em,
+    )
+
+    story = []
+    story.append(PageBreak())  # capa
+
+    # ── Resumo Executivo ─────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    adh_bg = C_GREEN_LT if aderencia_g >= 95 else (C_AMBER_LT if aderencia_g >= 80 else C_RED_LT)
+    dif_bg = C_GREEN_LT if diferenca_g >= 0 else C_RED_LT
+    ocorr  = n_canceladas + n_adiadas
+    kpis = [
+        {'label': '💰 Previsão Total',     'valor': _r(total_prev),        'cor': C_TEAL_LT},
+        {'label': '✅ Realizado Total',    'valor': _r(total_real),         'cor': C_TEAL_LT},
+        {'label': '⚖️  Diferença',         'valor': _r(abs(diferenca_g)),   'cor': dif_bg},
+        {'label': '🎯 Aderência',          'valor': f'{aderencia_g:.1f}%',  'cor': adh_bg},
+        {'label': '🚚 Destinos Ativos',    'valor': str(n_clientes),        'cor': C_GRAY_BG},
+        {'label': '🚩 Cancel. + Adiadas', 'valor': str(ocorr),             'cor': C_RED_LT if ocorr > 0 else C_GRAY_BG},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=3))
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Tabela por mês ───────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo por Mês', e['subtitulo_secao']))
+    cabec_mes = ['Mês', 'Previsão (R$)', 'Realizado (R$)', 'Diferença (R$)', 'Aderência %']
+    linhas_mes = []
+    for _, row in df_mes.iterrows():
+        prev_v = float(row['PREVISAO'])
+        real_v = float(row['REALIZADO'])
+        dif_v  = float(row['DIFERENCA'])
+        adh_v  = float(row['ADERENCIA'])
+        dif_s  = ('+' if dif_v >= 0 else '') + _r(abs(dif_v))
+        real_s = _r(real_v) if real_v > 0 else '—'
+        dif_s  = dif_s if real_v > 0 else '—'
+        adh_s  = f'{adh_v:.1f}%' if real_v > 0 else '—'
+        linhas_mes.append([row['MES'], _r(prev_v), real_s, dif_s, adh_s])
+
+    cw_mes = [3.0 * cm, 3.5 * cm, 3.5 * cm, 3.5 * cm, 3.0 * cm]
+    t_mes = _tabela_generica(cabec_mes, linhas_mes, e, cw_mes)
+    for ri, row in enumerate(df_mes.itertuples(), start=1):
+        adh_v  = float(row.ADERENCIA)
+        real_v = float(row.REALIZADO)
+        if real_v > 0:
+            cor_a = C_GREEN if adh_v >= 95 else (C_AMBER if adh_v >= 80 else C_RED)
+            t_mes.setStyle(TableStyle([
+                ('TEXTCOLOR', (4, ri), (4, ri), cor_a),
+                ('FONTNAME',  (4, ri), (4, ri), 'Helvetica-Bold'),
+            ]))
+    story.append(t_mes)
+    story.append(PageBreak())
+
+    # ── Gráfico Previsão vs Realizado ────────────────────────────────────────
+    story.append(Paragraph('Análise Gráfica', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    try:
+        buf_grafico = _chart_cargas_mensal(df_mes)
+        story.append(_imagem_de_buf(buf_grafico, largura_cm=16.0))
+        story.append(Spacer(1, 0.5 * cm))
+    except Exception as ex_g:
+        logger.warning(f'Chart cargas mensal: {ex_g}')
+
+    try:
+        buf_dest = _chart_cargas_destino(df_cargos)
+        story.append(_imagem_de_buf(buf_dest, largura_cm=14.0))
+    except Exception as ex_d:
+        logger.warning(f'Chart cargas destino: {ex_d}')
+
+    story.append(PageBreak())
+
+    # ── Detalhe de Registros ─────────────────────────────────────────────────
+    story.append(Paragraph('Detalhe de Registros', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    df_det = df_cargos[df_cargos['PREVISAO'] > 0].copy() if not df_cargos.empty else df_cargos
+    cabec_det = ['Mês', 'Data', 'Destino', 'Origem', 'Cliente', 'Previsão (R$)', 'Status']
+    linhas_det = []
+    for row in df_det.itertuples():
+        data_s = pd.Timestamp(row.DATA).strftime('%d/%m/%Y') if pd.notna(row.DATA) else ''
+        linhas_det.append([
+            str(row.MES),
+            data_s,
+            str(row.DESTINO)[:25],
+            str(row.LOCAL),
+            str(row.CLIENTE)[:22],
+            _r(float(row.PREVISAO)),
+            str(row.STATUS),
+        ])
+
+    cw_det = [1.8*cm, 2.0*cm, 3.8*cm, 1.8*cm, 3.2*cm, 2.8*cm, 2.0*cm]
+    t_det = _tabela_generica(cabec_det, linhas_det[:200], e, cw_det)
+    for ri, row in enumerate(linhas_det[:200], start=1):
+        st = row[6]
+        if st == 'Cancelada':
+            t_det.setStyle(TableStyle([
+                ('TEXTCOLOR', (6, ri), (6, ri), C_RED),
+                ('FONTNAME',  (6, ri), (6, ri), 'Helvetica-Bold'),
+            ]))
+        elif st == 'Adiada':
+            t_det.setStyle(TableStyle([
+                ('TEXTCOLOR', (6, ri), (6, ri), C_AMBER),
+                ('FONTNAME',  (6, ri), (6, ri), 'Helvetica-Bold'),
+            ]))
+    story.append(t_det)
+    if len(linhas_det) > 200:
+        story.append(Paragraph(f'... e mais {len(linhas_det) - 200} registros.', e['nota']))
+
+    # ── Ocorrências (se houver) ──────────────────────────────────────────────
+    df_ocorr = df_cargos[df_cargos['STATUS'].isin(['Cancelada', 'Adiada'])].copy()
+    if not df_ocorr.empty:
+        story.append(PageBreak())
+        story.append(Paragraph('Ocorrências — Canceladas e Adiadas', e['titulo_secao']))
+        story.append(_linha_divisoria(cor=C_RED))
+
+        impacto = df_ocorr['PREVISAO'].sum()
+        aviso_html = (
+            f'<b>{len(df_ocorr)} ocorrência(s)</b> detectada(s) no período: '
+            f'<b>{n_canceladas} cancelada(s)</b> · <b>{n_adiadas} adiada(s)</b>. '
+            f'Impacto estimado na previsão: <b>{_r(impacto)}</b>.'
+        )
+        story.append(Paragraph(aviso_html, e['destaque']))
+        story.append(Spacer(1, 0.3 * cm))
+
+        cabec_oc = ['Mês', 'Data', 'Destino', 'Cliente', 'Previsão (R$)', 'Status', 'Obs']
+        linhas_oc = []
+        for row in df_ocorr.itertuples():
+            data_s = pd.Timestamp(row.DATA).strftime('%d/%m/%Y') if pd.notna(row.DATA) else ''
+            linhas_oc.append([
+                str(row.MES), data_s, str(row.DESTINO)[:28],
+                str(row.CLIENTE)[:22], _r(float(row.PREVISAO)),
+                str(row.STATUS), str(row.OBS)[:30],
+            ])
+        cw_oc = [1.8*cm, 2.0*cm, 3.5*cm, 3.0*cm, 2.5*cm, 2.0*cm, 2.5*cm]
+        t_oc = _tabela_generica(cabec_oc, linhas_oc, e, cw_oc, cor_header=C_RED)
+        for ri, row in enumerate(linhas_oc, start=1):
+            cor_st = C_RED if row[5] == 'Cancelada' else C_AMBER
+            t_oc.setStyle(TableStyle([
+                ('TEXTCOLOR', (5, ri), (5, ri), cor_st),
+                ('FONTNAME',  (5, ri), (5, ri), 'Helvetica-Bold'),
+            ]))
+        story.append(t_oc)
+
+    # ── Conclusão ────────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph('Conclusão do Período', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    status_str = ('ADERÊNCIA ATINGIDA ✔' if aderencia_g >= 95
+                  else ('PRÓXIMO DA META ⚠' if aderencia_g >= 80 else 'ABAIXO DA META ✘'))
+    cor_status = C_GREEN if aderencia_g >= 95 else (C_AMBER if aderencia_g >= 80 else C_RED)
+
+    meses_com_real = int(df_mes[df_mes['REALIZADO'] > 0].shape[0])
+    conclusao_html = (
+        f'No período de <b>{meses_str}</b>, a previsão total de cargas foi de '
+        f'<b>{_r(total_prev)}</b>, com realizado de <b>{_r(total_real)}</b> '
+        f'nos <b>{meses_com_real} mês(es) com faturamento lançado</b>. '
+        f'A aderência global (realizado / previsto) nos meses concluídos foi de '
+        f'<b>{aderencia_g:.1f}%</b>. '
+        f'Foram atendidos <b>{n_clientes} destinos/clientes</b> com '
+        f'<b>{n_canceladas + n_adiadas} ocorrência(s)</b> de cancelamento ou adiamento.'
+    )
+    story.append(Paragraph(conclusao_html, e['corpo']))
+    story.append(Spacer(1, 0.5 * cm))
+
+    status_p = ParagraphStyle(
+        'status_c', parent=e['corpo'],
+        fontName='Helvetica-Bold', fontSize=13,
+        textColor=cor_status, alignment=TA_CENTER,
+        spaceBefore=12, spaceAfter=12,
+    )
+    story.append(Paragraph(f'STATUS: {status_str}', status_p))
+    story.append(_linha_divisoria(cor=cor_status, espessura=2))
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
+        f'Previsão de Cargas  ·  {gerado_em}',
+        ParagraphStyle('ass_c', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — CARTEIRA DE PEDIDOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _chart_carteira_mensal(df_mes: pd.DataFrame) -> io.BytesIO:
+    """Barras de valor mensal + linha acumulada para Carteira de Pedidos."""
+    meses = df_mes['MES_LABEL'].tolist()
+    vals  = df_mes['VALOR'].tolist()
+    acum  = df_mes['ACUMULADO'].tolist()
+    n     = len(meses)
+
+    fig, ax1 = plt.subplots(figsize=(13, 5))
+    fig.patch.set_facecolor(MP_BG)
+    ax1.set_facecolor(MP_BG)
+
+    bars = ax1.bar(range(n), vals, color='#2AA89A', alpha=0.85, width=0.65, zorder=3)
+
+    ax2 = ax1.twinx()
+    ax2.plot(range(n), acum, color='#7C3AED', linewidth=2.5,
+             marker='o', markersize=6, zorder=5)
+
+    max_v = max(vals, default=1)
+    for bar, v in zip(bars, vals):
+        if v > 0 and n <= 20:
+            ax1.text(bar.get_x() + bar.get_width() / 2., v + max_v * 0.012,
+                     f"R$ {_fmt(int(v / 1000))}k", ha='center', va='bottom',
+                     fontsize=6, color=MP_TEXT, fontweight='bold')
+
+    ax1.set_xticks(range(n))
+    ax1.set_xticklabels(meses, rotation=45, ha='right', fontsize=7.5, color=MP_TEXT)
+    ax1.set_title('Evolução Mensal da Carteira de Pedidos', fontsize=12,
+                  fontweight='bold', color=MP_TEXT, pad=10)
+    ax1.set_ylabel('Valor Mensal (R$)', fontsize=9, color=MP_TEXT)
+    ax1.tick_params(colors=MP_TEXT)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda v, _: f"R$ {_fmt(int(v / 1000))}k"))
+    ax1.grid(axis='y', color=MP_GRID, linewidth=0.7, alpha=0.8, zorder=1)
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['left'].set_color(MP_GRID)
+    ax1.spines['bottom'].set_color(MP_GRID)
+
+    ax2.set_ylabel('Acumulado (R$)', color='#7C3AED', fontsize=9)
+    ax2.tick_params(colors='#7C3AED')
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(
+        lambda v, _: f"R$ {_fmt(int(v / 1000))}k"))
+    ax2.spines['right'].set_color('#7C3AED')
+
+    patch_bar  = mpatches.Patch(color='#2AA89A', alpha=0.85, label='Valor Mensal')
+    patch_acum = mpatches.Patch(color='#7C3AED', label='Acumulado')
+    ax1.legend(handles=[patch_bar, patch_acum], fontsize=8,
+               framealpha=0.9, edgecolor=MP_GRID, loc='upper left')
+
+    plt.tight_layout()
+    buf_c = io.BytesIO()
+    fig.savefig(buf_c, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf_c.seek(0)
+    return buf_c
+
+
+def _chart_carteira_pizza_categoria(df_cat: pd.DataFrame) -> io.BytesIO:
+    """Pizza por categoria para Carteira de Pedidos."""
+    paleta = ['#2AA89A', '#D4860A', '#45B7D1', '#38BDF8', '#7C3AED',
+              '#1E8449', '#F472B6', '#CB4335', '#5D6D7E']
+    labels = df_cat['CATEGORIA'].tolist()
+    values = df_cat['VALOR_TOTAL'].tolist()
+    total  = sum(values) or 1
+
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    fig.patch.set_facecolor(MP_BG)
+
+    wedges, _, autotexts = ax.pie(
+        values, labels=None,
+        autopct=lambda p: f'{p:.1f}%' if p > 3 else '',
+        colors=paleta[:len(labels)], startangle=90,
+        wedgeprops=dict(edgecolor='white', linewidth=2),
+        pctdistance=0.75,
+    )
+    for at in autotexts:
+        at.set_fontsize(8); at.set_color('white'); at.set_fontweight('bold')
+
+    legend_labels = [
+        f'{l}: R$ {_fmt(int(v / 1000))}k ({v / total * 100:.1f}%)'
+        for l, v in zip(labels, values)
+    ]
+    ax.legend(wedges, legend_labels, loc='center left',
+              bbox_to_anchor=(1.02, 0.5), fontsize=7.5,
+              framealpha=0.9, edgecolor=MP_GRID)
+    ax.set_title('Distribuição por Categoria', fontsize=11, fontweight='bold',
+                 color=MP_TEXT, pad=10)
+
+    plt.tight_layout()
+    buf_c = io.BytesIO()
+    fig.savefig(buf_c, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf_c.seek(0)
+    return buf_c
+
+
+def gerar_pdf_carteira_pedidos(
+    df: pd.DataFrame,
+    total_valor: float,
+    total_pecas: int,
+    n_pedidos: int,
+    n_clientes: int,
+    n_produtos: int,
+    ticket_medio: float,
+    periodo: str = '',
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Gera o relatório PDF de Carteira de Pedidos.
+
+    Parameters
+    ----------
+    df            : DataFrame filtrado (ANO_MES, MES_LABEL, CATEGORIA,
+                    CLIENTE_CURTO, DESCRICAO, PEDIDO, QUANTIDADE, VALOR_TOTAL)
+    total_valor   : soma de VALOR_TOTAL
+    total_pecas   : soma de QUANTIDADE
+    n_pedidos     : pedidos únicos
+    n_clientes    : clientes únicos
+    n_produtos    : produtos únicos (COD_PROD)
+    ticket_medio  : valor médio por pedido
+    periodo       : string do período selecionado
+    filtros_texto : filtros ativos em texto
+    """
+    _MESES_ABR = {1:"Jan",2:"Fev",3:"Mar",4:"Abr",5:"Mai",6:"Jun",
+                  7:"Jul",8:"Ago",9:"Set",10:"Out",11:"Nov",12:"Dez"}
+
+    def _r(v: float) -> str:
+        return f"R$ {_fmt(int(v))}"
+
+    def _rk(v: float) -> str:
+        if abs(v) >= 1_000_000:
+            return f"R$ {v / 1_000_000:.1f}M"
+        if abs(v) >= 1_000:
+            return f"R$ {_fmt(int(v / 1000))}k"
+        return _r(v)
+
+    e = _estilos()
+    gerado_em   = datetime.now().strftime('%d/%m/%Y  %H:%M')
+    periodo_str = periodo or datetime.now().strftime('%m/%Y')
+
+    # ── Dados agregados ───────────────────────────────────────────────────────
+    df_mes = (
+        df.groupby('ANO_MES')
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'),
+             PEDIDOS=('PEDIDO', 'nunique'))
+        .reset_index().sort_values('ANO_MES')
+    )
+    df_mes['MES_LABEL'] = df_mes['ANO_MES'].apply(
+        lambda s: f"{_MESES_ABR[int(s.split('-')[1])]}/{s.split('-')[0][2:]}"
+    )
+    df_mes['ACUMULADO'] = df_mes['VALOR'].cumsum()
+
+    df_cat = (
+        df.groupby('CATEGORIA')['VALOR_TOTAL'].sum()
+        .reset_index().sort_values('VALOR_TOTAL', ascending=False)
+    )
+    df_cat_det = (
+        df.groupby('CATEGORIA')
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
+        .reset_index().sort_values('VALOR', ascending=False)
+    )
+    df_cli = (
+        df.groupby('CLIENTE_CURTO')
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'),
+             PEDIDOS=('PEDIDO', 'nunique'))
+        .reset_index().sort_values('VALOR', ascending=False)
+    )
+    df_prod = (
+        df.groupby('DESCRICAO')
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
+        .reset_index().sort_values('VALOR', ascending=False)
+    )
+
+    # ── Documento ─────────────────────────────────────────────────────────────
+    buf_pdf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf_pdf,
+        titulo_rel='📦  Carteira de Pedidos',
+        subtitulo_rel='Análise Comercial · Pedidos em Aberto',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = []
+    story.append(PageBreak())
+
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    kpis = [
+        {'label': '💰 Valor Total',     'valor': _rk(total_valor),  'cor': C_TEAL_LT},
+        {'label': '📦 Total de Peças',  'valor': _fmt(total_pecas),  'cor': C_TEAL_LT},
+        {'label': '🛒 Pedidos Únicos',  'valor': _fmt(n_pedidos),    'cor': C_AMBER_LT},
+        {'label': '🏢 Clientes Ativos', 'valor': str(n_clientes),    'cor': C_AMBER_LT},
+        {'label': '🎁 Ticket Médio',    'valor': _rk(ticket_medio),  'cor': C_GREEN_LT},
+        {'label': '🏷 SKUs',            'valor': _fmt(n_produtos),   'cor': C_GRAY_BG},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=3))
+    story.append(Spacer(1, 0.7 * cm))
+
+    # ── Tabela categorias ─────────────────────────────────────────────────────
+    story.append(Paragraph('Distribuição por Categoria', e['subtitulo_secao']))
+    linhas_cat = [
+        [row['CATEGORIA'], _r(row['VALOR']),
+         f"{row['VALOR'] / total_valor * 100:.1f}%" if total_valor > 0 else '—',
+         _fmt(row['PECAS'])]
+        for _, row in df_cat_det.iterrows()
+    ]
+    cw_cat = [5.5 * cm, 4.0 * cm, 3.0 * cm, 3.0 * cm]
+    story.append(_tabela_generica(
+        ['Categoria', 'Valor Total (R$)', '% Carteira', 'Peças'],
+        linhas_cat, e, cw_cat,
+    ))
+
+    # ── Detalhamento de OUTROS ────────────────────────────────────────────────
+    df_outros = (
+        df[df['CATEGORIA'] == 'OUTROS']
+        .groupby('DESCRICAO')
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
+        .reset_index()
+        .sort_values('VALOR', ascending=False)
+    )
+    if not df_outros.empty:
+        story.append(Spacer(1, 0.4 * cm))
+        story.append(Paragraph(
+            'Composição de "Outros" — produtos não classificados nas categorias acima:',
+            e['nota'],
+        ))
+        linhas_outros = [
+            [row['DESCRICAO'][:55], _r(row['VALOR']),
+             f"{row['VALOR'] / total_valor * 100:.2f}%", _fmt(row['PECAS'])]
+            for _, row in df_outros.iterrows()
+        ]
+        cw_out = [8.5 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm]
+        story.append(_tabela_generica(
+            ['Produto', 'Valor (R$)', '% Carteira', 'Peças'],
+            linhas_outros, e, cw_out,
+            cor_header=C_GRAY_TEXT,
+        ))
+
+    story.append(PageBreak())
+
+    # ── Gráficos: evolução + pizza ────────────────────────────────────────────
+    story.append(Paragraph('Análise Gráfica', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    try:
+        story.append(_imagem_de_buf(_chart_carteira_mensal(df_mes), largura_cm=16.5))
+        story.append(Spacer(1, 0.5 * cm))
+    except Exception as ex:
+        logger.warning(f'Chart carteira mensal: {ex}')
+
+    story.append(Paragraph('Distribuição por Categoria', e['subtitulo_secao']))
+    try:
+        story.append(_imagem_de_buf(
+            _chart_carteira_pizza_categoria(df_cat), largura_cm=14.0))
+    except Exception as ex:
+        logger.warning(f'Chart carteira pizza: {ex}')
+
+    story.append(PageBreak())
+
+    # ── Gráficos: clientes + produtos ─────────────────────────────────────────
+    story.append(Paragraph('Análise por Cliente e Produto', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    try:
+        story.append(_imagem_de_buf(
+            _chart_barras_h(df_cli, 'CLIENTE_CURTO', 'VALOR',
+                            'Top Clientes — Valor Total (R$)', top_n=10, cor='#45B7D1'),
+            largura_cm=16.5,
+        ))
+        story.append(Spacer(1, 0.5 * cm))
+    except Exception as ex:
+        logger.warning(f'Chart carteira clientes: {ex}')
+
+    try:
+        story.append(_imagem_de_buf(
+            _chart_barras_h(df_prod, 'DESCRICAO', 'VALOR',
+                            'Top 15 Produtos — Valor Total (R$)', top_n=15, cor='#2AA89A'),
+            largura_cm=16.5,
+        ))
+    except Exception as ex:
+        logger.warning(f'Chart carteira produtos: {ex}')
+
+    story.append(PageBreak())
+
+    # ── Tabela por cliente ────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo por Cliente', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    df_cli['PCT']    = (df_cli['VALOR'] / total_valor * 100).round(1) if total_valor > 0 else 0
+    df_cli['TICKET'] = (df_cli['VALOR'] / df_cli['PEDIDOS']).fillna(0).round(0)
+    linhas_cli = [
+        [row['CLIENTE_CURTO'][:30], _fmt(row['PEDIDOS']), _fmt(row['PECAS']),
+         _r(row['VALOR']), _r(row['TICKET']), f"{row['PCT']:.1f}%"]
+        for _, row in df_cli.head(30).iterrows()
+    ]
+    cw_cli = [4.5 * cm, 2.0 * cm, 2.5 * cm, 3.5 * cm, 3.5 * cm, 2.5 * cm]
+    story.append(_tabela_generica(
+        ['Cliente', 'Pedidos', 'Peças', 'Valor Total (R$)', 'Ticket Médio (R$)', '% Carteira'],
+        linhas_cli, e, cw_cli,
+    ))
+
+    # ── Conclusão ─────────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph('Conclusão', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    top_cat     = df_cat_det.iloc[0]['CATEGORIA'] if not df_cat_det.empty else 'N/D'
+    top_cli     = df_cli.iloc[0]['CLIENTE_CURTO'] if not df_cli.empty else 'N/D'
+    top_pct_cat = (df_cat_det.iloc[0]['VALOR'] / total_valor * 100
+                   if not df_cat_det.empty and total_valor > 0 else 0)
+
+    conclusao_html = (
+        f'A carteira de pedidos no período <b>{periodo_str}</b> totaliza '
+        f'<b>{_rk(total_valor)}</b> em <b>{_fmt(n_pedidos)} pedidos</b>, '
+        f'representando <b>{_fmt(total_pecas)} peças</b> para <b>{n_clientes} clientes</b>. '
+        f'O ticket médio por pedido é de <b>{_rk(ticket_medio)}</b>. '
+        f'A categoria predominante é <b>{top_cat}</b> ({top_pct_cat:.1f}% do valor total) '
+        f'e o cliente com maior volume é <b>{top_cli}</b>.'
+    )
+    story.append(Paragraph(conclusao_html, e['corpo']))
+    story.append(Spacer(1, 1.2 * cm))
+    story.append(Paragraph(
+        f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
+        f'Carteira de Pedidos  ·  {gerado_em}',
+        ParagraphStyle('ass_cp', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf_pdf.getvalue()

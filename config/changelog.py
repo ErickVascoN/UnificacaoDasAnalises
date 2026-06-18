@@ -6,6 +6,399 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "17/06/2026",
+        "tag": "novo",
+        "title": "Relatório PDF — Carteira de Pedidos",
+        "description": (
+            "Botão 'Gerar Relatório PDF' adicionado ao dashboard de Carteira de Pedidos. "
+            "O relatório segue o mesmo padrão ReportLab dos outros dashboards: capa navy, "
+            "cabeçalho/rodapé com paginação. Conteúdo: KPIs executivos (valor total, peças, "
+            "pedidos, clientes, ticket médio, SKUs), tabela por categoria, gráfico de evolução "
+            "mensal com linha acumulada (barras verdes + linha roxa), pizza de categorias, "
+            "ranking de clientes e top 15 produtos (barras horizontais), tabela resumo por "
+            "cliente e conclusão automática do período."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "melhoria",
+        "title": "Carteira de Pedidos — linha acumulada no gráfico mensal",
+        "description": (
+            "Adicionada linha de valor acumulado (roxa pontilhada) ao gráfico de evolução "
+            "mensal da Carteira de Pedidos. A linha cresce até o total do KPI, deixando "
+            "claro que a carteira completa é a soma de todos os meses, não apenas o mês corrente."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "novo",
+        "title": "Dashboard Carteira de Pedidos (página 9)",
+        "description": (
+            "Novo dashboard 'Carteira de Pedidos' alimentado pela planilha do Google Sheets. "
+            "KPIs: Valor Total, Total Peças, Pedidos Únicos, Clientes Ativos, Ticket Médio, Produtos Únicos. "
+            "Gráficos: evolução mensal (barras + linha de peças), pizza por categoria, "
+            "valor por cliente, valor por estado, composição cliente×categoria (stacked), "
+            "volume+valor por tamanho (CASAL/QUEEN/KING…), evolução por categoria (area), "
+            "mapa de calor cliente×mês, top 15 produtos. "
+            "Filtros: ano, mês, cliente, categoria, tamanho, estado. "
+            "Tabelas: resumo por cliente e detalhe de itens com busca livre."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "melhoria",
+        "title": "PDFs de Corte — gráficos maiores e sem espremido lado a lado",
+        "description": (
+            "Nos relatórios PDF de Lençol, Arealva e Iacanga, os gráficos de distribuição "
+            "(pizza de empresas e barras de prestadores/cores/tamanhos) estavam espremidos "
+            "lado a lado ocupando meia página cada. Agora cada gráfico ocupa largura total "
+            "(17 cm), com a pizza centralizada e os demais em linha única. "
+            "Gráficos de produção diária também aumentados (largura 17 cm, altura 6,5)."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "novo",
+        "title": "Previsão de Cargas — botão Gerar Relatório PDF",
+        "description": (
+            "Adicionado botão '📄 Gerar Relatório PDF' no dashboard de Previsão de Cargas. "
+            "Gera PDF real via ReportLab (mesmo padrão dos relatórios de corte): capa navy, "
+            "KPIs (Previsão, Realizado, Diferença, Aderência, Destinos, Ocorrências), "
+            "tabela de resumo por mês com aderência % colorida, gráficos matplotlib "
+            "(Previsão vs Realizado por mês + top destinos), tabela detalhada de registros, "
+            "página de ocorrências (se houver canceladas/adiadas) e conclusão com status global."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "correção",
+        "title": "PDF Produção Geral — Meta/Dia considera apenas facções com produção real",
+        "description": (
+            "A Meta/Dia no relatório PDF estava inflada porque incluía pares (Facção, Produto) "
+            "com meta definida mas sem produção alguma no período. "
+            "Agora filtra apenas os pares com Quantidade > 0 antes de somar as metas — "
+            "assim a meta reflete só as facções que efetivamente estavam ativas. "
+            "Aplicado nas duas seções do PDF: tabela 'Desempenho por Empresa' e KPIs individuais."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "correção",
+        "title": "PDF Produção Geral — Meta/Dia corrigida para soma de todas as facções",
+        "description": (
+            "No relatório PDF da Produção Geral, a coluna 'Meta/Dia' exibia a média de uma "
+            "linha só em vez da soma das metas de todas as facções da empresa. "
+            "Agora calcula: para cada par (Facção, Produto) único, toma a meta diária média "
+            "e soma tudo — refletindo o target real total da empresa por dia. "
+            "Corrigido nas duas seções do PDF: tabela 'Desempenho por Empresa' e KPIs individuais."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "novo",
+        "title": "Produção Facções e Controladoria — botão Gerar Relatório PDF",
+        "description": (
+            "Adicionado botão '📄 Gerar Relatório PDF' em dois dashboards: "
+            "(1) Produção Facções — aba Mensal: KPIs do mês (produção, meta, %, ritmo) "
+            "e tabela de progresso por produto/empresa com % da meta colorida. "
+            "(2) Controladoria Programação de Corte: KPIs (OPs, concluídas, parciais, "
+            "pendentes, aderência, peças) e tabela resumo por OP com eficiência e status. "
+            "Ambos baixam HTML formatado para impressão (Ctrl+P → Salvar como PDF)."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas — Aderência calculada só sobre meses concluídos",
+        "description": (
+            "O KPI de Aderência Global agora considera apenas os meses que possuem "
+            "REALIZADO > 0. Antes, meses futuros ou sem dados consolidados (ex.: MAIO e JUNHO) "
+            "entravam no denominador, puxando o percentual para baixo artificialmente. "
+            "Previsão Total e Realizado Total continuam mostrando todos os meses."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "novo",
+        "title": "Corte Itaju — botão Gerar Relatório PDF",
+        "description": (
+            "Adicionado botão '📄 Gerar Relatório PDF' na tela do Corte Itaju. "
+            "Ao clicar, baixa um arquivo HTML com KPIs, tabela de caseamento (Cima × Fundo × Fronha) "
+            "e detalhe por OP — formatado com CSS para impressão. "
+            "Basta abrir no navegador e usar Ctrl+P → Salvar como PDF."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas — PREVISTO incluindo Canceladas e célula mesclada JUNHO",
+        "description": (
+            "Filtro de status no sidebar agora inclui todas as categorias por padrão (Normal, Adiada, Cancelada). "
+            "Antes, Canceladas eram excluídas da seleção padrão, causando PREVISTO menor que o da planilha. "
+            "Corrigida também a detecção de cargos em células mescladas no JUNHO: "
+            "linhas sem data/destino mas com valor na col[6] e seguidas por uma linha com data "
+            "agora herdam a data/destino do cargo anterior. JUNHO PREVISTO: R$2.510.000 ✓."
+        ),
+    },
+    {
+        "date": "17/06/2026",
+        "tag": "melhoria",
+        "title": "Previsão de Cargas — renomeação de títulos (frete → faturamento)",
+        "description": (
+            "Títulos e rótulos do dashboard de Previsão de Cargas atualizados: "
+            "'frete' substituído por 'faturamento' em todos os títulos de gráficos. "
+            "Gráfico de destinos renomeado para 'Previsão por Cliente - Meses Concluídos'. "
+            "Nomes internos de funções (ex.: _first_frete) não foram alterados."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas — PREVISTO e REALIZADO corrigidos",
+        "description": (
+            "Corrigida a lógica de cálculo do PREVISTO e REALIZADO mensais. "
+            "PREVISTO agora é calculado somando os fretes individuais de cada cargo (valores diários), "
+            "com detecção dinâmica da coluna do frete (col[6] para a maioria dos meses, col[7] para JANEIRO). "
+            "REALIZADO passa a usar o valor de resumo oficial da planilha: linha 'GERAL' para JANEIRO "
+            "(col[11]=3.377.274) e maior valor não-redondo >R$1M em cols 8-14 para os demais meses "
+            "(FEVEREIRO=3.365.242, MARÇO=3.972.017, ABRIL=3.283.794). MAIO e JUNHO mostram 0 pois "
+            "os dados ainda não foram consolidados na planilha."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "novo",
+        "title": "Dashboard de Previsão de Cargas",
+        "description": (
+            "Novo dashboard analítico de logística com dados de JANEIRO a JUNHO/2026. "
+            "Inclui KPIs globais (previsão, realizado, aderência %), previsão vs. realizado "
+            "por mês e por destino, aderência por cliente, evolução semanal, análise de frota, "
+            "timeline de cargas, análise de cancelamentos/adiamentos, heatmap por dia da semana "
+            "e tabela detalhada com busca. Dados lidos diretamente do Google Sheets em tempo real."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "novo",
+        "title": "Dashboard Itaju — Corte Ponto Palito Marcelino",
+        "description": (
+            "Novo dashboard completo para a unidade de Itaju (Corte Ponto Palito Marcelino). "
+            "Inclui filtros de período e OP/Estação/Cor/Tamanho na sidebar, KPIs globais "
+            "(Cima, Fundo, Fronha, dias, OPs), caseamento CIMA × FUNDO × FRONHA com tabela "
+            "de divergências, gráficos de produção diária/por tamanho/por cor e tabela de "
+            "detalhe por OP com saldo e status de caseamento."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "novo",
+        "title": "Facções: integração Litex (Enfardamento)",
+        "description": (
+            "Dados de produção da Litex adicionados à Análise de Facções. A planilha de "
+            "enfardamento usa colunas diferentes (EMPRESA, TOTAL DE PEÇAS) — integrado via "
+            "col_map na configuração sem impactar as demais abas. Alias de produtos de "
+            "lençol (LENCOL QE/ST/CS/KING → LENCOL AVULSO) também adicionados."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "melhoria",
+        "title": "Facções: seletor de semana na aba Semanal",
+        "description": (
+            "A aba Semanal agora permite escolher qualquer semana disponível no histórico, "
+            "em vez de exibir sempre a semana atual. O seletor usa os dados reais "
+            "(segunda a sexta) e o 'ritmo' da semana corrente considera apenas os dias já passados."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "melhoria",
+        "title": "Controle de Corte: card Itaju na seleção de regiões",
+        "description": (
+            "Adicionado card de Itaju (Ponto Palito Marcelino) na tela de seleção de regiões "
+            "do Controle de Corte, ao lado de Arealva e Iacanga."
+        ),
+    },
+    {
+        "date": "16/06/2026",
+        "tag": "melhoria",
+        "title": "Produção Geral: card de Análise de Facções na seleção 'Por Cliente'",
+        "description": (
+            "Substituído o card de Relatório Semanal pelo card de Análise de Facções na "
+            "tela de seleção 'Por Cliente'. O card de Dashboard de Produção foi mantido. "
+            "A Análise de Facções foi removida da tela inicial pois já é acessível via "
+            "Análise de Produção."
+        ),
+    },
+    {
+        "date": "15/06/2026",
+        "tag": "novo",
+        "title": "Facções: nova aba 'Por Produto' e gráfico de burn-up",
+        "description": (
+            "Adicionada a aba 'Por Produto' com ranking de produção, mix (donut), "
+            "treemap produto→empresa, atingimento da meta por produto e evolução "
+            "diária dos principais produtos. A aba Mensal ganhou um gráfico de "
+            "acumulado vs meta (burn-up) para ver se o ritmo cobre a meta do mês."
+        ),
+    },
+    {
+        "date": "15/06/2026",
+        "tag": "melhoria",
+        "title": "Facções: equivalências de nomes de produto e cliente",
+        "description": (
+            "Produtos e clientes que aparecem com nomes diferentes mas são a mesma "
+            "coisa agora são unificados no cruzamento com metas: MANTA MÁGICA = "
+            "COBERTOR 180G (é 180g); NC INDÚSTRIA / NIAZI = NIAZITTEX; OUTLET "
+            "PRENSADO = MANTA PRENSADA; OUTLET C/CINTA = MANTA C/CINTA."
+        ),
+    },
+    {
+        "date": "15/06/2026",
+        "tag": "correção",
+        "title": "Facções: download por GID e quarterizados como facção",
+        "description": (
+            "As abas eram baixadas por nome via gviz (?sheet=), que devolvia a aba "
+            "errada quando a pedida estava vazia/oculta — produção dos quarterizados "
+            "aparecia trocada em PREVITTEX FILIAL. Agora cada aba é baixada pelo GID "
+            "(estável). Além disso, cada prestador da aba QUARTERIZADAS virou uma "
+            "facção própria, e GGTTEX foi separada em Rute e Cortina."
+        ),
+    },
+    {
+        "date": "15/06/2026",
+        "tag": "correção",
+        "title": "Facções: compatibilidade com pandas 3.0 (Styler.map)",
+        "description": (
+            "A página de Facções usava Styler.applymap, removido no pandas 3.0, "
+            "causando AttributeError ao abrir a aba Mensal. Trocado por Styler.map. "
+            "Também registrado o card 'Análise de Facções' na home (config/sectors.py) — "
+            "antes a página existia mas não aparecia no menu de cards."
+        ),
+    },
+    {
+        "date": "15/06/2026",
+        "tag": "novo",
+        "title": "Dashboard de Produção Facções Externas (página 5)",
+        "description": (
+            "Nova página 5_Producao_Faccoes.py com análise diária, semanal e mensal "
+            "da nova planilha de facções externas (Google Sheets com uma aba por facção). "
+            "Abas suportadas: QUARTERIZADAS, GGTTEX (RUTE), GGTTEX (CORTINA), ZANATTA, "
+            "PREVITTEX MATRIZ, PREVITTEX FILIAL, MEGA BARIRI, MEGA PREVEN. "
+            "Metas por (produto, cliente, facção) com meta diária calculada dinamicamente "
+            "(meta_mes / dias_úteis_do_mês). Tabela de progresso com coloração por % atingida. "
+            "Inclui: utils/faccao_loader.py e cache_manager.get_raw_sheet()."
+        ),
+    },
+    {
+        "date": "11/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: abreviações de tamanho reconhecidas no lençol (CS, ST, QE)",
+        "description": (
+            "A coluna CATEGORIA do lençol usa abreviações (CS=Casal, ST=Solteiro, QE=Queen) "
+            "em vez do nome completo. O matching ignorava essas abreviações e caía no "
+            "SequenceMatcher, que não distinguia bem CASAL de SOLTEIRO em JOGO SIMPLES. "
+            "Adicionado _TAM_ALIAS no _tokens_prod: CS→CASAL, ST→SOLTEIRO, QE→QUEEN, KG→KING."
+        ),
+    },
+    {
+        "date": "11/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: JOGO SIMPLES não somado com JOGO DE CAMA (DUPLO)",
+        "description": (
+            "Cortes de 'JOGO SIMPLES' (lençol + fronhas) do lençol estavam sendo atribuídos "
+            "às linhas de 'JOGO DE CAMA' (duplo) porque ambos têm token de tamanho. "
+            "Corrigido em três frentes: (1) MATERIAL do lençol concatena CATEGORIA + TECIDO/PRODUTO; "
+            "(2) palavras-bloqueio expandidas: FUNDO, SIMPLES, SIPLES (typo comum na planilha) "
+            "e LENCOL ('JOGO LENÇOL + FRONHAS' nunca aparece como 'JOGO DE CAMA' na programação). "
+            "Se qualquer uma dessas palavras está no corte mas não na programação → score 0."
+        ),
+    },
+    {
+        "date": "11/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: FUNDO não contabilizado no total de JOGO cortado",
+        "description": (
+            "O Giattex registra cortes de JOGO e FUNDO separadamente com a mesma OP. "
+            "Como ambos têm token de tamanho (SOLTEIRO/CASAL/QUEEN), o matching atribuía "
+            "os cortes de FUNDO às linhas de JOGO da programação, inflando o QNT_CORTADA. "
+            "Corrigido: no scoring do matching, se o material de corte contém 'FUNDO' mas "
+            "a linha da programação não contém, score = 0 — evitando a atribuição indevida."
+        ),
+    },
+    {
+        "date": "11/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: corte zerado para OPs que aparecem em múltiplas semanas",
+        "description": (
+            "OPs que existiam em SEMANA 22 e SEMANA 23 da programação eram contadas como "
+            "'múltiplos produtos' pelo groupby que usava apenas _CHAVE (sem SEMANA). "
+            "Isso acionava o algoritmo winner-takes-all, que atribuía todos os cortes à "
+            "linha da primeira semana — deixando a linha da semana atual com QNT_CORTADA=0. "
+            "Corrigido: n_linhas_op, _op_to_positions e _assignment agora usam a chave "
+            "(OP, SEMANA), tratando cada semana de forma independente. O groupby de "
+            "QNT_CORTADA_OP também foi ajustado para somar por (CHAVE, SEMANA)."
+        ),
+    },
+    {
+        "date": "11/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: matching multi-produto por token de tamanho e peças",
+        "description": (
+            "O matching anterior (SequenceMatcher sobre a string inteira) não diferenciava "
+            "corretamente CASAL, QUEEN e SOLTEIRO porque as descrições são quase idênticas — "
+            "a diferença de ratio entre o produto certo e os errados era < 5%, causando "
+            "todos ficarem 'Concluído'. Agora o algoritmo extrai tokens discriminantes de "
+            "cada texto: tamanho (CASAL/QUEEN/SOLTEIRO/KING) e número de peças (4P/3P). "
+            "Quando ambos os lados têm token de tamanho, o tamanho deve coincidir exatamente; "
+            "n° de peças dá um bônus extra. Cortes sem coincidência de tamanho recebem score 0 "
+            "e ficam 'Pendente'. Textos sem token de tamanho continuam usando similaridade geral. "
+            "Correção adicional: se o matching por token não encontrar nenhuma correspondência "
+            "(ex: TECIDO do lençol sem token de tamanho reconhecível), o OP não entra no "
+            "mapa de atribuição e cai no fallback de total da OP — evitando zeros indevidos."
+        ),
+    },
+    {
+        "date": "10/06/2026",
+        "tag": "correção",
+        "title": "Programação de Corte: status por produto quando a OP tem múltiplos itens",
+        "description": (
+            "Quando uma mesma OP tinha vários produtos programados (ex: CASAL, QUEEN e "
+            "SOLTEIRO na OP 60790), o dashboard somava as quantidades e comparava com o "
+            "total cortado — fazendo todos ficarem 'Parcial' mesmo que apenas um produto "
+            "tivesse sido cortado. Agora, OPs com múltiplos produtos usam matching por "
+            "similaridade de texto (DESCRIÇÃO DO PRODUTO × MATERIAL do corte) para "
+            "atribuir a quantidade cortada a cada linha individualmente. "
+            "OPs com apenas 1 produto mantêm o comportamento anterior."
+        ),
+    },
+    {
+        "date": "10/06/2026",
+        "tag": "correção",
+        "title": "Datas das planilhas internas: parsing MDY e exibição DD/MM/YYYY corrigidos",
+        "description": (
+            "Duas correções na aba Colaboradores Internos (LITTEX, GGTTEX Jogos, Fronha, Cortina): "
+            "1) As planilhas usam locale US (MM/DD/AA). Quando todos os dias do mês são ≤ 12, "
+            "o detector de formato não conseguia distinguir MDY de DMY e caía no padrão "
+            "brasileiro — invertendo dia e mês. Corrigido adicionando date_order='MDY' por "
+            "planilha em PRODUCAO_INTERNO_SHEETS e passando esse hint para parse_date_series. "
+            "2) Os filtros de data exibiam no formato YYYY/MM/DD (padrão Streamlit). "
+            "Corrigido adicionando format='DD/MM/YYYY' nos date_input de De/Até."
+        ),
+    },
+    {
+        "date": "05/06/2026",
+        "tag": "novo",
+        "title": "Relatório Semanal: aba 'Por Cliente' com análise de metas",
+        "description": (
+            "Adicionada aba '🏢 Por Cliente' no Relatório Semanal com comparativo "
+            "Meta Semana × Realizado para cada empresa (NC Industria, Burdays, Andreza, "
+            "Camesa, Decor, Sultan, Marcelino, Seven). Indicadores visuais 🟢🟡🔴 mostram "
+            "atingimento da meta. Fábricas sem dados ainda (Mega Bariri, Previttex, Mega Preven) "
+            "aparecem como 'Aguardando'. As metas foram extraídas da tabela de referência "
+            "semanal/mensal por produto e fábrica."
+        ),
+    },
+    {
         "date": "02/06/2026",
         "tag": "correção",
         "title": "Colaboradores Internos: nomes duplicados por acento/espaço unificados",

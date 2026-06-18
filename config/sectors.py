@@ -37,6 +37,23 @@ SECTORS_ANALISE = [
         "requires_auth": True,
     },
     {
+        "key": "previsao_cargas",
+        "title": "Previsão de Cargas",
+        "subtitle": "Logística · Previsão vs. Realizado",
+        "description": (
+            "Dashboard analítico de previsão de cargas com comparativo mensal "
+            "previsão vs. realizado, aderência por destino, timeline de cargas, "
+            "análise por origem, cancelamentos e heatmap semanal."
+        ),
+        "icon": "🚛",
+        "page_path": "pages/8_Previsao_Cargas.py",
+        "color_a": "#1A2744",
+        "color_b": "#2563EB",
+        "accent":  "#FFA726",
+        "tags": ["Logística", "Cargas", "Previsão vs. Realizado"],
+        "requires_auth": True,
+    },
+    {
         "key": "metas_previsao",
         "title": "Análise de Metas / Previsão de Custos",
         "subtitle": "Progresso automático vs. metas e projeção",
@@ -135,16 +152,15 @@ SECTORS_CONTROLADORIA = [
         "title": "Carteira de Pedidos",
         "subtitle": "Comercial — pedidos em aberto",
         "description": (
-            "Visão consolidada da carteira de pedidos em aberto com prazos, "
-            "clientes, volumes, situação de atendimento e evolução do backlog."
+            "Visão consolidada da carteira de pedidos com análise por cliente, "
+            "categoria, tamanho e região. KPIs, gráficos interativos e evolução mensal."
         ),
-        "icon": "📂",
-        "page_path": "pages/6_Carteira_Pedidos.py",
+        "icon": "📦",
+        "page_path": "pages/9_Carteira_de_Pedidos.py",
         "color_a": "#064E3B",
         "color_b": "#047857",
         "accent":  "#34D399",
-        "tags": ["Pedidos", "Comercial", "Backlog"],
+        "tags": ["Pedidos", "Comercial", "Análise"],
         "requires_auth": True,
-        "coming_soon": True,
     },
 ]

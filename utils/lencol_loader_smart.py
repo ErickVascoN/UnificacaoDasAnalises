@@ -71,7 +71,7 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
                                if '/' in v and len(v.split('/')) == 3 and 
                                any(part.isdigit() for part in v.split('/')) and
                                ('202' in v or '203' in v))  # Ano >= 2020
-                is_date_col = date_count >= 3  # Pelo menos 3 valores em formato de data
+                is_date_col = date_count >= 1  # Pelo menos 1 valor em formato de data
             
             # Mapeamento prioritário por conteúdo
             if is_date_col and "DATA" not in col_map:
@@ -136,7 +136,11 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
         
         df = df_clean
         logger.debug(f"Colunas extraídas: {list(df.columns)}")
-        logger.debug(f"Amostra DATA (antes de converter): {df['DATA'].head(3).tolist()}")
+        if "DATA" in df.columns:
+            logger.debug(f"Amostra DATA (antes de converter): {df['DATA'].head(3).tolist()}")
+        else:
+            logger.error("Coluna DATA não mapeada — planilha pode ter estrutura diferente do esperado")
+            return pd.DataFrame()
         
         # ── Limpeza ──────────────────────────────────────────────────────────────────
         # Remove linhas com dados insuficientes

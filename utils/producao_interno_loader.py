@@ -110,9 +110,13 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
         col_qtd   = _achar_coluna(cols, "TOTAL PRODUZIDO", "TOTAL CONFERIDO", "TOTAL")
         col_setor = _achar_coluna(cols, "SETOR")
         col_func  = _achar_coluna(cols, "FUNCAO")          # "FUNÇÃO" → normaliza p/ FUNCAO
-        # DESCRICAO tem prioridade sobre PRODUTO para evitar colunas como
+        # LITTEX tem coluna PRODUTO (nome real) + DESCRIÇÃO (variante/detalhe) separadas.
+        # Nas demais, DESCRICAO tem prioridade para evitar colunas como
         # "RETORNO PRODUTO MANUFATURADO..." que contêm "PRODUTO" mas não são o campo certo.
-        col_prod  = _achar_coluna(cols, "DESCRICAO") or _achar_coluna(cols, "PRODUTO")
+        if chave == "LITTEX":
+            col_prod = _achar_coluna(cols, "PRODUTO") or _achar_coluna(cols, "DESCRICAO")
+        else:
+            col_prod = _achar_coluna(cols, "DESCRICAO") or _achar_coluna(cols, "PRODUTO")
         col_cli   = _achar_coluna(cols, "CLIENTE") or _achar_coluna(cols, "EMPRESA")
 
         if not col_colab or not col_qtd or not col_data:
@@ -142,7 +146,10 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
         out["CLIENTE"]     = _limpar_texto(raw[col_cli]) if col_cli else ""
 
         # ── Datas (detecção de formato por coluna; resolve M/D vs D/M) ─────────
-        out["DATA"] = parse_date_series(out["DATA"])
+        # date_order do config garante o padrão correto quando todas as datas
+        # do mês são ambíguas (dia ≤ 12). Planilhas internas usam locale US (MDY).
+        _date_order = cfg.get("date_order", "DMY")
+        out["DATA"] = parse_date_series(out["DATA"], default_order=_date_order)
 
         # ── Limpeza de linhas ──────────────────────────────────────────────────
         # Remove sujeira: sem colaborador real OU sem data OU sem quantidade.

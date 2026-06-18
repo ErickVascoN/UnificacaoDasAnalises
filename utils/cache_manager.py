@@ -186,6 +186,61 @@ def invalidate_all() -> int:
     return count
 
 
+def get_raw_sheet(sheet_id: str, sheet_name: str, ttl: int = _DEFAULT_TTL) -> str | None:
+    """
+    Retorna CSV de uma aba específica por NOME (sem precisar do gid).
+    Cache em disco: cache/sheets/{sheet_id}_{sheet_name_safe}.csv
+
+    Diferença de get_raw(): usa o parâmetro ?sheet= da API gviz, que aceita o
+    nome da aba em vez do gid numérico. Útil para planilhas com muitas abas onde
+    os gids não são fixos.
+    """
+    import urllib.parse
+
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    safe = "".join(c if c.isalnum() else "_" for c in sheet_name)
+    path = _CACHE_DIR / f"{sheet_id}_{safe}.csv"
+
+    is_fresh = False
+    cache_age = None
+    if path.exists():
+        cache_age = time.time() - path.stat().st_mtime
+        is_fresh = cache_age < ttl
+
+    if is_fresh:
+        logger.debug("✓ Cache fresco (%.0fs): %s", cache_age, path.name)
+        return path.read_text(encoding="utf-8")
+
+    if cache_age is not None:
+        logger.debug("↻ Cache obsoleto (%.0fs): atualizando %s", cache_age, path.name)
+
+    encoded = urllib.parse.quote(sheet_name)
+    url = (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+        f"/gviz/tq?tqx=out:csv&sheet={encoded}"
+    )
+    try:
+        r = requests.get(url, timeout=30, headers=_HEADERS, allow_redirects=True)
+        r.raise_for_status()
+        content = r.text
+        if content.strip():
+            path.write_text(content, encoding="utf-8")
+            logger.info("✓ Cache salvo (sheet=%r): %s", sheet_name, path.name)
+            return content
+    except requests.exceptions.HTTPError as e:
+        logger.warning("✗ HTTP %s (sheet=%r): %s", e.response.status_code, sheet_name, url[:80])
+    except Exception as e:
+        logger.warning("✗ get_raw_sheet falhou (sheet=%r): %s", sheet_name, str(e)[:100])
+
+    if path.exists():
+        age_min = (time.time() - path.stat().st_mtime) / 60
+        logger.warning("⚠ Usando cache obsoleto (%.0f min): %s", age_min, path.name)
+        return path.read_text(encoding="utf-8")
+
+    logger.error("✗ Sem dados para sheet=%r", sheet_name)
+    return None
+
+
 def cache_status() -> list[dict]:
     """
     Retorna lista com informações de cada arquivo em cache.

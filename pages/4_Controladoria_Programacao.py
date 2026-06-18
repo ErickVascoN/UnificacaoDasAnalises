@@ -293,8 +293,15 @@ def load_cortes() -> pd.DataFrame:
                 "QUANTIDADE": df_len["QUANT"],
                 "FONTE": "Lençol",
                 "MATERIAL": (
-                    df_len["TECIDO"].astype(str).str.strip()
-                    if "TECIDO" in df_len.columns else ""
+                    # Concatena CATEGORIA + TECIDO para que o matching distingua
+                    # ex: "JOGO SIMPLES CS" + "JOGO LENÇOL + FRONHAS" vs JOGO DUPLO.
+                    (
+                        df_len["CATEGORIA"].fillna("").astype(str).str.strip()
+                        + " "
+                        + df_len["TECIDO"].fillna("").astype(str).str.strip()
+                    ).str.strip()
+                    if ("TECIDO" in df_len.columns and "CATEGORIA" in df_len.columns)
+                    else (df_len["TECIDO"].astype(str).str.strip() if "TECIDO" in df_len.columns else "")
                 ),
                 "CLIENTE": (
                     df_len["EMPRESA"].astype(str).str.strip()
@@ -346,29 +353,23 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     """
     Cruza programação com cortes.
 
-    Join principal: (OP, SEMANA)
-      Garante que OPs reutilizadas semana a semana (ex: "PROG 81") não acumulem
-      cortes de semanas anteriores — cada linha da programação enxerga apenas
-      os cortes da sua própria semana.
-
-    Prioridade de chave de busca:
-      1. (PED. CLIENTE, SEMANA)  → caso mais comum
-      2. (OP INTERNA,  SEMANA)  → quando a planilha de corte usa OP interna
+    OPs com 1 produto  → total cortado da OP (comportamento anterior).
+    OPs com N produtos → matching por similaridade entre DESCRIÇÃO DO PRODUTO
+                         (programação) e MATERIAL (corte), linha a linha.
+                         Cada produto recebe sua própria quantidade cortada e
+                         seu próprio QNT_PROG_TOTAL, gerando status independentes.
     """
     import re as _re
+    import difflib
 
     df = df_prog.copy()
-    # _CHAVE = identificador de agrupamento (OP, ou chave única p/ linhas sem OP).
-    # Fallback defensivo caso a coluna não exista (compatibilidade).
     if "_CHAVE" not in df.columns:
         df["_CHAVE"] = df["PED. CLIENTE"]
 
-    # Soma QNT. PROG por (_CHAVE, SEMANA) — evita acumular semanas anteriores
-    # para OPs reutilizadas semana a semana (ex: "PROG 81" tem 9.000/sem, não 88.992 total)
+    # QNT_PROG_TOTAL inicial = soma da OP inteira (usado para OPs de 1 produto)
     total_prog_op = df.groupby(["_CHAVE", "SEMANA"])["QNT. PROG"].transform("sum")
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
 
-    # sem dados de corte
     if df_cortes.empty:
         df["QNT_CORTADA"]  = 0
         df["STATUS_PROD"]  = "Não Iniciado"
@@ -377,56 +378,204 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
         df["EFICIÊNCIA_%"] = 0.0
         return df
 
-    # índice (op, semana) → quantidade cortada
-    _tem_semana = (
-        "SEMANA" in df_cortes.columns
-        and df_cortes["SEMANA"].notna().any()
-    )
-    # OP normalizada (sem prefixo PROG/PGR/OP) — cruzamento prefixo-insensível.
-    from utils.normalize import normalize_op, is_blank
+    from utils.normalize import normalize_op, normalize_text
     _cortes = df_cortes.copy()
     _cortes["_OPN"] = _cortes["OP"].map(normalize_op)
     _cortes = _cortes[_cortes["_OPN"].ne("")]
 
-    if _tem_semana:
-        _sem_idx = (
-            _cortes.dropna(subset=["SEMANA"])
-            .assign(_S=lambda d: d["SEMANA"].astype(int))
-            .groupby(["_OPN", "_S"])["QUANTIDADE"].sum()
+    # Total cortado por OP (fallback para OPs de 1 produto).
+    # No lençol cada JOGO gera duas linhas de corte: CIMA e FUNDO.
+    # Só a CIMA (ou qualquer uma, desde que uma) representa "1 jogo cortado";
+    # somar as duas dobra a contagem e infla a eficiência para ~200%.
+    # IMPORTANTE: "Fundo Porta" no Giattex/Zanattex é produto legítimo — o filtro
+    # é restrito à fonte Lençol para não excluir esses cortes.
+    if "MATERIAL" in _cortes.columns and "FONTE" in _cortes.columns:
+        _fonte_up = _cortes["FONTE"].astype(str).str.upper()
+        _mat_str  = _cortes["MATERIAL"].astype(str)
+        _is_lencol_fundo = (
+            _fonte_up.str.contains("LEN", na=False) &
+            _mat_str.str.contains(r"\bFUNDO\b", case=False, na=False, regex=True)
         )
-        # dict: (op_normalizada, semana_int) → quantidade
-        _sem_map: dict = {(str(op), int(s)): int(q) for (op, s), q in _sem_idx.items()}
+        _op_map: dict = _cortes[~_is_lencol_fundo].groupby("_OPN")["QUANTIDADE"].sum().to_dict()
     else:
-        _sem_map = {}
+        _op_map: dict = _cortes.groupby("_OPN")["QUANTIDADE"].sum().to_dict()
 
-    # Índice OP normalizada → quantidade (fallback sem semana)
-    _op_map: dict = _cortes.groupby("_OPN")["QUANTIDADE"].sum().to_dict()
+    # Mapa de materiais: op_norm → [(material_norm, qtd)]
+    # Usado para matching individual quando a OP tem múltiplos produtos.
+    _prod_map: dict[str, list] = {}
+    if "MATERIAL" in _cortes.columns:
+        _com_mat = _cortes[_cortes["MATERIAL"].astype(str).str.strip().ne("")]
+        if not _com_mat.empty:
+            _cm = _com_mat.copy()
+            _cm["_MAT"] = _cm["MATERIAL"].apply(normalize_text)
+            _cm = _cm[_cm["_MAT"].ne("")]
+            for opn, grp in _cm.groupby("_OPN"):
+                _prod_map[opn] = list(grp.groupby("_MAT")["QUANTIDADE"].sum().items())
 
-    # extrair semana iso do campo semana da programação ("semana 22" → 22)
-    def _parse_sem(s) -> int | None:
-        m = _re.search(r"\d+", str(s))
-        return int(m.group()) if m else None
-
-    df["_SEM"] = df["SEMANA"].apply(_parse_sem)
-
-    # OP da programação normalizada da mesma forma (a OP é o PED. CLIENTE;
-    # OP INTERNA não entra no cruzamento para não gerar match falso).
     df["_PEDN"] = df["PED. CLIENTE"].map(normalize_op)
 
-    def _get_cortado(row) -> float:
-        ped = row["_PEDN"]
-        sem = row["_SEM"]
-
-        pass  # não usado — ver mapeamento direto abaixo
-
-    df = df.drop(columns=["_SEM"])
-
-    # Mapeia cortado DIRETAMENTE por OP (_PEDN) → sem transform("sum") que
-    # multiplicaria o valor pelo número de linhas da mesma OP na programação.
-    # Cada linha recebe o total cortado da sua OP em todas as semanas.
-    df["QNT_CORTADA"] = (
-        df["_PEDN"].map(_op_map).fillna(0).astype(int)
+    # Quantidade de linhas por OP **na mesma semana** — evita contar a mesma OP
+    # em semanas diferentes como se fossem "múltiplos produtos".
+    n_linhas_op = (
+        df.groupby(["_CHAVE", "SEMANA"])["_CHAVE"]
+        .transform("count")
+        .fillna(1)
+        .astype(int)
+        .tolist()
     )
+
+    # Tokens que diferenciam produtos do mesmo OP (tamanho + n° de peças).
+    # O SequenceMatcher falha aqui porque CASAL/QUEEN/SOLTEIRO são apenas 1
+    # palavra em strings longas quase idênticas — a diferença de ratio é < 5%.
+    # Estratégia: se ambos os textos têm token de tamanho → compara tokens
+    # (deve coincidir). Se não → fallback para ratio de string inteira.
+    # IMPORTANTE: normalize_text retorna UPPERCASE — os tokens devem ser UPPER.
+    _TAMANHOS = {"CASAL", "QUEEN", "SOLTEIRO", "KING"}
+    _RE_PECAS  = _re.compile(r'\b(\d+)\s*P(?:C[SC]S?|[SC]S?|E[CC]A|E[CC]AS?)?\b', _re.IGNORECASE)
+    # Abreviações usadas na coluna CATEGORIA do lençol (ex: "JOGO SIPLES CS")
+    _TAM_ALIAS = {"CS": "CASAL", "QE": "QUEEN", "ST": "SOLTEIRO", "KG": "KING"}
+
+    def _tokens_prod(txt_norm: str) -> tuple[str, str]:
+        """(tamanho, n_pecas) a partir do texto já normalizado (UPPERCASE, sem acentos)."""
+        words = txt_norm.split()
+        tam   = next((w for w in words if w in _TAMANHOS), "")
+        if not tam:
+            tam = next((_TAM_ALIAS[w] for w in words if w in _TAM_ALIAS), "")
+        m     = _RE_PECAS.search(txt_norm)
+        pecas = m.group(1) if m else ""
+        return tam, pecas
+
+    # ── Pré-calcula atribuições para OPs multi-produto ────────────────────────
+    # Chave: (opn, semana) — OPs repetidas em semanas diferentes são tratadas
+    # separadamente. Winner-takes-all dentro de cada (OP, semana).
+    _op_to_positions: dict[tuple, list[int]] = {}
+    for pos in range(len(df)):
+        opn = df.iloc[pos]["_PEDN"]
+        sem = df.iloc[pos]["SEMANA"]
+        if opn:
+            _op_to_positions.setdefault((opn, sem), []).append(pos)
+
+    # _assignment: (opn, semana) → {pos: qtd_cortada}
+    _assignment: dict[tuple, dict[int, int]] = {}
+    for (opn, sem), positions in _op_to_positions.items():
+        if len(positions) <= 1 or opn not in _prod_map:
+            continue  # OP de 1 produto na semana → tratado depois (usa total)
+
+        asgn = {pos: 0 for pos in positions}
+
+        for mat_n, qtd in _prod_map[opn]:
+            mat_tam, mat_pecas = _tokens_prod(mat_n)
+
+            best_pos, best_score = None, -1.0
+            for pos in positions:
+                row = df.iloc[pos]
+                desc = (
+                    str(row.get("DESCRIÇÃO DO PRODUTO", "")).strip()
+                    or str(row.get("PRODUTO", "")).strip()
+                )
+                alvo = normalize_text(desc)
+                if not alvo:
+                    continue
+
+                prog_tam, prog_pecas = _tokens_prod(alvo)
+
+                # Palavras-chave que bloqueiam o match quando presentes no corte
+                # mas ausentes na programação. Exemplos:
+                #   FUNDO  — sub-produto cortado junto com o jogo, não programado
+                #   SIMPLES/SIPLES — jogo simples (lençol+fronhas) ≠ jogo de cama duplo
+                #   LENCOL — "JOGO LENÇOL + FRONHAS" nunca aparece na programação como JOGO DE CAMA
+                _SUB_PROD = {"FUNDO", "SIMPLES", "SIPLES", "LENCOL"}
+                _mat_words = set(mat_n.split())
+                _alvo_words = set(alvo.split())
+                if (_mat_words & _SUB_PROD) and not (_alvo_words & _SUB_PROD):
+                    score = 0.0
+                elif mat_tam and prog_tam:
+                    # Ambos têm token de tamanho → tamanho deve coincidir
+                    if mat_tam != prog_tam:
+                        score = 0.0  # tamanho errado → descartado
+                    else:
+                        # Tamanho bate: desempate por tokens de marca de linha.
+                        # Ex: "COLOR ART" e "SUPERCAL" são coleções distintas —
+                        # se corte tem COLOR e programação tem SUPERCAL → produto errado.
+                        _MARCA = {"SUPERCAL", "COLOR"}
+                        _mat_marca  = _mat_words  & _MARCA
+                        _prog_marca = _alvo_words & _MARCA
+                        if _mat_marca and _prog_marca:
+                            if _mat_marca & _prog_marca:
+                                score = 3.5   # marca coincide → ótimo
+                            else:
+                                score = 0.5   # marca diferente → quase descartado
+                        else:
+                            # Sem token de marca em um dos lados → similaridade geral
+                            score = 2.0 + difflib.SequenceMatcher(None, alvo, mat_n).ratio()
+                        if mat_pecas and prog_pecas and mat_pecas == prog_pecas:
+                            score += 1.0  # n° de peças também bate
+                else:
+                    # Sem token de tamanho → similaridade geral como fallback
+                    score = difflib.SequenceMatcher(None, alvo, mat_n).ratio()
+
+                if score > best_score:
+                    best_score, best_pos = score, pos
+
+            # Atribui ao vencedor se score > 0 (tamanho bateu ou sim. > 0)
+            if best_pos is not None and best_score > 0:
+                asgn[best_pos] = asgn.get(best_pos, 0) + int(qtd)
+
+        # Só usa atribuição por produto se ao menos 1 material foi casado.
+        # Se todos deram score 0 (ex: TECIDO sem token de tamanho reconhecível,
+        # ou PRODUTO vazio na programação), cai no fallback de total da OP.
+        if any(v > 0 for v in asgn.values()):
+            _assignment[(opn, sem)] = asgn
+
+    # ── Preenche QNT_CORTADA e QNT_PROG_TOTAL por linha ──────────────────────
+    qtd_cortada_list = []
+    prog_indiv_list  = []   # None = manter QNT_PROG_TOTAL já calculado
+
+    for pos in range(len(df)):
+        row = df.iloc[pos]
+        opn = row["_PEDN"]
+        sem = row["SEMANA"]
+        n_prod = int(n_linhas_op[pos])
+        asgn_key = (opn, sem)
+
+        if n_prod <= 1 or asgn_key not in _assignment:
+            # OP de 1 produto na semana ou sem material no corte → total da OP
+            qtd_cortada_list.append(int(_op_map.get(opn, 0)))
+            prog_indiv_list.append(None)
+        else:
+            # OP multi-produto na semana: usa a atribuição calculada acima
+            qtd_cortada_list.append(_assignment[asgn_key].get(pos, 0))
+            prog_indiv_list.append(
+                int(pd.to_numeric(row.get("QNT. PROG", 0), errors="coerce") or 0)
+            )
+
+    df["QNT_CORTADA"] = qtd_cortada_list
+
+    # Salva total programado por OP antes de sobrescrever com valores individuais
+    # (usado na aba Resumo para mostrar total da OP, não de 1 produto)
+    df["QNT_PROG_OP"] = df["QNT_PROG_TOTAL"]
+
+    # Aplica QNT_PROG_TOTAL individual para linhas multi-produto
+    for pos, pval in enumerate(prog_indiv_list):
+        if pval is not None:
+            df.iloc[pos, df.columns.get_loc("QNT_PROG_TOTAL")] = pval
+
+    # QNT_CORTADA_OP: total cortado por OP **por semana** para o Resumo.
+    # OPs com per-product matching (_assignment) têm valores individuais por linha
+    # (ex: CASAL=368, QUEEN=0, SOLTEIRO=110). A aba Resumo precisa da SOMA (478),
+    # agrupando por semana para não somar cortes de semanas diferentes.
+    df["QNT_CORTADA_OP"] = df["QNT_CORTADA"].copy()
+    _assigned_ops = {opn for (opn, _sem) in _assignment.keys()}
+    if _assigned_ops:
+        _mask_asgn = df["_PEDN"].isin(_assigned_ops)
+        if _mask_asgn.any():
+            _grp_sum = (
+                df.loc[_mask_asgn]
+                .groupby(["_CHAVE", "SEMANA"])["QNT_CORTADA"]
+                .transform("sum")
+            )
+            df.loc[_mask_asgn, "QNT_CORTADA_OP"] = _grp_sum
+
     df = df.drop(columns=["_PEDN"])
 
     df["STATUS_PROD"]  = df["QNT_CORTADA"].apply(
@@ -434,6 +583,9 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     )
     df["STATUS_CORTE"] = df.apply(
         lambda r: _status_corte(r["QNT_CORTADA"], r["QNT_PROG_TOTAL"]), axis=1
+    )
+    df["STATUS_CORTE_OP"] = df.apply(
+        lambda r: _status_corte(int(r["QNT_CORTADA_OP"]), int(r["QNT_PROG_OP"])), axis=1
     )
     df["DIFERENÇA"]    = df["QNT_CORTADA"] - df["QNT_PROG_TOTAL"]
     df["EFICIÊNCIA_%"] = (
@@ -447,16 +599,21 @@ def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
         return " / ".join(vals)
 
     chave = "_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"
+    # QNT_CORTADA_OP e QNT_PROG_OP garantem o total correto por OP no Resumo,
+    # mesmo quando o matching distribuiu cortes individualmente por produto.
+    qtd_cort_col  = "QNT_CORTADA_OP"  if "QNT_CORTADA_OP"  in df.columns else "QNT_CORTADA"
+    qtd_prog_col  = "QNT_PROG_OP"     if "QNT_PROG_OP"     in df.columns else "QNT_PROG_TOTAL"
+    status_col    = "STATUS_CORTE_OP" if "STATUS_CORTE_OP" in df.columns else "STATUS_CORTE"
     return df.groupby(chave, as_index=False).agg(
         **{"PED. CLIENTE": ("PED. CLIENTE", "first")},
         SEMANA        =("SEMANA",          "first"),
         CLIENTE       =("CLIENTE",         "first"),
         LOCAL         =("LOCAL",           "first"),
         PRODUTO       =("PRODUTO",         join_unique),
-        QNT_PROG_TOTAL=("QNT_PROG_TOTAL",  "first"),
-        QNT_CORTADA   =("QNT_CORTADA",     "first"),
+        QNT_PROG_TOTAL=(qtd_prog_col,      "first"),
+        QNT_CORTADA   =(qtd_cort_col,      "first"),
         STATUS_PROD   =("STATUS_PROD",     "first"),
-        STATUS_CORTE  =("STATUS_CORTE",    "first"),
+        STATUS_CORTE  =(status_col,        "first"),
         DIFERENÇA     =("DIFERENÇA",       "first"),
         EFICIÊNCIA_PRC=("EFICIÊNCIA_%",    "first"),
     )
@@ -511,6 +668,7 @@ with st.sidebar:
         invalidate_all()
         st.cache_data.clear()
         st.rerun()
+    st.caption("🔖 cód. v20260611-6")
     st.caption(f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     st.caption(f"📋 Prog.: {len(df_prog_raw):,} linhas".replace(",", "."))
     total_cortes = len(df_cortes_raw)
@@ -695,6 +853,36 @@ with st.expander("🔍 Diagnóstico — Verificação de Fontes de Corte", expan
             if len(_corte_sem_prog) > 30:
                 st.caption(f"… e mais {len(_corte_sem_prog) - 30} OPs.")
 
+    # ── Debug: diagnóstico do loader de lençol ─────────────────────────────────
+    st.markdown("---")
+    st.markdown("##### Debug: loader de lençol (raw)")
+    try:
+        from utils.cache_manager import get_raw as _get_raw
+        _lenc_csv = _get_raw("1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa", "1396046910", ttl=1)
+        if not _lenc_csv or not _lenc_csv.strip():
+            st.error("get_raw() retornou vazio — sem acesso à planilha lençol")
+        else:
+            st.success(f"CSV lençol recebido: {len(_lenc_csv):,} bytes".replace(",", "."))
+            _lines = _lenc_csv.splitlines()
+            st.caption(f"Total de linhas CSV: {len(_lines)}")
+            st.markdown("**Primeiras 6 linhas do CSV:**")
+            st.code("\n".join(_lines[:6]))
+    except Exception as _e:
+        st.error(f"Erro ao buscar lençol raw: {_e}")
+
+    st.markdown("##### Debug: load_lencol_smart_xlsx() resultado")
+    try:
+        import logging as _logging
+        from utils.lencol_loader_smart import load_lencol_smart_xlsx as _load_len
+        _df_len_dbg = _load_len()
+        if _df_len_dbg.empty:
+            st.error("load_lencol_smart_xlsx() retornou DataFrame vazio")
+        else:
+            st.success(f"{len(_df_len_dbg)} linhas carregadas. Colunas: {list(_df_len_dbg.columns)}")
+            st.dataframe(_df_len_dbg.head(5), use_container_width=True, hide_index=True)
+    except Exception as _e:
+        st.error(f"Exceção em load_lencol_smart_xlsx: {_e}")
+
 st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
 
 # gráficos
@@ -855,67 +1043,6 @@ with tab_detalhe:
         st.info("Nenhum registro encontrado com os filtros aplicados.")
     else:
         df_det = df_filtered.copy()
-
-        # ── Lençol: QNT CORTADA por PRODUTO (não o total da OP) ───────────────────
-        # A planilha de corte do Lençol traz o produto correto (TECIDO/MATERIAL).
-        # Casa o produto da linha da programação com o do corte por similaridade;
-        # sem correspondência ("caso não tenha"), mantém o total da OP. Só Lençol —
-        # nas demais fontes o nome do produto não bate, então fica o total.
-        if not df_cortes_raw.empty and "FONTE" in df_cortes_raw.columns \
-                and "MATERIAL" in df_cortes_raw.columns:
-            import difflib
-            from utils.normalize import normalize_op as _nop_d, normalize_text as _nt_d
-            _len = df_cortes_raw[df_cortes_raw["FONTE"] == "Lençol"].copy()
-            _len["_OPN"] = _len["OP"].map(_nop_d)
-            _len = _len[(_len["_OPN"] != "")
-                        & (_len["MATERIAL"].astype(str).str.strip() != "")]
-            # OPs cortadas em OUTRAS fontes (Giattex/Zanattex): nessas NÃO aplicamos a
-            # quebra por produto (e não zeramos), para não atribuir 0 errado.
-            _outras_opns = set(
-                df_cortes_raw.loc[df_cortes_raw["FONTE"] != "Lençol", "OP"].map(_nop_d)
-            ) - {""}
-            if not _len.empty:
-                _len_grp = _len.groupby(["_OPN", "MATERIAL"])["QUANTIDADE"].sum().reset_index()
-                _mapa_len = {}
-                for _, _r in _len_grp.iterrows():
-                    _mapa_len.setdefault(_r["_OPN"], []).append(
-                        (_nt_d(_r["MATERIAL"]), int(_r["QUANTIDADE"]))
-                    )
-
-                _LIMIAR_SIM = 0.70  # só casa produtos realmente parecidos
-
-                def _cortado_por_produto(row):
-                    opn = _nop_d(row.get("PED. CLIENTE", ""))
-                    # Só quebra por produto OPs cortadas exclusivamente no Lençol.
-                    if opn not in _mapa_len or opn in _outras_opns:
-                        return None  # mantém o total da OP
-                    desc = (str(row.get("DESCRIÇÃO DO PRODUTO", "")).strip()
-                            or str(row.get("PRODUTO", "")).strip())
-                    alvo = _nt_d(desc)
-                    if not alvo:
-                        return None
-                    best_q, best_r = 0, 0.0
-                    for _mn, _q in _mapa_len[opn]:
-                        _ratio = difflib.SequenceMatcher(None, alvo, _mn).ratio()
-                        if _ratio > best_r:
-                            best_r, best_q = _ratio, _q
-                    # Casou → qtd do produto; não casou → 0 (não foi cortado esse produto).
-                    return best_q if best_r >= _LIMIAR_SIM else 0
-
-                _novos = df_det.apply(_cortado_por_produto, axis=1)
-                _mask_ovr = _novos.notna()
-                if _mask_ovr.any():
-                    df_det.loc[_mask_ovr, "QNT_CORTADA"] = _novos[_mask_ovr].astype(int)
-                    _prog_row = pd.to_numeric(
-                        df_det.loc[_mask_ovr, "QNT. PROG"], errors="coerce"
-                    ).fillna(0)
-                    df_det.loc[_mask_ovr, "DIFERENÇA"] = (
-                        df_det.loc[_mask_ovr, "QNT_CORTADA"] - _prog_row
-                    )
-                    df_det.loc[_mask_ovr, "EFICIÊNCIA_%"] = (
-                        df_det.loc[_mask_ovr, "QNT_CORTADA"]
-                        / _prog_row.replace(0, pd.NA) * 100
-                    ).fillna(0).round(1)
 
         # Colunas originais da planilha + calculadas (substituindo as manuais)
         df_det["STATUS PRODUÇÃO"] = df_det["STATUS_PROD"].apply(
@@ -1086,3 +1213,125 @@ else:
             f"ℹ️ Além disso, {_sem_op_pcs:,}".replace(",", ".")
             + " peça(s) foram cortadas sem número de OP (não classificáveis)."
         )
+
+# ── Botão Relatório PDF ───────────────────────────────────────────────────────
+st.markdown("---")
+
+def _html_ctrl_prog() -> bytes:
+    from datetime import datetime as _dt
+    agora = _dt.now().strftime("%d/%m/%Y %H:%M")
+
+    def _n(v) -> str:
+        return f"{int(v):,}".replace(",", ".")
+
+    filtros_str = []
+    if semanas_sel:
+        filtros_str.append("Semanas: " + ", ".join(str(s) for s in sorted(semanas_sel)))
+    if clientes_sel:
+        filtros_str.append("Empresas: " + ", ".join(sorted(clientes_sel)))
+    if locais_sel:
+        filtros_str.append("Locais: " + ", ".join(sorted(locais_sel)))
+    filtros_label = " &nbsp;|&nbsp; ".join(filtros_str) if filtros_str else "Todos os filtros"
+
+    def _op_rows() -> str:
+        if df_agg.empty:
+            return "<tr><td colspan='9' style='text-align:center'>Sem dados</td></tr>"
+        linhas = []
+        for _, r in df_agg.iterrows():
+            status_c = str(r.get("STATUS_CORTE", ""))
+            cls = "sok" if status_c == "Concluído" else ("samb" if status_c == "Parcial" else "serr")
+            ef = float(r.get("EFICIÊNCIA_PRC", 0))
+            ef_cls = "sok" if ef >= 96 else ("samb" if ef >= 50 else "serr")
+            dif = int(r.get("DIFERENÇA", 0))
+            dif_s = f"{'+' if dif > 0 else ''}{_n(dif)}"
+            op_val = str(r.get("PED. CLIENTE", "")).strip() or "—"
+            linhas.append(
+                f"<tr>"
+                f"<td>{r.get('SEMANA','')}</td>"
+                f"<td>{op_val}</td>"
+                f"<td>{r.get('CLIENTE','')}</td>"
+                f"<td>{r.get('LOCAL','')}</td>"
+                f"<td>{r.get('PRODUTO','')}</td>"
+                f"<td class='num'>{_n(r.get('QNT_PROG_TOTAL',0))}</td>"
+                f"<td class='num'>{_n(r.get('QNT_CORTADA',0))}</td>"
+                f"<td class='num {ef_cls}'>{ef:.1f}%</td>"
+                f"<td class='{cls}'>{status_c}</td>"
+                f"</tr>"
+            )
+        return "\n".join(linhas)
+
+    op_html = _op_rows()
+    ef_total = (total_cort_pcs / total_prog_pcs * 100) if total_prog_pcs > 0 else 0
+    cls_ef = "sok" if ef_total >= 96 else ("samb" if ef_total >= 50 else "serr")
+
+    html = (
+        "<!DOCTYPE html>\n<html lang='pt-BR'>\n<head>\n"
+        "<meta charset='UTF-8'>\n"
+        "<title>Relatório Controle de Programação</title>\n"
+        "<style>\n"
+        "@page { margin: 15mm; size: A4 landscape; }\n"
+        "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: #fff; }\n"
+        ".hint { background:#FEF3C7; padding:8px 14px; margin-bottom:14px; border-radius:4px; font-size:12px; border:1px solid #FCD34D; }\n"
+        ".header { border-bottom:3px solid #6366F1; padding-bottom:8px; margin-bottom:14px; }\n"
+        ".header h1 { font-size:17px; color:#1E1B4B; }\n"
+        ".header .sub { color:#444; margin-top:3px; font-size:10px; }\n"
+        ".kpi-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:16px; }\n"
+        ".kpi { border:1px solid #6366F1; border-radius:5px; padding:6px 8px; text-align:center; }\n"
+        ".kpi-lbl { font-size:7.5px; color:#555; text-transform:uppercase; letter-spacing:.05em; }\n"
+        ".kpi-val { font-size:13px; font-weight:700; color:#1E1B4B; margin-top:2px; }\n"
+        ".sec { font-size:11px; font-weight:700; color:#1E1B4B; border-bottom:1px solid #6366F1; margin:14px 0 7px 0; padding-bottom:3px; }\n"
+        "table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:9px; }\n"
+        "th { background:#1E1B4B; color:#fff; padding:4px 6px; text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.04em; }\n"
+        "td { padding:3px 5px; border-bottom:1px solid #e5e7eb; }\n"
+        "tr:nth-child(even) td { background:#F5F3FF; }\n"
+        ".num { text-align:right; font-variant-numeric:tabular-nums; }\n"
+        ".sok { color:#065F46; font-weight:600; }\n"
+        ".samb { color:#92400E; font-weight:600; }\n"
+        ".serr { color:#B91C1C; font-weight:600; }\n"
+        ".footer { margin-top:16px; padding-top:7px; border-top:1px solid #ccc; color:#777; font-size:8px; text-align:center; }\n"
+        "@media print { .hint { display:none; } body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }\n"
+        "</style>\n</head>\n<body>\n"
+        "<div class='hint'><strong>Para gerar PDF:</strong> pressione <kbd>Ctrl+P</kbd> (Windows) "
+        "ou <kbd>&#8984;+P</kbd> (Mac) &rarr; <em>Salvar como PDF</em>.</div>\n"
+        "<div class='header'>\n"
+        "  <h1>&#128202; Relatório Controle de Programação de Corte</h1>\n"
+        f"  <div class='sub'>{filtros_label} &nbsp;|&nbsp; Gerado em: {agora}</div>\n"
+        "</div>\n"
+        "<div class='kpi-grid'>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Total de OPs</div><div class='kpi-val'>{total_ops}</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Concluídas</div><div class='kpi-val sok'>{concluidas}</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Parciais</div><div class='kpi-val samb'>{parciais}</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Pendentes</div><div class='kpi-val serr'>{pendentes}</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Aderência</div><div class='kpi-val'>{aderencia_pct:.1f}%</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Peças Prog.</div><div class='kpi-val'>{_n(total_prog_pcs)}</div></div>\n"
+        f"  <div class='kpi'><div class='kpi-lbl'>Peças Cortadas</div><div class='kpi-val {cls_ef}'>{_n(total_cort_pcs)}</div></div>\n"
+        "</div>\n"
+        "<div class='sec'>Resumo por Ordem (OP)</div>\n"
+        "<table>\n"
+        "  <thead><tr><th>Sem.</th><th>OP</th><th>Cliente</th><th>Local</th><th>Produto</th>"
+        "<th class='num'>Prog.</th><th class='num'>Cortado</th>"
+        "<th class='num'>Efic. %</th><th>Status Corte</th></tr></thead>\n"
+        f"  <tbody>{op_html}</tbody>\n"
+        "</table>\n"
+        "<div class='footer'>"
+        f"Relatório Controle de Programação de Corte &middot; "
+        f"Sistema Unificação dos Dados &middot; {agora}"
+        "</div>\n</body>\n</html>"
+    )
+    return html.encode("utf-8")
+
+_col_l_cp, _col_c_cp, _col_r_cp = st.columns([3, 2, 3])
+with _col_c_cp:
+    st.download_button(
+        label="📄 Gerar Relatório PDF",
+        data=_html_ctrl_prog(),
+        file_name=f"relatorio_programacao_{datetime.now().strftime('%Y%m%d')}.html",
+        mime="text/html",
+        use_container_width=True,
+    )
+st.markdown(
+    "<p style='text-align:center;color:#718096;font-size:.8rem;margin-top:4px'>"
+    "Abre no navegador &rarr; <kbd>Ctrl+P</kbd> &rarr; Salvar como PDF</p>",
+    unsafe_allow_html=True,
+)

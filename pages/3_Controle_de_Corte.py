@@ -934,6 +934,126 @@ def load_metas_lencol() -> pd.DataFrame:
         logging.debug(f"URL: {url}")
         return pd.DataFrame(columns=["PRESTADOR", "EMPRESA", "CATEGORIA", "META"])
 
+# ── ITAJU — PONTO PALITO MARCELINO ────────────────────────────────────────────
+
+ITAJU_SHEET_ID  = "19dJKG956drBCv3fEnL75dTLf157xLKvE"
+ITAJU_GID       = "1039503764"
+ITAJU_CACHE_TTL = 60
+
+ITAJU_CORES_PRODUTO = {
+    "CIMA":   "#4ECDC4",
+    "FUNDO":  "#FF6B6B",
+    "FRONHA": "#FFA726",
+    "JOGO":   "#45B7D1",
+}
+
+ITAJU_DARK = dict(
+    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#CBD5E0", size=12), separators=",.",
+    margin=dict(l=40, r=20, t=50, b=40),
+)
+ITAJU_DARK_AXES = dict(
+    xaxis=dict(gridcolor="#2D3748", zerolinecolor="#2D3748", color="#A0AEC0"),
+    yaxis=dict(gridcolor="#2D3748", zerolinecolor="#2D3748", color="#A0AEC0"),
+)
+
+def _itaju_layout(**kw):
+    lay = {**ITAJU_DARK, **ITAJU_DARK_AXES}
+    lay.update(kw)
+    return lay
+
+def _itaju_fmt(v, dec=0):
+    return f"{float(v):,.{dec}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@st.cache_data(ttl=ITAJU_CACHE_TTL, show_spinner=False)
+def load_itaju() -> pd.DataFrame:
+    from utils.cache_manager import get_raw as _gr
+    from utils.date_parser import parse_date_series
+    content = _gr(ITAJU_SHEET_ID, ITAJU_GID, ttl=ITAJU_CACHE_TTL)
+    if not content:
+        return pd.DataFrame()
+    import io as _io
+    raw = pd.read_csv(_io.StringIO(content), dtype=str, header=0)
+    raw.columns = [str(c).strip() for c in raw.columns]
+    # normaliza nomes de colunas com possível encoding quebrado
+    col_map = {}
+    for c in raw.columns:
+        cn = normalize_text_basic(c)
+        if "DATA"     in cn: col_map[c] = "DATA"
+        elif "OP"     in cn: col_map[c] = "OP"
+        elif "ESTAC"  in cn or "ESTA" in cn: col_map[c] = "ESTACAO"
+        elif "COR"    in cn: col_map[c] = "COR"
+        elif "QUANT"  in cn: col_map[c] = "QUANTIDADE"
+        elif "TAMANHA" in cn or "TAMANHO" in cn: col_map[c] = "TAMANHO"
+        elif "PRODUTO" in cn: col_map[c] = "PRODUTO"
+        elif "OBS"    in cn: col_map[c] = "OBS"
+    raw = raw.rename(columns=col_map)
+    needed = ["DATA", "OP", "QUANTIDADE", "TAMANHO", "PRODUTO"]
+    missing = [c for c in needed if c not in raw.columns]
+    if missing:
+        return pd.DataFrame()
+    df = raw[["DATA", "OP",
+              raw.columns[raw.columns.tolist().index("ESTACAO")] if "ESTACAO" in raw.columns else "OP",
+              "COR" if "COR" in raw.columns else "OP",
+              "QUANTIDADE", "TAMANHO", "PRODUTO",
+              "OBS" if "OBS" in raw.columns else "OP"]].copy()
+    # reseleciona as colunas certas após rename
+    keep = [c for c in ["DATA", "OP", "ESTACAO", "COR", "QUANTIDADE", "TAMANHO", "PRODUTO", "OBS"] if c in raw.columns]
+    df = raw[keep].copy()
+    df["DATA"]      = parse_date_series(df["DATA"], default_order="MDY")
+    df["QUANTIDADE"]= pd.to_numeric(df["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
+    df["OP"]        = df["OP"].astype(str).str.strip()
+    df["PRODUTO"]   = df["PRODUTO"].astype(str).str.strip().str.upper()
+    df["TAMANHO"]   = df["TAMANHO"].astype(str).str.strip().str.upper()
+    if "COR"     in df.columns: df["COR"]     = df["COR"].astype(str).str.strip().str.upper()
+    if "ESTACAO" in df.columns: df["ESTACAO"] = df["ESTACAO"].astype(str).str.strip().str.upper()
+    blanks = {"", "NAN", "NONE", "N/A", "NAT"}
+    df = df[
+        df["DATA"].notna()
+        & (df["QUANTIDADE"] > 0)
+        & ~df["PRODUTO"].str.upper().isin(blanks)
+    ].reset_index(drop=True)
+    df["DIA_SEMANA"] = df["DATA"].dt.day_name()
+    df["SEMANA"]     = df["DATA"].dt.isocalendar().week.astype(int)
+    return df
+
+
+def normalize_text_basic(s: str) -> str:
+    import unicodedata, re as _re
+    s = str(s).strip().upper()
+    nfd = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return _re.sub(r"\s+", " ", s).strip()
+
+
+def itaju_caseamento(df: pd.DataFrame) -> pd.DataFrame:
+    """Reconcilia CIMA × FUNDO (× FRONHA) por OP + TAMANHO + COR."""
+    cols_out = ["OP", "TAMANHO", "COR", "CIMA", "FUNDO", "FRONHA", "DIFER_CF", "STATUS"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols_out)
+    grp_cols = ["OP", "TAMANHO"] + (["COR"] if "COR" in df.columns else [])
+    piv = (
+        df[df["PRODUTO"].isin(["CIMA", "FUNDO", "FRONHA"])]
+        .groupby(grp_cols + ["PRODUTO"])["QUANTIDADE"]
+        .sum()
+        .unstack(fill_value=0)
+        .reset_index()
+    )
+    for col in ["CIMA", "FUNDO", "FRONHA"]:
+        if col not in piv.columns:
+            piv[col] = 0
+    piv["DIFER_CF"] = piv["FUNDO"] - piv["CIMA"]
+    piv["STATUS"] = piv["DIFER_CF"].apply(
+        lambda x: "✅ Caseado" if x == 0
+        else ("🔴 Falta fundo" if x < 0 else "🟠 Sobra fundo")
+    )
+    if "COR" not in piv.columns:
+        piv["COR"] = "—"
+    piv = piv.rename(columns={"PRODUTO": "PRODUTO"})
+    return piv[cols_out].sort_values("DIFER_CF", key=abs, ascending=False).reset_index(drop=True)
+
+
 # NAVIGATION HELPERS
 
 if st.session_state.get('_active_page') != 'corte':
@@ -978,6 +1098,9 @@ with st.sidebar:
     elif screen in ('iacanga_rendimento', 'iacanga_eficiencia'):
         if st.button("← Regiões", key="sb_back8", use_container_width=True):
             _go('regions')
+    elif screen == 'itaju':
+        if st.button("← Regiões", key="sb_back_itaju", use_container_width=True):
+            _go('regions')
 
     # Filters injected below only for the dashboard screens
     if screen in ('arealva_manta', 'iacanga_rendimento', 'arealva_lencol', 'iacanga_eficiencia'):
@@ -1004,15 +1127,15 @@ if screen == 'analysis_type':
         st.markdown("""
         <div class="region-card" style="--rc-a:#2F5F6F; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
             <div class="rc-icon">📊</div>
-            <div class="rc-label">Análise · Geral</div>
-            <div class="rc-title">Rendimento de Corte</div>
+            <div class="rc-label">Produção · Por Região e Estação</div>
+            <div class="rc-title">Análise de Corte</div>
             <div class="rc-desc">
-                Análise completa do rendimento de corte. Acompanhamento de produção por região, estação e operadores com metas diárias.
+                Acompanhamento da produção diária por região (Arealva, Iacanga, Itaju), estação e operador — com metas, OPs e evolução semanal.
             </div>
             <div class="rc-tags">
                 <span class="rc-tag">Arealva</span>
                 <span class="rc-tag">Iacanga</span>
-                <span class="rc-tag">Metas</span>
+                <span class="rc-tag">Itaju</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1023,21 +1146,21 @@ if screen == 'analysis_type':
         st.markdown("""
         <div class="region-card" style="--rc-a:#6F4F7F; --rc-b:#AB47BC; --rc-accent:#AB47BC;">
             <div class="rc-icon">⚡</div>
-            <div class="rc-label">Análise · Geral</div>
-            <div class="rc-title">Eficiência de Corte</div>
+            <div class="rc-label">KPIs · Eficiência Operacional</div>
+            <div class="rc-title">Análise de Eficiência OPs</div>
             <div class="rc-desc">
-                Análise de eficiência geral de corte com métricas de produtividade, kgs e índices de desempenho.
+                Métricas de eficiência, produtividade e desempenho de corte por linha de produto — Manta, Lençol e Giattex.
             </div>
             <div class="rc-tags">
                 <span class="rc-tag">Eficiência</span>
                 <span class="rc-tag">KPIs</span>
-                <span class="rc-tag">Arealva</span>
+                <span class="rc-tag">Manta · Lençol · Giattex</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True):
             _go('eficiencia_dashboard')
-        st.caption("💡 Análise de eficiência de corte com 3 abas: Manta, Lençol e GIattex")
+        st.caption("💡 Eficiência por linha: Manta (Arealva/Iacanga), Lençol e Giattex")
 
     st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
     col_back_inicio, *_ = st.columns([2, 5])
@@ -1088,7 +1211,7 @@ elif screen == 'regions':
     <div class="page-divider"></div>
     """, unsafe_allow_html=True)
 
-    _, col_arealva, col_iacanga, _ = st.columns([0.5, 3, 3, 0.5])
+    col_arealva, col_iacanga, col_itaju = st.columns(3)
 
     with col_arealva:
         st.markdown("""
@@ -1116,7 +1239,7 @@ elif screen == 'regions':
             <div class="rc-label">Unidade · Ebel</div>
             <div class="rc-title">Iacanga</div>
             <div class="rc-desc">
-                Análise das estações de Corte Giattex. Metas Diarias e acompanhamento por OP. 
+                Análise das estações de Corte Giattex. Metas Diarias e acompanhamento por OP.
             </div>
             <div class="rc-tags">
                 <span class="rc-tag">Manta</span>
@@ -1127,6 +1250,26 @@ elif screen == 'regions':
         """, unsafe_allow_html=True)
         if st.button("Abrir Iacanga  →", key="btn_iacanga", use_container_width=True):
             _go('iacanga_rendimento')
+
+    with col_itaju:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#064E3B; --rc-b:#059669; --rc-accent:#34D399;">
+            <div class="rc-icon">🧵</div>
+            <div class="rc-label">Unidade · Itaju</div>
+            <div class="rc-title">Itaju</div>
+            <div class="rc-desc">
+                Corte Ponto Palito Marcelino. Acompanhamento da produção
+                por OP e metas diárias da unidade de Itaju.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Ponto Palito</span>
+                <span class="rc-tag">Marcelino</span>
+                <span class="rc-tag">Estações</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Itaju  →", key="btn_itaju", use_container_width=True):
+            _go('itaju')
 
     st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
     col_back, *_ = st.columns([2, 5])
@@ -3872,5 +4015,484 @@ elif screen == 'arealva_lencol':
         "✂️ Arealva · Lençol &nbsp;|&nbsp; Alimentado pela planilha CONTROLE DE CORTE DIÁRIO LENÇOL &nbsp;|&nbsp; "
         f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         "</div>",
+        unsafe_allow_html=True,
+    )
+
+# ── SCREEN — ITAJU ────────────────────────────────────────────────────────────
+elif screen == 'itaju':
+
+    st.markdown("""
+    <style>
+    .it-sec {
+        font-size:1rem;font-weight:700;color:#E2E8F0;
+        margin:20px 0 10px 0;padding-bottom:6px;
+        border-bottom:2px solid rgba(52,211,153,.35);
+    }
+    .it-badge {
+        display:inline-block;padding:4px 14px;border-radius:999px;
+        font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;
+        color:#34D399;background:rgba(52,211,153,.10);
+        border:1px solid rgba(52,211,153,.30);font-weight:600;margin-bottom:16px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Controle de Corte</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Regiões</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Itaju · Ponto Palito</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Carregar dados ──────────────────────────────────────────────────────
+    with st.spinner("⏳ Carregando dados de Itaju…"):
+        df_it_raw = load_itaju()
+
+    if df_it_raw.empty:
+        st.error("❌ Não foi possível carregar a planilha de Itaju.")
+        st.info("Verifique se a planilha está compartilhada como 'Qualquer pessoa com o link pode visualizar'.")
+        col_bk, *_ = st.columns([2, 5])
+        with col_bk:
+            if st.button("← Voltar às Regiões", key="itaju_back_err"):
+                _go('regions')
+        st.stop()
+
+    data_min_it = df_it_raw["DATA"].min().date()
+    data_max_it = df_it_raw["DATA"].max().date()
+    hoje_it = datetime.now().date()
+
+    # ── Sidebar ─────────────────────────────────────────────────────────────
+    with st.sidebar:
+        st.caption(f"Atualizado a cada {ITAJU_CACHE_TTL}s · {datetime.now().strftime('%H:%M:%S')}")
+        if st.button("🔄 Limpar Cache", key="it_clear", use_container_width=True):
+            load_itaju.clear()
+            st.rerun()
+
+        st.markdown("**📅 Período**")
+        periodo_it = st.radio(
+            "Preset Itaju", ["7 dias", "30 dias", "Mês atual", "Todo o período", "Personalizado"],
+            index=3, label_visibility="collapsed", key="it_periodo_opt",
+        )
+        if periodo_it == "7 dias":
+            p_ini_it, p_fim_it = hoje_it - timedelta(days=6), hoje_it
+        elif periodo_it == "30 dias":
+            p_ini_it, p_fim_it = hoje_it - timedelta(days=29), hoje_it
+        elif periodo_it == "Mês atual":
+            p_ini_it = hoje_it.replace(day=1)
+            p_fim_it = hoje_it
+            if p_ini_it > data_max_it:
+                p_fim_it = p_ini_it - timedelta(days=1)
+                p_ini_it = p_fim_it.replace(day=1)
+        elif periodo_it == "Todo o período":
+            p_ini_it, p_fim_it = data_min_it, data_max_it
+        else:
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                p_ini_it = st.date_input("De", value=data_min_it, format="DD/MM/YYYY", key="it_ini")
+            with col_d2:
+                p_fim_it = st.date_input("Até", value=data_max_it, format="DD/MM/YYYY", key="it_fim")
+        p_ini_it = max(p_ini_it, data_min_it)
+
+        st.markdown("**🔍 Filtros**")
+        ops_disp = sorted(df_it_raw["OP"].unique())
+        sel_ops_it = st.multiselect("OP", ops_disp, placeholder="Todas", key="it_op")
+
+        if "ESTACAO" in df_it_raw.columns:
+            est_disp = sorted(df_it_raw["ESTACAO"].unique())
+            sel_est_it = st.multiselect("Estação de Corte", est_disp, placeholder="Todas", key="it_est")
+        else:
+            sel_est_it = []
+
+        if "COR" in df_it_raw.columns:
+            cor_disp = sorted(df_it_raw["COR"].unique())
+            sel_cor_it = st.multiselect("Cor", cor_disp, placeholder="Todas", key="it_cor")
+        else:
+            sel_cor_it = []
+
+        tam_disp = sorted(df_it_raw["TAMANHO"].unique())
+        sel_tam_it = st.multiselect("Tamanho", tam_disp, placeholder="Todos", key="it_tam")
+
+        st.caption(f"📊 {len(df_it_raw):,} registros totais".replace(",", "."))
+
+    # ── Aplicar filtros ─────────────────────────────────────────────────────
+    df_it = df_it_raw[
+        (df_it_raw["DATA"].dt.date >= p_ini_it) &
+        (df_it_raw["DATA"].dt.date <= p_fim_it)
+    ].copy()
+    if sel_ops_it:  df_it = df_it[df_it["OP"].isin(sel_ops_it)]
+    if sel_est_it:  df_it = df_it[df_it["ESTACAO"].isin(sel_est_it)]
+    if sel_cor_it:  df_it = df_it[df_it["COR"].isin(sel_cor_it)]
+    if sel_tam_it:  df_it = df_it[df_it["TAMANHO"].isin(sel_tam_it)]
+
+    if df_it.empty:
+        st.warning("⚠️ Nenhum dado para os filtros selecionados.")
+        st.stop()
+
+    # ── Cabeçalho ───────────────────────────────────────────────────────────
+    st.markdown(
+        "<div style='text-align:center'><span class='it-badge'>🧵 Itaju · Ponto Palito Marcelino</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<h1 style='text-align:center;color:#FFF;font-size:2rem;font-weight:800;margin-bottom:2px'>"
+        f"✂️ Dashboard Corte · Ponto Palito</h1>"
+        f"<p style='text-align:center;color:#718096;font-size:.9rem;margin-bottom:0'>"
+        f"{p_ini_it.strftime('%d/%m/%Y')} — {p_fim_it.strftime('%d/%m/%Y')} · "
+        f"{int(df_it['QUANTIDADE'].sum()):,} peças</p>".replace(",", "."),
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
+    # ── KPIs globais ────────────────────────────────────────────────────────
+    total_it      = int(df_it["QUANTIDADE"].sum())
+    tot_cima      = int(df_it[df_it["PRODUTO"] == "CIMA"]["QUANTIDADE"].sum())
+    tot_fundo     = int(df_it[df_it["PRODUTO"] == "FUNDO"]["QUANTIDADE"].sum())
+    tot_fronha    = int(df_it[df_it["PRODUTO"] == "FRONHA"]["QUANTIDADE"].sum())
+    dias_com_it   = df_it["DATA"].dt.date.nunique()
+    media_dia_it  = total_it / dias_com_it if dias_com_it else 0
+    n_ops_it      = df_it["OP"].nunique()
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("🧵 Total Peças",    _itaju_fmt(total_it))
+    c2.metric("⬆️ Cima",          _itaju_fmt(tot_cima))
+    c3.metric("⬇️ Fundo",         _itaju_fmt(tot_fundo))
+    c4.metric("🪡 Fronha",        _itaju_fmt(tot_fronha))
+    c5.metric("📆 Dias Trabalhados", str(dias_com_it))
+    c6.metric("📋 OPs",            str(n_ops_it))
+
+    st.divider()
+
+    # ── Caseamento CIMA × FUNDO ─────────────────────────────────────────────
+    st.markdown("<div class='it-sec'>🔄 Caseamento — Cima × Fundo × Fronha por OP</div>", unsafe_allow_html=True)
+    st.caption(
+        "Para cada OP + Tamanho + Cor, a quantidade de **Cima** e **Fundo** deve ser igual. "
+        "A **Fronha** é registrada separadamente. Divergência indica que o corte de um dos lados está incompleto."
+    )
+
+    df_casea_it = itaju_caseamento(df_it)
+
+    if df_casea_it.empty:
+        st.info("Sem dados suficientes para caseamento no período selecionado.")
+    else:
+        n_total_ops_c = len(df_casea_it)
+        n_ok   = (df_casea_it["STATUS"] == "✅ Caseado").sum()
+        n_div  = n_total_ops_c - n_ok
+        saldo  = int(df_casea_it["DIFER_CF"].sum())
+
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        cc1.metric("🧩 OPs no período", str(n_total_ops_c))
+        cc2.metric("✅ Caseadas (Cima=Fundo)", str(n_ok))
+        cc3.metric("🚩 Divergentes", str(n_div),
+                   delta=("Tudo caseado" if n_div == 0 else f"{n_div} pendente(s)"),
+                   delta_color=("off" if n_div == 0 else "inverse"))
+        cc4.metric("⚖️ Saldo Geral (Fundo−Cima)",
+                   f"{'+' if saldo > 0 else ''}{_itaju_fmt(saldo)}",
+                   delta=("Caseado" if saldo == 0 else ("Faltam fundos" if saldo < 0 else "Sobram fundos")),
+                   delta_color=("off" if saldo == 0 else "inverse"))
+
+        # Tabela de divergências
+        div_it = df_casea_it[df_casea_it["STATUS"] != "✅ Caseado"]
+        if not div_it.empty:
+            with st.expander(f"🔎 Ver {len(div_it)} divergência(s)", expanded=True):
+                show_div = div_it.copy()
+                for col in ["CIMA", "FUNDO", "FRONHA"]:
+                    show_div[col] = show_div[col].apply(_itaju_fmt)
+                show_div["DIFER_CF"] = show_div["DIFER_CF"].apply(
+                    lambda v: f"{'+' if v > 0 else ''}{_itaju_fmt(v)}"
+                )
+                st.dataframe(
+                    show_div.rename(columns={
+                        "OP": "OP", "TAMANHO": "Tamanho", "COR": "Cor",
+                        "CIMA": "Cima", "FUNDO": "Fundo", "FRONHA": "Fronha",
+                        "DIFER_CF": "Dif. (F−C)", "STATUS": "Status",
+                    }),
+                    use_container_width=True, hide_index=True,
+                )
+        else:
+            st.success("✅ Todas as OPs do período estão caseadas (Cima = Fundo).")
+
+        with st.expander("📋 Caseamento completo (todas as OPs)", expanded=False):
+            show_all = df_casea_it.copy()
+            for col in ["CIMA", "FUNDO", "FRONHA"]:
+                show_all[col] = show_all[col].apply(_itaju_fmt)
+            show_all["DIFER_CF"] = show_all["DIFER_CF"].apply(
+                lambda v: f"{'+' if v > 0 else ''}{_itaju_fmt(v)}"
+            )
+            st.dataframe(
+                show_all.rename(columns={
+                    "OP": "OP", "TAMANHO": "Tamanho", "COR": "Cor",
+                    "CIMA": "Cima", "FUNDO": "Fundo", "FRONHA": "Fronha",
+                    "DIFER_CF": "Dif. (F−C)", "STATUS": "Status",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+
+    st.divider()
+
+    # ── Gráficos ────────────────────────────────────────────────────────────
+    col_g1, col_g2 = st.columns(2)
+
+    with col_g1:
+        st.markdown("<div class='it-sec'>Produção Diária por Produto</div>", unsafe_allow_html=True)
+        df_dia_it = (
+            df_it.groupby(["DATA", "PRODUTO"])["QUANTIDADE"]
+            .sum().reset_index()
+        )
+        df_dia_it["DATA_STR"] = df_dia_it["DATA"].dt.strftime("%d/%m")
+        fig_it1 = go.Figure()
+        for prod in ["CIMA", "FUNDO", "FRONHA"]:
+            sub = df_dia_it[df_dia_it["PRODUTO"] == prod]
+            if not sub.empty:
+                fig_it1.add_bar(
+                    x=sub["DATA_STR"], y=sub["QUANTIDADE"],
+                    name=prod, marker_color=ITAJU_CORES_PRODUTO.get(prod, "#718096"),
+                )
+        fig_it1.update_layout(**_itaju_layout(barmode="group", height=300, title="Peças por dia"))
+        st.plotly_chart(fig_it1, use_container_width=True)
+
+    with col_g2:
+        st.markdown("<div class='it-sec'>Mix por Produto</div>", unsafe_allow_html=True)
+        df_mix_it = df_it.groupby("PRODUTO")["QUANTIDADE"].sum().reset_index()
+        fig_it2 = go.Figure(go.Pie(
+            labels=df_mix_it["PRODUTO"], values=df_mix_it["QUANTIDADE"],
+            hole=0.5,
+            marker=dict(colors=[ITAJU_CORES_PRODUTO.get(p, "#718096") for p in df_mix_it["PRODUTO"]]),
+            textinfo="percent+label",
+            hovertemplate="%{label}<br>%{value:,.0f} peças<br>%{percent}<extra></extra>",
+        ))
+        fig_it2.update_layout(**_itaju_layout(height=300,
+            annotations=[dict(text="Produtos", x=.5, y=.5,
+                              font=dict(size=11, color="#CBD5E0"), showarrow=False)]))
+        st.plotly_chart(fig_it2, use_container_width=True)
+
+    col_g3, col_g4 = st.columns(2)
+
+    with col_g3:
+        st.markdown("<div class='it-sec'>Produção por Tamanho</div>", unsafe_allow_html=True)
+        df_tam_it = (
+            df_it.groupby(["TAMANHO", "PRODUTO"])["QUANTIDADE"]
+            .sum().reset_index().sort_values("QUANTIDADE", ascending=False)
+        )
+        fig_it3 = go.Figure()
+        for prod in ["CIMA", "FUNDO", "FRONHA"]:
+            sub = df_tam_it[df_tam_it["PRODUTO"] == prod]
+            if not sub.empty:
+                fig_it3.add_bar(
+                    x=sub["TAMANHO"], y=sub["QUANTIDADE"],
+                    name=prod, marker_color=ITAJU_CORES_PRODUTO.get(prod, "#718096"),
+                )
+        fig_it3.update_layout(**_itaju_layout(barmode="group", height=300, title="Peças por tamanho"))
+        st.plotly_chart(fig_it3, use_container_width=True)
+
+    with col_g4:
+        if "COR" in df_it.columns:
+            st.markdown("<div class='it-sec'>Produção por Cor</div>", unsafe_allow_html=True)
+            df_cor_it = (
+                df_it.groupby("COR")["QUANTIDADE"].sum()
+                .reset_index().sort_values("QUANTIDADE", ascending=True)
+            )
+            fig_it4 = go.Figure(go.Bar(
+                x=df_cor_it["QUANTIDADE"], y=df_cor_it["COR"],
+                orientation="h",
+                text=[_itaju_fmt(v) for v in df_cor_it["QUANTIDADE"]],
+                textposition="outside",
+                marker=dict(color=df_cor_it["QUANTIDADE"],
+                            colorscale=[[0, "#1C3A4A"], [1, "#34D399"]], showscale=False),
+            ))
+            fig_it4.update_layout(**_itaju_layout(height=300, title="Peças por cor"))
+            st.plotly_chart(fig_it4, use_container_width=True)
+        elif "ESTACAO" in df_it.columns:
+            st.markdown("<div class='it-sec'>Produção por Estação</div>", unsafe_allow_html=True)
+            df_est_it = df_it.groupby("ESTACAO")["QUANTIDADE"].sum().reset_index()
+            fig_it4 = go.Figure(go.Bar(
+                x=df_est_it["ESTACAO"], y=df_est_it["QUANTIDADE"],
+                marker_color="#34D399",
+                text=[_itaju_fmt(v) for v in df_est_it["QUANTIDADE"]],
+                textposition="outside",
+            ))
+            fig_it4.update_layout(**_itaju_layout(height=300, title="Peças por estação"))
+            st.plotly_chart(fig_it4, use_container_width=True)
+
+    # ── Tabela por OP ───────────────────────────────────────────────────────
+    st.markdown("<div class='it-sec'>📋 Detalhe por OP</div>", unsafe_allow_html=True)
+    grp_cols_op = ["OP", "TAMANHO"] + (["COR"] if "COR" in df_it.columns else [])
+    df_op_it = (
+        df_it.groupby(grp_cols_op + ["PRODUTO"])["QUANTIDADE"]
+        .sum().unstack(fill_value=0).reset_index()
+    )
+    df_op_it.columns = [str(c).strip() for c in df_op_it.columns]
+    for col in ["CIMA", "FUNDO", "FRONHA"]:
+        if col not in df_op_it.columns:
+            df_op_it[col] = 0
+    df_op_it["TOTAL"] = df_op_it[["CIMA", "FUNDO", "FRONHA"]].sum(axis=1)
+    df_op_it["DIFER"] = df_op_it["FUNDO"] - df_op_it["CIMA"]
+    df_op_it["STATUS"] = df_op_it["DIFER"].apply(
+        lambda x: "✅" if x == 0 else ("🔴" if x < 0 else "🟠")
+    )
+    st.dataframe(
+        df_op_it.rename(columns={
+            "OP": "OP", "TAMANHO": "Tamanho", "COR": "Cor",
+            "CIMA": "Cima", "FUNDO": "Fundo", "FRONHA": "Fronha",
+            "TOTAL": "Total", "DIFER": "Dif. F−C", "STATUS": "Status",
+        }),
+        use_container_width=True, hide_index=True,
+        height=min(50 + len(df_op_it) * 35, 500),
+    )
+
+    # ── Botão Relatório PDF ─────────────────────────────────────────────────
+    def _html_itaju_relatorio() -> bytes:
+        """Gera relatório HTML formatado para impressão/PDF do Corte Itaju."""
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+        periodo_str = f"{p_ini_it.strftime('%d/%m/%Y')} — {p_fim_it.strftime('%d/%m/%Y')}"
+
+        def _n(v) -> str:
+            return f"{int(v):,}".replace(",", ".")
+
+        def _casea_rows() -> str:
+            if df_casea_it.empty:
+                return "<tr><td colspan='8' style='text-align:center'>Sem dados</td></tr>"
+            linhas = []
+            for _, r in df_casea_it.iterrows():
+                ok = "✅" in str(r["STATUS"])
+                cls = "ok" if ok else "err"
+                dif = int(r["DIFER_CF"])
+                dif_s = f"{'+' if dif > 0 else ''}{_n(dif)}"
+                cor_v = r.get("COR", "") if "COR" in df_casea_it.columns else ""
+                linhas.append(
+                    f"<tr><td>{r['OP']}</td><td>{r.get('TAMANHO','')}</td><td>{cor_v}</td>"
+                    f"<td class='num'>{_n(r['CIMA'])}</td><td class='num'>{_n(r['FUNDO'])}</td>"
+                    f"<td class='num'>{_n(r['FRONHA'])}</td>"
+                    f"<td class='num s{cls}'>{dif_s}</td><td class='s{cls}'>{r['STATUS']}</td></tr>"
+                )
+            return "\n".join(linhas)
+
+        def _op_rows() -> str:
+            if df_op_it.empty:
+                return "<tr><td colspan='9' style='text-align:center'>Sem dados</td></tr>"
+            tem_cor = "COR" in df_op_it.columns
+            linhas = []
+            for _, r in df_op_it.iterrows():
+                dif = int(r["DIFER"])
+                dif_s = f"{'+' if dif > 0 else ''}{_n(dif)}"
+                cls = "ok" if r["STATUS"] == "✅" else "err"
+                dif_color = "#B91C1C" if dif != 0 else "#065F46"
+                cor_td = f"<td>{r.get('COR','')}</td>" if tem_cor else ""
+                linhas.append(
+                    f"<tr><td>{r['OP']}</td><td>{r.get('TAMANHO','')}</td>{cor_td}"
+                    f"<td class='num'>{_n(r['CIMA'])}</td><td class='num'>{_n(r['FUNDO'])}</td>"
+                    f"<td class='num'>{_n(r['FRONHA'])}</td><td class='num'>{_n(r['TOTAL'])}</td>"
+                    f"<td class='num' style='color:{dif_color};font-weight:600'>{dif_s}</td>"
+                    f"<td class='s{cls}'>{r['STATUS']}</td></tr>"
+                )
+            return "\n".join(linhas)
+
+        cor_th = "<th>Cor</th>" if "COR" in df_op_it.columns else ""
+        casea_html = _casea_rows()
+        op_html    = _op_rows()
+
+        html = (
+            "<!DOCTYPE html>\n"
+            "<html lang='pt-BR'>\n"
+            "<head>\n"
+            "<meta charset='UTF-8'>\n"
+            f"<title>Relatório Corte Itaju · {periodo_str}</title>\n"
+            "<style>\n"
+            "@page { margin: 15mm; size: A4 landscape; }\n"
+            "* { box-sizing: border-box; margin: 0; padding: 0; }\n"
+            "body { font-family: Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: #fff; }\n"
+            ".hint { background:#FEF3C7; padding:8px 14px; margin-bottom:14px; border-radius:4px;"
+            "        font-size:12px; border:1px solid #FCD34D; }\n"
+            ".header { border-bottom:3px solid #065F46; padding-bottom:8px; margin-bottom:14px; }\n"
+            ".header h1 { font-size:17px; color:#065F46; }\n"
+            ".header .sub { color:#444; margin-top:3px; font-size:10px; }\n"
+            ".kpi-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:7px; margin-bottom:16px; }\n"
+            ".kpi { border:1px solid #34D399; border-radius:5px; padding:7px 9px; text-align:center; }\n"
+            ".kpi-lbl { font-size:8px; color:#555; text-transform:uppercase; letter-spacing:.05em; }\n"
+            ".kpi-val { font-size:15px; font-weight:700; color:#065F46; margin-top:2px; }\n"
+            ".sec { font-size:11px; font-weight:700; color:#065F46;"
+            "       border-bottom:1px solid #34D399; margin:14px 0 7px 0; padding-bottom:3px; }\n"
+            "table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:9.5px; }\n"
+            "th { background:#065F46; color:#fff; padding:4px 6px; text-align:left;"
+            "     font-size:8.5px; text-transform:uppercase; letter-spacing:.04em; }\n"
+            "td { padding:3px 6px; border-bottom:1px solid #e5e7eb; }\n"
+            "tr:nth-child(even) td { background:#F0FDF4; }\n"
+            ".num { text-align:right; font-variant-numeric:tabular-nums; }\n"
+            ".sok { color:#065F46; font-weight:600; }\n"
+            ".serr { color:#B91C1C; font-weight:600; }\n"
+            ".footer { margin-top:16px; padding-top:7px; border-top:1px solid #ccc;"
+            "          color:#777; font-size:8px; text-align:center; }\n"
+            "@media print { .hint { display:none; }"
+            "  body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }\n"
+            "</style>\n"
+            "</head>\n"
+            "<body>\n"
+            "<div class='hint'>"
+            "  <strong>Para gerar PDF:</strong> pressione <kbd>Ctrl+P</kbd> (Windows) ou"
+            "  <kbd>⌘+P</kbd> (Mac) &rarr; escolha <em>Salvar como PDF</em>."
+            "</div>\n"
+            "<div class='header'>\n"
+            "  <h1>&#9986; Relatório Corte Itaju &middot; Ponto Palito Marcelino</h1>\n"
+            f"  <div class='sub'>Período: <strong>{periodo_str}</strong>"
+            f"  &nbsp;|&nbsp; Gerado em: {agora}</div>\n"
+            "</div>\n"
+            "<div class='kpi-grid'>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>Total Peças</div><div class='kpi-val'>{_n(total_it)}</div></div>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>Cima</div><div class='kpi-val'>{_n(tot_cima)}</div></div>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>Fundo</div><div class='kpi-val'>{_n(tot_fundo)}</div></div>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>Fronha</div><div class='kpi-val'>{_n(tot_fronha)}</div></div>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>Dias Trabalhados</div><div class='kpi-val'>{dias_com_it}</div></div>\n"
+            f"  <div class='kpi'><div class='kpi-lbl'>OPs</div><div class='kpi-val'>{n_ops_it}</div></div>\n"
+            "</div>\n"
+            "<div class='sec'>Caseamento &mdash; Cima &times; Fundo &times; Fronha por OP</div>\n"
+            "<table>\n"
+            "  <thead><tr><th>OP</th><th>Tamanho</th><th>Cor</th>"
+            "<th class='num'>Cima</th><th class='num'>Fundo</th><th class='num'>Fronha</th>"
+            "<th class='num'>Dif. (F&minus;C)</th><th>Status</th></tr></thead>\n"
+            f"  <tbody>{casea_html}</tbody>\n"
+            "</table>\n"
+            "<div class='sec'>Detalhe por OP</div>\n"
+            "<table>\n"
+            f"  <thead><tr><th>OP</th><th>Tamanho</th>{cor_th}"
+            "<th class='num'>Cima</th><th class='num'>Fundo</th><th class='num'>Fronha</th>"
+            "<th class='num'>Total</th><th class='num'>Dif. F&minus;C</th><th>Status</th></tr></thead>\n"
+            f"  <tbody>{op_html}</tbody>\n"
+            "</table>\n"
+            "<div class='footer'>"
+            f"Relatório Corte Itaju &middot; Ponto Palito Marcelino &middot; "
+            f"Sistema Unificação dos Dados &middot; {agora}"
+            "</div>\n"
+            "</body>\n"
+            "</html>"
+        )
+        return html.encode("utf-8")
+
+    st.divider()
+    _col_l, _col_c, _col_r = st.columns([3, 2, 3])
+    with _col_c:
+        st.download_button(
+            label="📄 Gerar Relatório PDF",
+            data=_html_itaju_relatorio(),
+            file_name=(
+                f"relatorio_itaju_{p_ini_it.strftime('%Y%m%d')}"
+                f"_{p_fim_it.strftime('%Y%m%d')}.html"
+            ),
+            mime="text/html",
+            use_container_width=True,
+        )
+    st.markdown(
+        "<p style='text-align:center;color:#718096;font-size:.8rem;margin-top:4px'>"
+        "Abre no navegador &rarr; <kbd>Ctrl+P</kbd> &rarr; Salvar como PDF</p>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.markdown(
+        f"<div style='text-align:center;color:#606878;font-size:.82rem;'>"
+        f"🧵 Itaju · Ponto Palito Marcelino &nbsp;|&nbsp; "
+        f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        f"</div>",
         unsafe_allow_html=True,
     )

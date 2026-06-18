@@ -1785,8 +1785,18 @@ def _sidebar_nav_producao(screen: str):
         if st.button("🏢  Início", key="prod_sb_home", use_container_width=True):
             st.session_state.producao_screen = 'analysis_type'
             st.switch_page("app.py")
-        if screen == 'por_cliente':
-            if st.button("← Tipo de Análise", key="prod_sb_back_cli", use_container_width=True):
+        if screen == 'por_cliente_type':
+            if st.button("← Tipo de Análise", key="prod_sb_back_cli_type", use_container_width=True):
+                _go_prod('analysis_type')
+        elif screen == 'por_cliente':
+            if st.button("← Por Cliente", key="prod_sb_back_cli", use_container_width=True):
+                _go_prod('por_cliente_type')
+            if st.button("← Tipo de Análise", key="prod_sb_back_cli2", use_container_width=True):
+                _go_prod('analysis_type')
+        elif screen == 'relatorio_semanal':
+            if st.button("← Por Cliente", key="prod_sb_back_rel", use_container_width=True):
+                _go_prod('por_cliente_type')
+            if st.button("← Tipo de Análise", key="prod_sb_back_rel2", use_container_width=True):
                 _go_prod('analysis_type')
         elif screen == 'colaborador_type':
             if st.button("← Tipo de Análise", key="prod_sb_back_colab", use_container_width=True):
@@ -1826,7 +1836,7 @@ def _screen_analysis_type():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Abrir Dashboard  →", key="btn_por_cliente", use_container_width=True):
-            _go_prod('por_cliente')
+            _go_prod('por_cliente_type')
 
     with c2:
         st.markdown("""
@@ -1981,9 +1991,11 @@ def _render_interno_tab(chave: str, cfg: dict):
     # ── Filtros ───────────────────────────────────────────────────────────────
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        ini = st.date_input("De", value=dmin, min_value=dmin, max_value=dmax, key=f"ini_{chave}")
+        ini = st.date_input("De", value=dmin, min_value=dmin, max_value=dmax,
+                            format="DD/MM/YYYY", key=f"ini_{chave}")
     with c2:
-        fim = st.date_input("Até", value=dmax, min_value=dmin, max_value=dmax, key=f"fim_{chave}")
+        fim = st.date_input("Até", value=dmax, min_value=dmin, max_value=dmax,
+                            format="DD/MM/YYYY", key=f"fim_{chave}")
     colabs_all = sorted(df["COLABORADOR"].unique())
     with c3:
         sel = st.multiselect("Colaborador(es)", colabs_all, key=f"colab_{chave}",
@@ -2274,6 +2286,15 @@ def _render_interno_tab(chave: str, cfg: dict):
         st.dataframe(tabela.sort_values("DATA"), use_container_width=True, hide_index=True)
 
 def _screen_interno():
+    with st.sidebar:
+        st.markdown("### Atualizar")
+        if st.button("🔄 Atualizar Dados", use_container_width=True, key="btn_atualizar_interno"):
+            from utils.cache_manager import invalidate_all
+            invalidate_all()
+            st.cache_data.clear()
+            st.rerun()
+        st.sidebar.caption("Dados atualizados a cada 5 min.")
+
     st.markdown("""
     <div class="breadcrumb">
         <span class="bc-link">Análise de Produção</span>
@@ -2297,6 +2318,489 @@ def _screen_interno():
         with tab:
             _render_interno_tab(chave, PRODUCAO_INTERNO_SHEETS[chave])
 
+def _screen_por_cliente_type():
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Análise de Produção</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Por Cliente</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:18px;">
+        <div class="page-badge">🏢 Por Cliente</div>
+        <h1 class="page-title">Dashboard ou <span class="accent">Facções</span></h1>
+        <p class="page-subtitle">Escolha o tipo de visualização da produção por cliente</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    _, c1, c2, _ = st.columns([0.5, 3, 3, 0.5])
+    with c1:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#0F4C5C; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">📊</div>
+            <div class="rc-label">Análise · Geral</div>
+            <div class="rc-title">Dashboard</div>
+            <div class="rc-desc">
+                Acompanhamento da produção por empresa/cliente, com metas diárias,
+                evolução e ranking — visão multi-empresa.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Multi-empresa</span>
+                <span class="rc-tag">Metas</span>
+                <span class="rc-tag">Evolução</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Dashboard  →", key="btn_pc_dashboard", use_container_width=True):
+            _go_prod('por_cliente')
+
+    with c2:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#1A3A5C; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
+            <div class="rc-icon">🏭</div>
+            <div class="rc-label">Produção Externa · Prestadores e Quarterizadas</div>
+            <div class="rc-title">Análise de Facções</div>
+            <div class="rc-desc">
+                Acompanhamento da produção das facções externas em três visões —
+                diária, semanal e mensal — com metas por produto e empresa.
+                Inclui detalhamento por prestador (quarterizadas) e distribuição
+                por facção. Meta diária calculada automaticamente (meta mês / dias úteis).
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Facções</span>
+                <span class="rc-tag">Externos</span>
+                <span class="rc-tag">Metas diárias</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Abrir Análise de Facções  →", key="btn_pc_faccoes", use_container_width=True):
+            st.switch_page("pages/5_Producao_Faccoes.py")
+
+    st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("← Voltar", key="prod_pc_back", use_container_width=True):
+            _go_prod('analysis_type')
+
+
+# ── Fontes do Relatório Semanal (apenas loaders internos já existentes) ─────────
+_FONTES_REL_SEMANAL = [
+    ("LITTEX",  "LITTEX"),
+    ("GGTTEX",  "GGTTEX_JOGOS"),
+    ("GGTTEX",  "GGTTEX_FRONHA"),
+    ("CORTINA", "GGTTEX_CORTINA"),
+]
+
+_MESES_ABREV_REL = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
+
+# ── Metas da foto (CLIENTE · PRODUTO · FÁBRICA · META_MES · META_SEM) ────────────
+# ZANATTEX = GGTTEX (mesma fábrica, nome antigo na tabela)
+_METAS_FOTO = [
+    # NC INDUSTRIA
+    ("NC INDUSTRIA", "COBERTOR TOQUE DE SEDA", "MEGA BARIRI",     250000, 62500),
+    ("NC INDUSTRIA", "MANTA",                  "MEGA BARIRI",      13000,  3250),
+    ("NC INDUSTRIA", "FRONHAS",                "LITEX",            30000,  7500),
+    # BURDAYS
+    ("BURDAYS",      "LENCOL AVULSO",          "ZANATTEX",        110000, 27500),
+    ("BURDAYS",      "LENCOL AVULSO",          "ZANATTEX",         15000,  3750),
+    ("BURDAYS",      "CORTINA",                "ZANATTEX",             0,     0),
+    # ANDREZA
+    ("ANDREZA",      "MANTA BABY",             "PREVITTEX MATRIZ",  20000,  5000),
+    ("ANDREZA",      "JOGOS DE CAMA",          "PREVITTEX MATRIZ",  50000, 12500),
+    # CAMESA
+    ("CAMESA",       "FRONHAS",                "ZANATTEX",         100000, 25000),
+    ("CAMESA",       "FRONHAS",                "PREVITTEX MATRIZ",  33000,  8250),
+    ("CAMESA",       "VELOUR",                 "ZANATTEX",         200000, 50000),
+    ("CAMESA",       "MANTA PRENSADA",         "ZANATTEX",          15000,  3750),
+    ("CAMESA",       "MANTA C/ CINTA",         "ZANATTEX",          63000, 15750),
+    ("CAMESA",       "COBERTOR 180G",          "ZANATTEX",          60000, 15000),
+    ("CAMESA",       "BABY",                   "ZANATTEX",          70000, 17500),
+    # DECOR
+    ("DECOR",        "JOGO DE CAMA",           "PREVITTEX FILIAL",  14000,  3500),
+    ("DECOR",        "CORTINA",                "GGTTEX",            10000,  2500),
+    # SULTAN
+    ("SULTAN",       "CORTINA",                "ZANATTEX",           5000,  1250),
+    ("SULTAN",       "JOGO DE CAMA",           "ZANATTEX",          60000, 15000),
+    ("SULTAN",       "FRONHAS",                "ZANATTEX",          10000,  2500),
+    # MARCELINO
+    ("MARCELINO",    "JG DUPLO PONTO PALITO",  "MEGA PREVEN",       10000,  2500),
+    ("MARCELINO",    "FRONHA PONTO PALITO",    "MEGA PREVEN",        4000,  1000),
+    ("MARCELINO",    "TONHAS",                 "MEGA PREVEN",       20000,  5000),
+    ("MARCELINO",    "TONHAS",                 "ZANATTEX",          80000, 20000),
+    # SEVEN
+    ("SEVEN",        "LENCOL AVULSO",          "ZANATTEX",         180000, 45000),
+    ("SEVEN",        "FRONHA PLUSH",           "ZANATTEX",              0,     0),
+]
+
+# Fábricas que já têm dados no sistema
+_FABRICAS_COM_DADOS = {"LITEX", "LITTEX", "ZANATTEX", "GGTTEX", "CORTINA"}
+
+
+def _norm_match(s: str) -> str:
+    """Uppercase + sem acento para matching de nomes."""
+    s = str(s).strip().upper()
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _get_realizado_meta(df_prod: pd.DataFrame, cliente: str, produto: str, fabrica: str) -> int:
+    """
+    Retorna o realizado da semana para uma linha de meta.
+    Regras de matching (por limitação da estrutura dos loaders):
+      - LITEX/LITTEX  → LITTEX, match por CLIENTE + PRODUTO (normalizado)
+      - ZANATTEX/GGTTEX + JOGO DE CAMA/JOGOS DE CAMA → GGTTEX_JOGOS (todas as linhas do cliente)
+      - ZANATTEX/GGTTEX + CORTINA → GGTTEX_CORTINA (todas as linhas do cliente)
+      - ZANATTEX/GGTTEX + outros → GGTTEX data do cliente, tenta match de produto
+      - PREVITTEX / MEGA BARIRI / MEGA PREVEN → sem dados, retorna 0
+    """
+    if df_prod.empty:
+        return 0
+
+    fab_u   = fabrica.upper()
+    prod_n  = _norm_match(produto)
+    cli_n   = _norm_match(cliente)
+
+    if fab_u in ("LITEX", "LITTEX"):
+        fab_labels = ["LITTEX"]
+    elif fab_u in ("ZANATTEX", "GGTTEX"):
+        fab_labels = ["GGTTEX", "CORTINA"]
+    else:
+        return 0  # sem dados ainda
+
+    df_f = df_prod[df_prod["FABRICA"].isin(fab_labels)].copy()
+    df_c = df_f[df_f["CLIENTE"].apply(_norm_match) == cli_n]
+    if df_c.empty:
+        return 0
+
+    # Matching por produto
+    if prod_n in ("JOGO DE CAMA", "JOGOS DE CAMA"):
+        # GGTTEX_JOGOS: produtos são tamanhos (CASAL/SOLTEIRO/QUEEN) → pega tudo do cliente
+        df_p = df_c[df_c["FABRICA"] == "GGTTEX"]
+    elif prod_n == "CORTINA":
+        df_p = df_c[df_c["FABRICA"] == "CORTINA"]
+    else:
+        # Tenta match exato normalizado
+        df_p = df_c[df_c["PRODUTO"].apply(_norm_match) == prod_n]
+        if df_p.empty:
+            # Fallback: produto do loader começa com os primeiros 5 chars da meta
+            pref = prod_n[:5]
+            df_p = df_c[df_c["PRODUTO"].apply(_norm_match).str.startswith(pref)]
+
+    return int(df_p["QUANTIDADE"].sum())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_rel_semanal_cached(segunda: date, domingo: date) -> pd.DataFrame:
+    """
+    Carrega e consolida produção da semana a partir dos loaders internos:
+    LITTEX, GGTTEX (Jogos + Fronha), GGTTEX Cortina.
+    Retorna DataFrame: FABRICA | PRODUTO | CLIENTE | QUANTIDADE
+    """
+    frames = []
+    for label, chave in _FONTES_REL_SEMANAL:
+        df = load_interno_unidade(chave)
+        if df.empty:
+            continue
+        mask = (df["DATA"].dt.date >= segunda) & (df["DATA"].dt.date <= domingo)
+        df_f = df[mask].copy()
+        if df_f.empty:
+            continue
+        df_f["FABRICA"] = label
+        frames.append(df_f[["FABRICA", "PRODUTO", "CLIENTE", "QUANTIDADE"]])
+
+    if not frames:
+        return pd.DataFrame(columns=["FABRICA", "PRODUTO", "CLIENTE", "QUANTIDADE"])
+
+    combined = pd.concat(frames, ignore_index=True)
+    combined["PRODUTO"] = combined["PRODUTO"].fillna("").str.strip().str.upper()
+    combined["CLIENTE"] = combined["CLIENTE"].fillna("").str.strip().str.upper()
+
+    return (
+        combined
+        .groupby(["FABRICA", "PRODUTO", "CLIENTE"], as_index=False)["QUANTIDADE"]
+        .sum()
+        .sort_values(["FABRICA", "PRODUTO", "CLIENTE"])
+        .reset_index(drop=True)
+    )
+
+
+def _semana_range(offset: int = 0) -> tuple[date, date]:
+    """(segunda, domingo) da semana atual + offset em semanas."""
+    hoje = date.today()
+    segunda = hoje - timedelta(days=hoje.weekday()) + timedelta(weeks=offset)
+    return segunda, segunda + timedelta(days=6)
+
+
+def _screen_relatorio_semanal():
+    st.markdown("""
+    <div class="breadcrumb">
+        <span class="bc-link">Análise de Produção</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-link">Por Cliente</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-active">Relatório Semanal</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header" style="padding-top:18px;">
+        <div class="page-badge">📋 Relatório Semanal</div>
+        <h1 class="page-title">Relatório <span class="accent">Semanal</span></h1>
+        <p class="page-subtitle">Produção da semana — LITTEX · GGTTEX · Cortina</p>
+    </div>
+    <div class="page-divider"></div>
+    """, unsafe_allow_html=True)
+
+    # ── Navegação de semana ──────────────────────────────────────────────────────
+    # Padrão: última semana completa (offset -1), pois a semana atual pode
+    # ainda não ter dados lançados.
+    offset = st.session_state.get("rel_sem_offset", -1)
+    segunda, domingo = _semana_range(offset)
+
+    col_prev, col_label, col_next, col_refresh = st.columns([1, 3, 1, 1])
+    with col_prev:
+        if st.button("← Semana anterior", key="rel_sem_prev", use_container_width=True):
+            st.session_state.rel_sem_offset = offset - 1
+            st.rerun()
+    with col_label:
+        s_str = f"{segunda.day:02d} {_MESES_ABREV_REL[segunda.month-1]}"
+        d_str = f"{domingo.day:02d} {_MESES_ABREV_REL[domingo.month-1]} {domingo.year}"
+        st.markdown(
+            f"<div style='text-align:center;font-size:1.1rem;font-weight:700;"
+            f"color:#FFFFFF;padding:8px 0;'>📅 {s_str} — {d_str}</div>",
+            unsafe_allow_html=True,
+        )
+    with col_next:
+        if st.button("Semana seguinte →", key="rel_sem_next",
+                     use_container_width=True, disabled=(offset >= 0)):
+            st.session_state.rel_sem_offset = offset + 1
+            st.rerun()
+    with col_refresh:
+        if st.button("🔄 Atualizar", key="rel_sem_refresh", use_container_width=True):
+            from utils.cache_manager import invalidate
+            for _, chave in _FONTES_REL_SEMANAL:
+                cfg = PRODUCAO_INTERNO_SHEETS.get(chave, {})
+                if cfg:
+                    invalidate(cfg["id"], cfg["gid"])
+            _load_rel_semanal_cached.clear()
+            st.rerun()
+
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── Carregamento ─────────────────────────────────────────────────────────────
+    with st.spinner("Carregando dados da semana..."):
+        df = _load_rel_semanal_cached(segunda, domingo)
+
+    if df.empty:
+        st.warning("Nenhum dado de produção encontrado para essa semana.")
+        col_back, *_ = st.columns([2, 5])
+        with col_back:
+            if st.button("← Voltar", key="rel_sem_back_vazio", use_container_width=True):
+                _go_prod('por_cliente_type')
+        return
+
+    # ── Abas ─────────────────────────────────────────────────────────────────────
+    tab_fab, tab_cli = st.tabs(["🏭 Por Fábrica", "🏢 Por Cliente"])
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # ABA 1 — Por Fábrica (conteúdo original)
+    # ════════════════════════════════════════════════════════════════════════════
+    with tab_fab:
+        totais_fab  = df.groupby("FABRICA")["QUANTIDADE"].sum()
+        total_geral = int(df["QUANTIDADE"].sum())
+        fab_ordem   = [f for f in ["LITTEX", "GGTTEX", "CORTINA"] if f in totais_fab.index]
+
+        met_cols = st.columns(1 + len(fab_ordem))
+        with met_cols[0]:
+            st.metric("Total Geral", f"{total_geral:,}".replace(",", ".") + " pçs")
+        for i, fab in enumerate(fab_ordem, start=1):
+            with met_cols[i]:
+                st.metric(fab, f"{int(totais_fab[fab]):,}".replace(",", ".") + " pçs")
+
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+
+        COR_FAB = {"LITTEX": "#4ECDC4", "GGTTEX": "#45B7D1", "CORTINA": "#AB47BC"}
+
+        for fab in ["LITTEX", "GGTTEX", "CORTINA"]:
+            df_fab = df[df["FABRICA"] == fab]
+            if df_fab.empty:
+                continue
+
+            cor       = COR_FAB.get(fab, "#FFFFFF")
+            total_fab = int(df_fab["QUANTIDADE"].sum())
+
+            st.markdown(
+                f"<div style='background:rgba(255,255,255,0.04);border-left:4px solid {cor};"
+                f"border-radius:0 10px 10px 0;padding:10px 18px;margin-bottom:8px;"
+                f"display:flex;justify-content:space-between;align-items:center;'>"
+                f"<span style='color:{cor};font-weight:800;font-size:1.05rem;"
+                f"letter-spacing:0.08em;'>🏭 {fab}</span>"
+                f"<span style='color:#A0A0A0;font-size:0.9rem;'>Total semana: "
+                f"<strong style='color:#FFFFFF;'>{total_fab:,}".replace(",", ".") +
+                f"</strong> pçs</span></div>",
+                unsafe_allow_html=True,
+            )
+
+            df_show = (
+                df_fab[["PRODUTO", "CLIENTE", "QUANTIDADE"]]
+                .sort_values(["CLIENTE", "PRODUTO"])
+                .reset_index(drop=True)
+                .rename(columns={"PRODUTO": "Produto", "CLIENTE": "Cliente",
+                                  "QUANTIDADE": "Qtd. Semana"})
+            )
+            st.dataframe(
+                df_show,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Produto":     st.column_config.TextColumn("Produto",     width="large"),
+                    "Cliente":     st.column_config.TextColumn("Cliente",     width="medium"),
+                    "Qtd. Semana": st.column_config.NumberColumn("Qtd. Semana",
+                                       format="%d", width="small"),
+                },
+            )
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+        # Export CSV dentro da aba
+        nome_csv = f"relatorio_semanal_{segunda.strftime('%d%m%Y')}.csv"
+        st.download_button(
+            "⬇ Exportar CSV",
+            data=df.to_csv(index=False).encode("utf-8"),
+            file_name=nome_csv,
+            mime="text/csv",
+            use_container_width=False,
+            key="rel_sem_export",
+        )
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # ABA 2 — Por Cliente (análise de metas)
+    # ════════════════════════════════════════════════════════════════════════════
+    with tab_cli:
+        st.markdown(
+            "<p style='color:#A0A0A0;font-size:0.9rem;margin-bottom:20px;'>"
+            "Comparativo <strong style='color:#FFFFFF;'>Meta Semana × Realizado</strong> "
+            "com base nas metas definidas. Fábricas sem dados aparecem como "
+            "<em>Aguardando</em>.</p>",
+            unsafe_allow_html=True,
+        )
+
+        # Agrupa linhas de metas por cliente (preserva ordem de inserção)
+        clientes_ord: list[str] = []
+        metas_por_cli: dict[str, list] = {}
+        for cli, prod, fab, meta_mes, meta_sem in _METAS_FOTO:
+            if cli not in metas_por_cli:
+                clientes_ord.append(cli)
+                metas_por_cli[cli] = []
+            metas_por_cli[cli].append((prod, fab, meta_mes, meta_sem))
+
+        COR_CLI = {
+            "NC INDUSTRIA": "#4ECDC4",
+            "BURDAYS":      "#45B7D1",
+            "ANDREZA":      "#FFD93D",
+            "CAMESA":       "#FF6B6B",
+            "DECOR":        "#C3A6FF",
+            "SULTAN":       "#FF9F43",
+            "MARCELINO":    "#26de81",
+            "SEVEN":        "#fd9644",
+        }
+
+        for cli in clientes_ord:
+            linhas   = metas_por_cli[cli]
+            cor_cli  = COR_CLI.get(cli, "#AAAAAA")
+
+            rows = []
+            total_meta_sem = 0
+            total_real     = 0
+
+            for prod, fab, meta_mes, meta_sem in linhas:
+                tem_dados = fab.strip().upper() in _FABRICAS_COM_DADOS
+                real      = _get_realizado_meta(df, cli, prod, fab) if tem_dados else None
+
+                if meta_sem > 0 and real is not None:
+                    pct = real / meta_sem * 100
+                    if pct >= 90:
+                        ind = "🟢"
+                    elif pct >= 50:
+                        ind = "🟡"
+                    else:
+                        ind = "🔴"
+                    pct_str = f"{pct:.1f}%"
+                elif real is None:
+                    ind     = "⚫"
+                    pct_str = "Aguardando"
+                else:
+                    # meta_sem == 0 → sem meta definida
+                    ind     = "—"
+                    pct_str = "—"
+
+                real_str = f"{real:,}".replace(",", ".") if real is not None else "—"
+                meta_str = f"{meta_sem:,}".replace(",", ".") if meta_sem > 0 else "—"
+
+                rows.append({
+                    "": ind,
+                    "Produto":   prod,
+                    "Fábrica":   fab,
+                    "Meta Sem.": meta_str,
+                    "Realizado": real_str,
+                    "%":         pct_str,
+                })
+
+                if meta_sem > 0:
+                    total_meta_sem += meta_sem
+                if real is not None:
+                    total_real += real
+
+            # Cabeçalho do cliente
+            pct_total = (total_real / total_meta_sem * 100) if total_meta_sem > 0 else 0
+            ind_total = "🟢" if pct_total >= 90 else ("🟡" if pct_total >= 50 else "🔴")
+            if total_meta_sem == 0:
+                ind_total = "⚫"
+
+            st.markdown(
+                f"<div style='background:rgba(255,255,255,0.04);"
+                f"border-left:4px solid {cor_cli};"
+                f"border-radius:0 10px 10px 0;padding:10px 18px;margin:16px 0 6px 0;"
+                f"display:flex;justify-content:space-between;align-items:center;'>"
+                f"<span style='color:{cor_cli};font-weight:800;font-size:1.05rem;"
+                f"letter-spacing:0.06em;'>🏢 {cli}</span>"
+                f"<span style='color:#A0A0A0;font-size:0.9rem;'>"
+                f"Meta sem.: <strong style='color:#FFFFFF;'>"
+                f"{total_meta_sem:,}".replace(",", ".") +
+                f"</strong> &nbsp;|&nbsp; "
+                f"Realizado: <strong style='color:#FFFFFF;'>"
+                f"{total_real:,}".replace(",", ".") +
+                f"</strong> pçs &nbsp; {ind_total} "
+                f"<strong style='color:#FFFFFF;'>{pct_total:.1f}%</strong>"
+                f"</span></div>",
+                unsafe_allow_html=True,
+            )
+
+            df_cli = pd.DataFrame(rows)
+            st.dataframe(
+                df_cli,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "":          st.column_config.TextColumn("",          width=28),
+                    "Produto":   st.column_config.TextColumn("Produto",   width="large"),
+                    "Fábrica":   st.column_config.TextColumn("Fábrica",   width="medium"),
+                    "Meta Sem.": st.column_config.TextColumn("Meta Sem.", width="small"),
+                    "Realizado": st.column_config.TextColumn("Realizado", width="small"),
+                    "%":         st.column_config.TextColumn("%",         width="small"),
+                },
+            )
+
+    # ── Rodapé ───────────────────────────────────────────────────────────────────
+    st.markdown("<hr>", unsafe_allow_html=True)
+    col_back, *_ = st.columns([2, 5])
+    with col_back:
+        if st.button("← Voltar", key="rel_sem_back", use_container_width=True):
+            _go_prod('por_cliente_type')
+
+
 # ─
 # MAIN — dispatcher de telas
 # ─
@@ -2313,6 +2817,10 @@ def main():
 
     if screen == 'analysis_type':
         _screen_analysis_type()
+    elif screen == 'por_cliente_type':
+        _screen_por_cliente_type()
+    elif screen == 'relatorio_semanal':
+        _screen_relatorio_semanal()
     elif screen == 'colaborador_type':
         _screen_colaborador_type()
     elif screen == 'interno':
@@ -2324,7 +2832,9 @@ def main():
         <div class="breadcrumb">
             <span class="bc-link">Análise de Produção</span>
             <span class="bc-sep">›</span>
-            <span class="bc-active">Por Cliente</span>
+            <span class="bc-link">Por Cliente</span>
+            <span class="bc-sep">›</span>
+            <span class="bc-active">Dashboard</span>
         </div>
         """, unsafe_allow_html=True)
         render_por_cliente()
