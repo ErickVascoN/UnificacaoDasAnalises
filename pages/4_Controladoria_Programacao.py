@@ -213,6 +213,16 @@ def load_programacao() -> pd.DataFrame:
         + df.loc[sem_op, "SEMANA"].astype(str).str.strip()
     )
     df.loc[sem_op, "PED. CLIENTE"] = ""  # exibido como vazio/"—"
+
+    try:
+        from utils.db_manager import upsert_df
+        _cols_db = ["_CHAVE", "SEMANA", "CLIENTE", "LOCAL", "PRODUTO", "QNT. PROG", "DATA INICIO", "DATA FINALIZADO"]
+        _cols_exist = [c for c in _cols_db if c in df.columns]
+        upsert_df(df[_cols_exist], "programacao_corte", ["_CHAVE", "PRODUTO"])
+    except Exception:
+        import logging
+        logging.warning("db_manager: falha ao salvar programacao_corte", exc_info=True)
+
     return df
 
 # (parser de data local removido — usar utils.date_parser.parse_date_series,

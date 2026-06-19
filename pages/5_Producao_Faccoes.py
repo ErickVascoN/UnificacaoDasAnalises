@@ -14,9 +14,10 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from config.settings import METAS_FACCOES
 from utils.auth import init_session_state
 from utils.faccao_loader import load_faccoes
+from utils.metas_manager import load_metas, save_metas, reset_metas
+from utils.anotacoes_manager import add_anotacao, remove_anotacao, load_anotacoes, apply_to_fig
 from utils.normalize import normalize_text
 
 st.set_page_config(
@@ -115,7 +116,7 @@ def _pct_bar(pct: float) -> str:
 
 def _build_goals() -> pd.DataFrame:
     rows = []
-    for g in METAS_FACCOES:
+    for g in load_metas():
         rows.append({
             "PRODUTO":     g["produto"].upper(),
             "CLIENTE":     g["cliente"].upper(),
@@ -182,8 +183,79 @@ with st.sidebar:
                                   placeholder="Todos os produtos")
 
     if st.button("🔄 Atualizar dados", use_container_width=True):
+        from utils.cache_manager import invalidate_all
+        invalidate_all()
         st.cache_data.clear()
         st.rerun()
+
+    # ── Seções admin ──────────────────────────────────────────────────────────
+    if st.session_state.get("auth_nivel") == "admin":
+        st.markdown("---")
+
+        # Configurar Metas
+        with st.expander("⚙️ Configurar Metas"):
+            metas_atual = load_metas()
+            metas_df = pd.DataFrame(metas_atual)
+            metas_edited = st.data_editor(
+                metas_df,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="metas_editor",
+                column_config={
+                    "produto":     st.column_config.TextColumn("Produto"),
+                    "cliente":     st.column_config.TextColumn("Cliente"),
+                    "faccao":      st.column_config.TextColumn("Facção"),
+                    "meta_mes":    st.column_config.NumberColumn("Meta Mês", step=500),
+                    "meta_semana": st.column_config.NumberColumn("Meta Semana", step=100),
+                },
+            )
+            c_save, c_reset = st.columns(2)
+            with c_save:
+                if st.button("💾 Salvar", use_container_width=True, key="btn_save_metas"):
+                    save_metas(metas_edited.to_dict("records"))
+                    st.success("Metas salvas!")
+                    st.rerun()
+            with c_reset:
+                if st.button("↩ Resetar", use_container_width=True, key="btn_reset_metas"):
+                    reset_metas()
+                    st.info("Voltou ao padrão do settings.py")
+                    st.rerun()
+
+        # Anotações nos gráficos
+        with st.expander("📝 Anotações nos Gráficos"):
+            with st.form("form_anotacao", clear_on_submit=True):
+                col_d, col_c = st.columns([3, 1])
+                with col_d:
+                    an_data = st.date_input("Data", value=today, key="an_data")
+                with col_c:
+                    an_cor = st.color_picker("Cor", value="#F59E0B", key="an_cor")
+                an_texto = st.text_input("Texto da anotação", key="an_texto")
+                if st.form_submit_button("➕ Adicionar", use_container_width=True):
+                    if an_texto:
+                        add_anotacao(an_data.isoformat(), an_texto, an_cor, ["faccoes"])
+                        st.success("Anotação adicionada!")
+                        st.rerun()
+                    else:
+                        st.warning("Digite um texto.")
+
+            lista_an = load_anotacoes()
+            faccoes_an = [a for a in lista_an if "all" in a.get("paginas", ["all"]) or "faccoes" in a.get("paginas", [])]
+            if faccoes_an:
+                st.markdown("**Anotações ativas:**")
+                for a in sorted(faccoes_an, key=lambda x: x["data"]):
+                    cols = st.columns([4, 1])
+                    with cols[0]:
+                        st.markdown(
+                            f"<span style='color:{a['cor']};font-size:.85rem;'>"
+                            f"● {a['data']} — {a['texto']}</span>",
+                            unsafe_allow_html=True,
+                        )
+                    with cols[1]:
+                        if st.button("✕", key=f"del_an_{a['id']}"):
+                            remove_anotacao(a["id"])
+                            st.rerun()
+            else:
+                st.caption("Nenhuma anotação cadastrada.")
 
 # ── Aplica filtros ──────────────────────────────────────────────────────────────
 df = df_all.copy()
@@ -284,6 +356,9 @@ with tab_mes:
             yaxis_title="Peças",
             **DARK_LAYOUT,
         )
+        _d_ini = date(ano_sel, mes_sel, 1)
+        _d_fim = daily["DATA"].max().date() if not daily.empty else _d_ini
+        fig = apply_to_fig(fig, _d_ini, _d_fim, pagina="faccoes", x_fmt="%d/%m")
         st.plotly_chart(fig, use_container_width=True)
 
         # Acumulado vs meta (burn-up): produção acumulada × meta acumulada esperada
@@ -314,6 +389,7 @@ with tab_mes:
             xaxis_title="Dia", yaxis_title="Peças acumuladas",
             **DARK_LAYOUT,
         )
+        fig_cum = apply_to_fig(fig_cum, _d_ini, _d_fim, pagina="faccoes", x_fmt="%d/%m")
         st.plotly_chart(fig_cum, use_container_width=True)
     else:
         st.info(f"Sem produção registrada em {MESES_PT[mes_sel]}/{ano_sel}.")

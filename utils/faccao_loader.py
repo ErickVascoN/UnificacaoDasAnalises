@@ -181,6 +181,12 @@ def load_faccoes() -> pd.DataFrame:
 
     result["CLIENTE"] = result["CLIENTE"].apply(_canon_cliente)
 
+    try:
+        from utils.db_manager import upsert_df
+        upsert_df(result, "faccoes", ["DATA", "FACCAO", "PRODUTO", "PRESTADOR", "CLIENTE"])
+    except Exception:
+        logger.warning("db_manager: falha ao salvar faccoes no banco local", exc_info=True)
+
     return result
 
 

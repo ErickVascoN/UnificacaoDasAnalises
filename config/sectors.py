@@ -69,6 +69,8 @@ SECTORS_ANALISE = [
         "accent":  "#F4A261",
         "tags": ["Metas", "Previsão", "Custos"],
         "requires_auth": True,
+        "admin_only": True,
+        "maintenance": True,
     },
     {
         "key": "faturados",
@@ -85,6 +87,8 @@ SECTORS_ANALISE = [
         "accent":  "#E76F51",
         "tags": ["Comercial", "Receita", "Clientes"],
         "requires_auth": True,
+        "admin_only": True,
+        "maintenance": True,
     },
     {
         "key": "apontador_gut",
@@ -162,5 +166,23 @@ SECTORS_CONTROLADORIA = [
         "accent":  "#34D399",
         "tags": ["Pedidos", "Comercial", "Análise"],
         "requires_auth": True,
+    },
+    {
+        "key": "historico_db",
+        "title": "Histórico de Dados",
+        "subtitle": "Backup SQLite — todas as fontes",
+        "description": (
+            "Banco de dados local com backup permanente de toda produção, corte e cargas. "
+            "Protege contra perda ou alteração das planilhas Google Sheets. "
+            "Consulta por período, exportação CSV e status do banco."
+        ),
+        "icon": "🗄️",
+        "page_path": "pages/6_Historico.py",
+        "color_a": "#1E3A5F",
+        "color_b": "#2D6A9F",
+        "accent":  "#4DA6FF",
+        "tags": ["Backup", "SQLite", "Histórico"],
+        "requires_auth": True,
+        "admin_only": True,
     },
 ]

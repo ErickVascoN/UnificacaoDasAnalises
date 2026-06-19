@@ -487,6 +487,15 @@ def load_cargas() -> pd.DataFrame:
     # Cargo records de meses concluídos (exclui o próprio registro CARGO_REAL)
     df["TEM_REALIZADO"] = df["MES"].isin(meses_com_real) & (df["STATUS"] != "CARGO_REAL")
 
+    try:
+        from utils.db_manager import upsert_df
+        _cols_db = ["DATA", "DESTINO", "CLIENTE", "STATUS", "LOCAL", "VEICULO", "TIPO_VEICULO", "PREVISAO", "REALIZADO", "VALOR_FRETE", "OBS"]
+        _cols_exist = [c for c in _cols_db if c in df.columns]
+        upsert_df(df[_cols_exist], "previsao_cargas", ["DATA", "DESTINO", "CLIENTE", "STATUS"])
+    except Exception:
+        import logging
+        logging.warning("db_manager: falha ao salvar previsao_cargas", exc_info=True)
+
     return df
 
 

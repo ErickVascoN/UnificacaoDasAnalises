@@ -6,6 +6,108 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "19/06/2026",
+        "tag": "novo",
+        "title": "Histórico de Dados — Banco SQLite local",
+        "description": (
+            "Banco de dados SQLite (data/zanattex.db) criado para backup permanente de "
+            "toda produção, corte, cargas e programação. Atualizado automaticamente a cada "
+            "carregamento de qualquer dashboard. Página 'Histórico de Dados' (admin only) "
+            "permite consultar por período, visualizar gráficos e exportar CSV."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "novo",
+        "title": "Metas configuráveis via interface",
+        "description": (
+            "Admin pode editar as metas de facções diretamente pelo sidebar da página "
+            "'Produção Facções', sem precisar alterar o código. As metas são salvas em "
+            "data/metas_faccoes.json. Botão 'Resetar' volta ao padrão do settings.py."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "novo",
+        "title": "Anotações nos gráficos",
+        "description": (
+            "Admin pode marcar datas especiais (feriados, greves, paradas) diretamente "
+            "nos gráficos de produção diária e burn-up da página Facções. Linhas verticais "
+            "coloridas com texto aparecem automaticamente nos gráficos do período selecionado."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "melhoria",
+        "title": "Home — Análise de Metas e Faturamento bloqueados para Admin",
+        "description": (
+            "Os cards 'Análise de Metas / Previsão de Custos' e 'Análise de Faturamento' "
+            "agora exigem senha de Administrador para acesso. Usuários com senha comum veem "
+            "o badge '🔒 ADMIN' com aviso de manutenção e botão desabilitado. "
+            "Admin pode acessar normalmente; os cards ficam com badge 🔒 ADMIN + aviso "
+            "de que ainda há ajustes em andamento."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "correção",
+        "title": "Produção Geral — Meta Período calculada por dias com produção por (Facção, Produto)",
+        "description": (
+            "Corrigido cálculo de 'Meta Período' na tabela Por Facção: antes usava todos os dias "
+            "úteis do mês agrupados apenas por (Ano, Mês), fazendo todas as facções receberem "
+            "os mesmos N dias independente de quanto produziram. Agora agrupa por "
+            "(Facção, Produto, Ano, Mês) e filtra Quantidade > 0, alinhando a Meta Período "
+            "exatamente com os Dias exibidos na tabela (ex: 11 dias × 1.000 = 11.000, não 15.000)."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "melhoria",
+        "title": "Facções Externas — MANTA MAGICA → MICRO 180G (MAGICA)",
+        "description": (
+            "Produto 'MANTA MAGICA' agora exibe como 'MICRO 180G (MAGICA)' na página "
+            "Produção Facções Externas, diferenciando-o do produto 'COBERTOR 180G' normal. "
+            "Meta separada adicionada em METAS_FACCOES para o novo nome — ajuste o valor "
+            "em config/settings.py se a meta da Manta Mágica for diferente da COBERTOR 180G."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "melhoria",
+        "title": "Produção Geral — meta calculada pelos dias com produção",
+        "description": (
+            "Alterada a lógica de cálculo de 'Dias' e 'Meta Período' no tab Por Facção: "
+            "antes contava todos os dias úteis do intervalo; agora conta apenas os dias onde "
+            "houve produção > 0. Isso beneficia produtos com ciclo irregular (ex: JOGOS, "
+            "JOGO DUPLO) que não produzem diariamente, evitando que o atingimento seja "
+            "penalizado por dias de pausa que fazem parte do processo natural de produção."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "correção",
+        "title": "Produção Geral — células mescladas na coluna FACÇÃO",
+        "description": (
+            "Corrigido bug em _parse_block: quando a coluna FACÇÃO usava células mescladas "
+            "no Google Sheets, o pandas lia NaN em todas as linhas exceto a primeira do grupo. "
+            "O parser pulava essas linhas, deixando de contar toda a produção das linhas "
+            "subsequentes da mesma facção (ex: VANIA CONFEÇÕES tinha 6 linhas de MANTA mas "
+            "o dashboard registrava apenas 1). Agora o valor da célula anterior é herdado "
+            "quando a célula FACCAO está vazia, replicando o comportamento visual do Sheets."
+        ),
+    },
+    {
+        "date": "18/06/2026",
+        "tag": "melhoria",
+        "title": "Produção Geral — expander de conferência diária por facção",
+        "description": (
+            "Adicionado painel 'Conferência diária por Facção' (expansível) no tab 'Por Facção'. "
+            "Permite selecionar uma facção e ver a produção dia a dia por produto em forma de pivot, "
+            "facilitando a comparação direta com os valores da planilha e a identificação de "
+            "divergências causadas por múltiplas linhas do mesmo produto na planilha."
+        ),
+    },
+    {
         "date": "17/06/2026",
         "tag": "novo",
         "title": "Relatório PDF — Carteira de Pedidos",

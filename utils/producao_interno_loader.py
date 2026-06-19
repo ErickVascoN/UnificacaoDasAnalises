@@ -197,6 +197,15 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
             )
 
         logger.info(f"✓ {chave}: {len(out)} linhas válidas")
+
+        try:
+            from utils.db_manager import upsert_df
+            _db_df = out.copy()
+            _db_df["UNIDADE"] = chave
+            upsert_df(_db_df, "producao_interna", ["DATA", "UNIDADE", "COLABORADOR", "PRODUTO"])
+        except Exception:
+            logger.warning("db_manager: falha ao salvar producao_interna no banco local", exc_info=True)
+
         return out
 
     except Exception as e:

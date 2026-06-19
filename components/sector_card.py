@@ -34,15 +34,20 @@ def render_sector_cards(sectors: list[dict], tab_prefix: str) -> None:
                 st.empty()
 
 def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> None:
-    locked = sector["key"] == "faturados" and nivel_acesso not in ("", "admin")
+    admin_only  = sector.get("admin_only", False)
     coming_soon = sector.get("coming_soon", False)
     maintenance = sector.get("maintenance", False)
+
+    # locked = card admin-only acessado por usuário normal autenticado
+    locked = admin_only and nivel_acesso == "usuario"
+    # fully_disabled = ninguém pode acessar (coming_soon, ou manutenção sem bypass admin)
+    fully_disabled = coming_soon or (maintenance and not admin_only)
 
     tags_html = "".join(
         f'<span class="sector-tag">{tag}</span>' for tag in sector["tags"]
     )
 
-    if locked:
+    if locked or admin_only:
         badge_html = (
             '<div style="position:absolute;top:10px;right:12px;'
             'background:rgba(231,111,81,0.18);border:1px solid rgba(231,111,81,0.45);'
@@ -66,15 +71,28 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
     else:
         badge_html = ""
 
-    maintenance_obs_html = (
-        '<div style="margin-top:10px;background:rgba(245,158,11,0.10);'
-        'border:1px solid rgba(245,158,11,0.35);border-left:3px solid #F59E0B;'
-        'border-radius:6px;padding:6px 10px;font-size:.75rem;color:#FCD34D;line-height:1.4;">'
-        '⚠️ <b>OBS:</b> Em Manutenção — planilhas sendo padronizadas.'
-        '</div>'
-    ) if maintenance else ""
+    if maintenance:
+        if admin_only:
+            maintenance_obs_html = (
+                '<div style="margin-top:10px;background:rgba(245,158,11,0.10);'
+                'border:1px solid rgba(245,158,11,0.35);border-left:3px solid #F59E0B;'
+                'border-radius:6px;padding:6px 10px;font-size:.75rem;color:#FCD34D;line-height:1.4;">'
+                '🔧 <b>Em manutenção</b> — dados e funcionalidades ainda em ajuste. '
+                'Acesso restrito ao Administrador.'
+                '</div>'
+            )
+        else:
+            maintenance_obs_html = (
+                '<div style="margin-top:10px;background:rgba(245,158,11,0.10);'
+                'border:1px solid rgba(245,158,11,0.35);border-left:3px solid #F59E0B;'
+                'border-radius:6px;padding:6px 10px;font-size:.75rem;color:#FCD34D;line-height:1.4;">'
+                '⚠️ <b>Em Manutenção</b> — planilhas sendo padronizadas.'
+                '</div>'
+            )
+    else:
+        maintenance_obs_html = ""
 
-    dim = "opacity:.50;pointer-events:none;" if (locked or coming_soon or maintenance) else ""
+    dim = "opacity:.50;pointer-events:none;" if (locked or fully_disabled) else ""
     card_style = (
         f"--card-a:{sector['color_a']};--card-b:{sector['color_b']};"
         f"--card-accent:{sector['accent']};" + dim
@@ -96,7 +114,7 @@ def _render_single_card(sector: dict, tab_prefix: str, nivel_acesso: str) -> Non
     )
 
     key = f"{tab_prefix}_{sector['key']}"
-    _render_card_button(sector, key, nivel_acesso, locked, coming_soon, maintenance)
+    _render_card_button(sector, key, nivel_acesso, locked, coming_soon, maintenance, admin_only)
 
 def _render_card_button(
     sector: dict,
@@ -105,12 +123,13 @@ def _render_card_button(
     locked: bool,
     coming_soon: bool,
     maintenance: bool = False,
+    admin_only: bool = False,
 ) -> None:
-    if maintenance:
-        st.button("🔧 Em Manutenção", key=f"open_{key}", use_container_width=True, disabled=True)
+    fully_disabled = coming_soon or (maintenance and not admin_only)
 
-    elif coming_soon:
-        st.button("🚧 Em breve", key=f"open_{key}", use_container_width=True, disabled=True)
+    if fully_disabled:
+        label = "🚧 Em breve" if coming_soon else "🔧 Em Manutenção"
+        st.button(label, key=f"open_{key}", use_container_width=True, disabled=True)
 
     elif locked:
         st.button(
@@ -164,8 +183,8 @@ def _render_inline_auth(sector: dict, key: str) -> None:
                 nivel = verificar_acesso(senha_input)
                 if nivel == "negado":
                     st.error("❌ Senha incorreta.")
-                elif sector["key"] == "faturados" and nivel != "admin":
-                    st.error("🔒 Faturamento requer senha Admin.")
+                elif sector.get("admin_only") and nivel != "admin":
+                    st.error("🔒 Este módulo requer senha de Administrador.")
                 else:
                     st.session_state.auth_nivel = nivel
                     st.session_state.auth_target = None

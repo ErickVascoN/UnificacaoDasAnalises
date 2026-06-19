@@ -160,7 +160,8 @@ FACCOES_PRODUTO_ALIAS: dict[str, str] = {
     "FRONHA":          "FRONHAS",
     "JOGO":            "JOGO DE CAMA",
     "JOGOS DE CAMA":   "JOGO DE CAMA",
-    "MANTA MAGICA":    "COBERTOR 180G",   # Manta Mágica é 180g = Cobertor 180G
+    "MICRO 180G":      "COBERTOR 180G",           # nome alternativo → canônico
+    "MANTA MAGICA":    "MICRO 180G (MAGICA)",  # diferencia do COBERTOR 180G normal
     # Litex: variantes de lençol → nome canônico
     "LENCOL QE":       "LENCOL AVULSO",
     "LENCOL ST":       "LENCOL AVULSO",
@@ -193,6 +194,7 @@ METAS_FACCOES: list[dict] = [
     {"produto": "MANTA PRENSADA",         "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 200_000, "meta_semana": 50_000},
     {"produto": "MANTA C/CINTA",          "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 15_000,  "meta_semana": 3_750},
     {"produto": "COBERTOR 180G",          "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 63_000,  "meta_semana": 15_750},
+    {"produto": "MICRO 180G (MAGICA)",    "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 63_000,  "meta_semana": 15_750},  # ajuste a meta se necessário
     {"produto": "BABY",                   "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 70_000,  "meta_semana": 17_500},
     {"produto": "JOGO DE CAMA",           "cliente": "CORTTEX",       "faccao": "PREVITTEX FILIAL", "meta_mes": 14_000,  "meta_semana": 3_500},
     {"produto": "CORTINA",                "cliente": "DECOR",         "faccao": "GGTTEX",           "meta_mes": 10_000,  "meta_semana": 2_500},

@@ -523,13 +523,14 @@ def _calc_meta(df_f: pd.DataFrame, sel_facs: list) -> tuple:
         return 0.0, pd.Series(dtype=float), empty
 
     dias_mes = (
-        df_sel.groupby(["Ano", "Mes"])["Data"]
+        df_sel[df_sel["Quantidade"] > 0]
+        .groupby(["Faccao", "Ano", "Mes"])["Data"]
         .apply(calcular_dias_com_sabados_trabalhados)
         .reset_index()
         .rename(columns={"Data": "DiasUteis"})
     )
 
-    meta_mensal = meta_mensal.merge(dias_mes, on=["Ano", "Mes"], how="left")
+    meta_mensal = meta_mensal.merge(dias_mes, on=["Faccao", "Ano", "Mes"], how="left")
     meta_mensal["DiasUteis"] = meta_mensal["DiasUteis"].fillna(0)
     meta_mensal["Meta Periodo Mes"] = meta_mensal["Meta Diaria"] * meta_mensal["DiasUteis"]
 
@@ -593,13 +594,14 @@ def _calc_meta_por_produto(df_f: pd.DataFrame, sel_facs: list) -> pd.DataFrame:
         logging.debug(f"Preenchidas {meta_diaria_antes_fillna} metas diárias com 0 em _calc_meta_por_produto()")
 
     dias_mes = (
-        df_sel.groupby(["Ano", "Mes"])["Data"]
+        df_sel[df_sel["Quantidade"] > 0]
+        .groupby(["Faccao", "Produto", "Ano", "Mes"])["Data"]
         .apply(calcular_dias_com_sabados_trabalhados)
         .reset_index()
         .rename(columns={"Data": "DiasUteis"})
     )
 
-    meta_mensal = meta_mensal.merge(dias_mes, on=["Ano", "Mes"], how="left")
+    meta_mensal = meta_mensal.merge(dias_mes, on=["Faccao", "Produto", "Ano", "Mes"], how="left")
     # Log fillna para DiasUteis (por produto)
     dias_uteis_antes_fillna = meta_mensal["DiasUteis"].isna().sum()
     meta_mensal["DiasUteis"] = meta_mensal["DiasUteis"].fillna(0)
@@ -855,23 +857,38 @@ def _parse_block(raw_block: pd.DataFrame, headers: list, sheet_name: str) -> lis
         return []
 
     records = []
+    last_faccao = None   # herda facção quando coluna usa células mescladas
+    last_produto = None  # herda produto quando coluna usa células mescladas
     for _, row in raw_block.iterrows():
         if "faccao" in col_idx:
             fv = row.iloc[col_idx["faccao"]]
             if pd.isna(fv) or str(fv).strip() in ("", "nan", "None"):
-                continue
-            faccao = str(fv).strip().upper()
-            if _remove_accents(faccao) in _HEADER_LABELS or faccao in _HEADER_LABELS:
-                continue
+                # célula vazia = célula mesclada — herda a facção anterior
+                if last_faccao is None:
+                    continue
+                faccao = last_faccao
+            else:
+                faccao = str(fv).strip().upper()
+                if _remove_accents(faccao) in _HEADER_LABELS or faccao in _HEADER_LABELS:
+                    last_faccao = None
+                    last_produto = None
+                    continue
+                last_faccao = faccao
         else:
             faccao = sheet_name.upper()
 
         pv = row.iloc[col_idx["produto"]]
         if pd.isna(pv) or str(pv).strip() in ("", "nan", "None"):
-            continue
-        produto = str(pv).strip().upper()
-        if _remove_accents(produto) in _HEADER_LABELS or produto in _HEADER_LABELS:
-            continue
+            # célula vazia = célula mesclada — herda o produto anterior
+            if last_produto is None:
+                continue
+            produto = last_produto
+        else:
+            produto = str(pv).strip().upper()
+            if _remove_accents(produto) in _HEADER_LABELS or produto in _HEADER_LABELS:
+                last_produto = None
+                continue
+            last_produto = produto
 
         meta_d = None
         if "meta_diaria" in col_idx:
@@ -1387,6 +1404,8 @@ def render_company(empresa, df, all_data):
             sel_prods = prods
 
         if st.button("🔄 Atualizar Dados", use_container_width=True, key="btn_atualizar_empresa"):
+            from utils.cache_manager import invalidate_all
+            invalidate_all()
             st.cache_data.clear()
             st.rerun()
 
@@ -1498,12 +1517,14 @@ def render_company(empresa, df, all_data):
             Produzido=("Quantidade", "sum"),
         )
         
-        # contar dias: todos úteis + sábados trabalhados
+        # contar dias: apenas dias com produção > 0 (ciclos irregulares não penalizam)
         dias_list = []
         for (fac, prod), group in df_f.groupby(["Faccao", "Produto"]):
-            # Consolidado MÉDIO #16: Usar função única para dias com sábados
-            datas_fac_prod = df_f[(df_f["Faccao"] == fac) & 
-                                   (df_f["Produto"] == prod)]["Data"]
+            datas_fac_prod = df_f[
+                (df_f["Faccao"] == fac) &
+                (df_f["Produto"] == prod) &
+                (df_f["Quantidade"] > 0)
+            ]["Data"]
             dias_calc = calcular_dias_com_sabados_trabalhados(datas_fac_prod)
             dias_list.append({"Faccao": fac, "Produto": prod, "Dias": dias_calc})
         dias_por_faccao_produto = pd.DataFrame(dias_list)
@@ -1537,16 +1558,16 @@ def render_company(empresa, df, all_data):
         )
         tbl["Saldo"]     = tbl["Produzido"] - tbl["Meta Periodo"]
         tbl["Media/Dia"] = np.where(tbl["Dias"] > 0, tbl["Produzido"] / tbl["Dias"], 0)
+        tbl = tbl[tbl["Produzido"] > 0].copy()
         tbl = tbl.sort_values(["Faccao", "Produto"])
 
         # tabela agregada por facção (usada nos gráficos e alertas)
         _, _, meta_fac_df = _calc_meta(df_f, sel_facs)
         
-        # contar dias: todos úteis + sábados trabalhados (por facção)
+        # contar dias: apenas dias com produção > 0 (por facção)
         dias_fac_list = []
         for fac, group in df_f.groupby("Faccao"):
-            # Consolidado MÉDIO #16: Usar função única para dias com sábados
-            datas_fac = df_f[df_f["Faccao"] == fac]["Data"]
+            datas_fac = df_f[(df_f["Faccao"] == fac) & (df_f["Quantidade"] > 0)]["Data"]
             dias_calc = calcular_dias_com_sabados_trabalhados(datas_fac)
             dias_fac_list.append({"Faccao": fac, "Dias": dias_calc})
         dias_por_faccao = pd.DataFrame(dias_fac_list)
@@ -1561,6 +1582,7 @@ def render_company(empresa, df, all_data):
             tbl_fac["Produzido"] / tbl_fac["Meta Periodo"] * 100, 0
         )
         tbl_fac["Saldo"] = tbl_fac["Produzido"] - tbl_fac["Meta Periodo"]
+        tbl_fac = tbl_fac[tbl_fac["Produzido"] > 0].copy()
         tbl_fac = tbl_fac.sort_values("Ating. %", ascending=False)
 
         st.markdown("### Resumo por Facção / Produto")
@@ -1583,6 +1605,35 @@ def render_company(empresa, df, all_data):
             }).background_gradient(subset=["Ating. %"], cmap="RdYlGn", vmin=50, vmax=120),
             width="stretch", hide_index=True,
         )
+
+        with st.expander("🔍 Conferência diária por Facção (compare com a planilha)"):
+            st.caption(
+                "Selecione uma facção para ver a produção dia a dia por produto. "
+                "Se a planilha tiver mais de uma linha para o mesmo produto (metas distintas), "
+                "o dashboard soma todas — isso pode explicar divergências com somas parciais da planilha."
+            )
+            _facs_dbg = sorted(df_f["Faccao"].unique())
+            _fac_dbg = st.selectbox("Facção:", _facs_dbg, key="sel_fac_debug_facc")
+            _df_dbg = df_f[df_f["Faccao"] == _fac_dbg].copy()
+            if not _df_dbg.empty:
+                _dt_prod_dbg = (
+                    _df_dbg.groupby(["Data", "Produto"], as_index=False)
+                    .agg(Quantidade=("Quantidade", "sum"))
+                )
+                _piv_dbg = _dt_prod_dbg.pivot(
+                    index="Data", columns="Produto", values="Quantidade"
+                ).fillna(0)
+                _piv_dbg.index = pd.to_datetime(_piv_dbg.index).strftime("%d/%m/%Y")
+                _piv_dbg.columns.name = None
+                _piv_dbg["TOTAL"] = _piv_dbg.sum(axis=1)
+                _totals_dbg = _piv_dbg.sum().to_frame().T
+                _totals_dbg.index = ["TOTAL"]
+                _piv_dbg = pd.concat([_piv_dbg, _totals_dbg])
+                _fmt_dbg = lambda v: f"{int(v):,}".replace(",", ".")
+                st.dataframe(
+                    _piv_dbg.style.format(_fmt_dbg),
+                    height=420, use_container_width=True,
+                )
 
         st.markdown("")
         col_f1, col_f2 = st.columns(2)

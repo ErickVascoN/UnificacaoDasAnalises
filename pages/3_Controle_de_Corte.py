@@ -554,6 +554,17 @@ def carregar_dados():
     else:
         # Schema uniforme; funções de meta detectam '' e usam fallback fixo
         df_corte['TAMANHO'] = ''
+
+    try:
+        from utils.db_manager import upsert_df
+        upsert_df(
+            df_corte[["DATA", "OP", "COR", "QUANTIDADE", "PRODUTO", "ESTACAO", "TAMANHO"]],
+            "corte_arealva_manta",
+            ["DATA", "OP", "COR", "ESTACAO"],
+        )
+    except Exception:
+        logging.warning("db_manager: falha ao salvar corte_arealva_manta", exc_info=True)
+
     return df_corte
 
 # DATA LOADING — IACANGA (planilha própria)
@@ -597,6 +608,17 @@ def carregar_dados_iacanga():
     df['SEMANA'] = df['DATA'].dt.isocalendar().week.astype(int)
     df['MES'] = df['DATA'].dt.month
     df['DIA_SEMANA'] = df['DATA'].dt.day_name()
+
+    try:
+        from utils.db_manager import upsert_df
+        upsert_df(
+            df[["DATA", "OP", "COR", "QUANTIDADE", "PRODUTO", "ESTACAO", "TAMANHO", "GRUPO_ESTACAO"]],
+            "corte_iacanga",
+            ["DATA", "OP", "COR", "ESTACAO"],
+        )
+    except Exception:
+        logging.warning("db_manager: falha ao salvar corte_iacanga", exc_info=True)
+
     return df
 
 # LENÇOL — CONSTANTES E HELPERS
@@ -897,8 +919,19 @@ def load_corte_lencol() -> pd.DataFrame:
         df["SEMANA"] = df["DATA"].dt.isocalendar().week.astype(int)
         df["DIA_SEMANA"] = df["DATA"].dt.day_name()
         df["DIA_SEMANA_PT"] = df["DIA_SEMANA"].map(LENCOL_DIAS_PT)
+
+        try:
+            from utils.db_manager import upsert_df
+            upsert_df(
+                df[["DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA", "TECIDO", "QUANT", "VALOR_PECA", "VALOR_RECEBER", "RETALHO_KG"]],
+                "corte_lencol",
+                ["DATA", "PRESTADOR", "OP", "CATEGORIA"],
+            )
+        except Exception:
+            logging.warning("db_manager: falha ao salvar corte_lencol", exc_info=True)
+
         return df
-        
+
     except Exception as e:
         st.error(f"❌ Não foi possível baixar dados da planilha de lençol: {e}")
         logging.debug(f"Erro completo: {e}")

@@ -93,7 +93,6 @@ with col_btn:
     if st.button("📋 Ver Novidades", use_container_width=True, type="secondary"):
         _modal_changelog()
 
-render_kpi_row()
 render_sector_tabs()
 
 # rodapé
