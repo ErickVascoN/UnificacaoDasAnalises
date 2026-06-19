@@ -21,7 +21,7 @@ SECTORS_ANALISE = [
     },
     {
         "key": "producao",
-        "title": "Análise de Produção",
+        "title": "Produção por Cliente",
         "subtitle": "Por Cliente e Por Colaborador",
         "description": (
             "Acompanhamento da produção em duas visões: Por Cliente (multi-empresa, "
