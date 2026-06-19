@@ -36,6 +36,7 @@ from config.settings import (
     PRODUCAO_SHEETS_ID, METAS_CACHE_TTL,
     NOME_EQUIVALENCIAS,
 )
+from components.filtros_btn import render_filtros_btn
 
 # ─
 # CONFIG DA PÁGINA
@@ -852,6 +853,7 @@ def main():
     # cabeçalho
     st.markdown("<h1 style='color:#FFF;font-size:2rem;margin-bottom:4px;'>🎯 Plano de Metas / Previsão de Custos</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color:#A0A0A0;margin-bottom:20px;'>Acompanhamento automático vs. metas — produção real, projeções e análise de custos</p>", unsafe_allow_html=True)
+    render_filtros_btn()
 
     # carrega metas
     with st.spinner("Carregando plano de metas..."):

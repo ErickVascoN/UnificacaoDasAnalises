@@ -7,6 +7,27 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "19/06/2026",
+        "tag": "melhoria",
+        "title": "PDF: Meta do Período e % Atingido na tabela de Facções",
+        "description": (
+            "Na tabela 'Produção por Facção / Produto' do relatório PDF de Produção Geral, "
+            "adicionadas duas colunas: 'Meta Período' (meta diária × dias úteis do intervalo) "
+            "e '% Ating.' (produção real ÷ meta), com cor verde/âmbar/vermelho por desempenho."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "melhoria",
+        "title": "Botão 'Filtros' em todos os dashboards",
+        "description": (
+            "Adicionado botão 'Filtros' no topo do conteúdo principal de todos os dashboards "
+            "(Corte, Produção Geral, Facções, Previsão de Cargas, Programação, Carteira de Pedidos, "
+            "Plano de Metas e Histórico). Ao clicar, abre a sidebar automaticamente — facilita o uso "
+            "para usuários menos familiarizados com a interface."
+        ),
+    },
+    {
+        "date": "19/06/2026",
         "tag": "novo",
         "title": "Histórico de Dados — Banco SQLite local",
         "description": (

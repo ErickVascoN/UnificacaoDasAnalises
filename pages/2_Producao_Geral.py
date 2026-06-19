@@ -2381,7 +2381,7 @@ def _screen_por_cliente_type():
     st.markdown("""
     <div class="page-header" style="padding-top:18px;">
         <div class="page-badge">🏢 Por Cliente</div>
-        <h1 class="page-title">Dashboard ou <span class="accent">Facções</span></h1>
+        <h1 class="page-title">Produção por Cliente ou <span class="accent">Facções</span></h1>
         <p class="page-subtitle">Escolha o tipo de visualização da produção por cliente</p>
     </div>
     <div class="page-divider"></div>
@@ -2393,7 +2393,7 @@ def _screen_por_cliente_type():
         <div class="region-card" style="--rc-a:#0F4C5C; --rc-b:#4ECDC4; --rc-accent:#4ECDC4;">
             <div class="rc-icon">📊</div>
             <div class="rc-label">Análise · Geral</div>
-            <div class="rc-title">Dashboard</div>
+            <div class="rc-title">Produção por Cliente</div>
             <div class="rc-desc">
                 Acompanhamento da produção por empresa/cliente, com metas diárias,
                 evolução e ranking — visão multi-empresa.
@@ -2405,7 +2405,7 @@ def _screen_por_cliente_type():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Abrir Dashboard  →", key="btn_pc_dashboard", use_container_width=True):
+        if st.button("Abrir Produção por Cliente  →", key="btn_pc_dashboard", use_container_width=True):
             _go_prod('por_cliente')
 
     with c2:

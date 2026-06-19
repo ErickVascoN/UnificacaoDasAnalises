@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from utils.pdf_report import gerar_pdf_previsao_cargas
+from components.filtros_btn import render_filtros_btn
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -573,6 +574,8 @@ df = pd.concat([df_real_fixo, df_cargo_filt], ignore_index=True)
 if df.empty:
     st.warning("⚠️ Nenhum registro encontrado com os filtros selecionados.")
     st.stop()
+
+render_filtros_btn()
 
 # ── Cabeçalho ─────────────────────────────────────────────────────────────────
 st.markdown(

@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from utils.pdf_report import gerar_pdf_carteira_pedidos
+from components.filtros_btn import render_filtros_btn
 
 # ── Configuração ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -334,6 +335,8 @@ if estados_sel:
 if df.empty:
     st.warning("⚠️ Nenhum registro com os filtros selecionados.")
     st.stop()
+
+render_filtros_btn()
 
 # ── Cabeçalho ─────────────────────────────────────────────────────────────────
 st.markdown(

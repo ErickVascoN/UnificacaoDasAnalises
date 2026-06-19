@@ -14,6 +14,7 @@ if _ROOT not in sys.path:
 
 from utils.auth import init_session_state
 from utils.db_manager import tabelas_status, query as db_query
+from components.filtros_btn import render_filtros_btn
 
 st.set_page_config(
     page_title="Histórico — Banco de Dados",
@@ -68,6 +69,7 @@ if st.session_state.get("auth_nivel") != "admin":
 # ── Cabeçalho ──────────────────────────────────────────────────────────────────
 st.markdown('<h1 style="color:#FFFFFF;font-size:2rem;font-weight:800;">🗄️ Histórico — Banco de Dados</h1>', unsafe_allow_html=True)
 st.markdown('<p style="color:#A0A0A0;">Backup local SQLite de todos os dados da central. Atualizado automaticamente a cada carregamento.</p>', unsafe_allow_html=True)
+render_filtros_btn()
 st.markdown("---")
 
 # ── Status geral do banco ──────────────────────────────────────────────────────

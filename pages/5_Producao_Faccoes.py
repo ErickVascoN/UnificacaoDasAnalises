@@ -19,6 +19,7 @@ from utils.faccao_loader import load_faccoes
 from utils.metas_manager import load_metas, save_metas, reset_metas
 from utils.anotacoes_manager import add_anotacao, remove_anotacao, load_anotacoes, apply_to_fig
 from utils.normalize import normalize_text
+from components.filtros_btn import render_filtros_btn
 
 st.set_page_config(
     page_title="Produção Facções",
@@ -150,6 +151,7 @@ if not st.session_state.get("auth_nivel"):
 # ── Cabeçalho ──────────────────────────────────────────────────────────────────
 st.markdown('<h1 class="main-title">Produção — Facções Externas</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">Análise diária, semanal e mensal por facção e produto</p>', unsafe_allow_html=True)
+render_filtros_btn()
 
 # ── Carregar dados ─────────────────────────────────────────────────────────────
 df_all = _carregar()

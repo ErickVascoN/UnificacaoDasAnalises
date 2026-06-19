@@ -1737,6 +1737,49 @@ def gerar_pdf_producao_geral(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5*cm))
 
+    # ── Nota sobre Niazittex ─────────────────────────────────────────────────
+    _obs_style = ParagraphStyle(
+        'obs_titulo', parent=e['corpo'],
+        fontName='Helvetica-Bold', fontSize=9,
+        textColor=C_AMBER, spaceAfter=3,
+    )
+    _obs_body_style = ParagraphStyle(
+        'obs_body', parent=e['corpo'],
+        fontName='Helvetica', fontSize=8.5,
+        textColor=C_BLACK, leading=13,
+    )
+    _obs_content = Table(
+        [[
+            Paragraph('⚠  Observação', _obs_style),
+        ],[
+            Paragraph(
+                'A <b>Niazittex</b> não estava preenchendo os dados de produção na planilha '
+                'do sistema durante o período coberto por este relatório. '
+                'A aba correspondente está sendo ajustada para que o acompanhamento '
+                'passe a ser registrado corretamente a partir de agora. '
+                'Produção registrada manualmente no período:<br/>'
+                '&nbsp;&nbsp;• <b>Toque de Seda</b> — 7.242 peças<br/>'
+                '&nbsp;&nbsp;• <b>Lençol QE — 180 Fios Elástico</b> — 144 peças<br/>'
+                '&nbsp;&nbsp;• <b>Lençol QE — 180 Fios Elástico (2ª Qualidade)</b> — 12 peças<br/>'
+                '&nbsp;&nbsp;• <b>Fronha — 300 Fios Avulsa Lisa</b> — 1.190 peças',
+                _obs_body_style,
+            ),
+        ]],
+        colWidths=[PAGE_W - 2 * MARGIN],
+    )
+    _obs_content.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), C_AMBER_LT),
+        ('BOX', (0, 0), (-1, -1), 1.2, C_AMBER),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (0, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (0, 0), 2),
+        ('TOPPADDING', (0, 1), (0, 1), 2),
+        ('BOTTOMPADDING', (0, 1), (0, 1), 8),
+    ]))
+    story.append(_obs_content)
+    story.append(Spacer(1, 0.5*cm))
+
     # ── Tabela resumo por empresa ────────────────────────────────────────────
     story.append(Paragraph('Desempenho por Empresa', e['subtitulo_secao']))
 
@@ -1893,19 +1936,67 @@ def gerar_pdf_producao_geral(
         if 'Faccao' in df_emp.columns and 'Produto' in df_emp.columns:
             story.append(Spacer(1, 0.3*cm))
             story.append(Paragraph('Produção por Facção / Produto', e['subtitulo_secao']))
+
+            _tem_meta = 'Meta Diaria' in df_emp.columns
+            _agg = {'Quantidade': 'sum'}
+            if _tem_meta:
+                _agg['Meta Diaria'] = 'first'
             tbl_fp = (
-                df_emp.groupby(['Faccao', 'Produto'])['Quantidade']
-                .sum().reset_index().sort_values('Quantidade', ascending=False)
+                df_emp.groupby(['Faccao', 'Produto'])
+                .agg(_agg).reset_index().sort_values('Quantidade', ascending=False)
             )
+            tbl_fp = tbl_fp[tbl_fp['Quantidade'] > 0]
             tbl_fp['%'] = (tbl_fp['Quantidade'] / tbl_fp['Quantidade'].sum() * 100).round(1)
-            cabec_fp = ['Facção', 'Produto', 'Peças', '% Total']
-            linhas_fp = [
-                [str(row['Faccao'])[:25], str(row['Produto'])[:30],
-                 _fmt(row['Quantidade']), f"{row['%']:.1f}%"]
-                for _, row in tbl_fp.head(20).iterrows()
-            ]
-            cw_fp = [3.5*cm, 6.0*cm, 2.5*cm, 2.0*cm]
-            story.append(_tabela_generica(cabec_fp, linhas_fp, e, cw_fp))
+
+            if _tem_meta:
+                from datetime import timedelta as _td_fp
+                _wdays_fp = sum(
+                    1 for _di in range((fim - ini).days + 1)
+                    if (ini + _td_fp(days=_di)).weekday() < 5
+                )
+                _meta_num = pd.to_numeric(tbl_fp['Meta Diaria'], errors='coerce').fillna(0)
+                tbl_fp['Meta Periodo'] = _meta_num * _wdays_fp
+                tbl_fp['Media Dia'] = tbl_fp['Quantidade'] / max(_wdays_fp, 1)
+
+                cabec_fp = ['Facção', 'Produto', 'Peças', '% Total',
+                            'Média/Dia', 'Meta/Dia', 'Meta Período', '% Ating.']
+                linhas_fp = []
+                for _, row in tbl_fp.head(20).iterrows():
+                    meta_d = float(_meta_num[row.name]) if pd.notna(row['Meta Diaria']) else 0
+                    meta_p = float(row['Meta Periodo'])
+                    media_d = float(row['Media Dia'])
+                    pct_a = (row['Quantidade'] / meta_p * 100) if meta_p > 0 else None
+                    linhas_fp.append([
+                        str(row['Faccao'])[:25], str(row['Produto'])[:25],
+                        _fmt(row['Quantidade']), f"{row['%']:.1f}%",
+                        _fmt(media_d),
+                        _fmt(meta_d) if meta_d > 0 else '—',
+                        _fmt(meta_p) if meta_p > 0 else '—',
+                        f"{pct_a:.1f}%" if pct_a is not None else '—',
+                    ])
+                cw_fp = [2.8*cm, 4.0*cm, 1.8*cm, 1.4*cm, 1.8*cm, 1.8*cm, 1.8*cm, 1.8*cm]
+                t_fp = _tabela_generica(cabec_fp, linhas_fp, e, cw_fp)
+                for ri, linha in enumerate(linhas_fp, start=1):
+                    try:
+                        pct_val = float(linha[7].replace('%', '').replace(',', '.'))
+                        cor_s = C_GREEN if pct_val >= 100 else (C_AMBER if pct_val >= 80 else C_RED)
+                        t_fp.setStyle(TableStyle([
+                            ('TEXTCOLOR', (7, ri), (7, ri), cor_s),
+                            ('FONTNAME', (7, ri), (7, ri), 'Helvetica-Bold'),
+                        ]))
+                    except Exception:
+                        pass
+            else:
+                cabec_fp = ['Facção', 'Produto', 'Peças', '% Total']
+                linhas_fp = [
+                    [str(row['Faccao'])[:25], str(row['Produto'])[:30],
+                     _fmt(row['Quantidade']), f"{row['%']:.1f}%"]
+                    for _, row in tbl_fp.head(20).iterrows()
+                ]
+                cw_fp = [3.5*cm, 6.0*cm, 2.5*cm, 2.0*cm]
+                t_fp = _tabela_generica(cabec_fp, linhas_fp, e, cw_fp)
+
+            story.append(t_fp)
 
         story.append(PageBreak())
 

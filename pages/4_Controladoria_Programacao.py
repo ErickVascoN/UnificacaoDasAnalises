@@ -20,6 +20,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from utils.auth import init_session_state
 from utils.navigation import safe_switch
+from components.filtros_btn import render_filtros_btn
 
 # constantes
 PROG_ID     = "1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA"
@@ -715,6 +716,8 @@ if locais_sel:
     df_filtered = df_filtered[df_filtered["LOCAL"].isin(locais_sel)]
 if status_sel:
     df_filtered = df_filtered[df_filtered["STATUS_CORTE"].isin(status_sel)]
+
+render_filtros_btn()
 
 # header
 st.markdown("""

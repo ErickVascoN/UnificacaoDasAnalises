@@ -17,6 +17,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from components.filtros_btn import render_filtros_btn
+
 try:
     from config import GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID, METAS, META_TOTAL, CACHE_TTL
 except ImportError:
@@ -1536,6 +1538,7 @@ elif screen == 'iacanga_rendimento':
     # meta total ponderada do recorte atual
     META_TOTAL_IAC = calcular_meta_total_ponderada_iacanga(df_filtrado_iac)
 
+    render_filtros_btn()
     # dashboard header
     st.markdown('<div class="dash-header">✂️ Iacanga — Mantas Giattex</div>', unsafe_allow_html=True)
     st.markdown(
@@ -2296,6 +2299,7 @@ elif screen == 'arealva_manta':
     _ini_periodo = filtro_datas[0] if (isinstance(filtro_datas, tuple) and filtro_datas[0]) else data_min
     _fim_periodo = filtro_datas[1] if (isinstance(filtro_datas, tuple) and filtro_datas[1]) else data_max
 
+    render_filtros_btn()
     # dashboard header
     st.markdown('<div class="dash-header">✂️ Arealva — Manta</div>', unsafe_allow_html=True)
     st.markdown('<div class="dash-sub">Acompanhamento de produção e desempenho por estação</div>', unsafe_allow_html=True)
@@ -3028,6 +3032,7 @@ elif screen == 'arealva_lencol':
 
     status_pg_ln = "Pago" if p_fim_ln < data_max_ln else "A Pagar"
 
+    render_filtros_btn()
     # header
     st.markdown(
         f"<h1 style='text-align:center;color:#FFFFFF;font-size:2rem;"
