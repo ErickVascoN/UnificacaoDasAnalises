@@ -165,8 +165,7 @@ def load_programacao() -> pd.DataFrame:
     essenciais = [
         "PED. CLIENTE", "SEMANA", "CLIENTE", "LOCAL", "PRODUTO",
         "PED. INT", "OP INTERNA", "OC", "DESCRIÇÃO DO PRODUTO",
-        "QNT. PROG", "REPRO./INCLUIDO(S/N)", "MOTIVO REPRO./INCLUSÃO",
-        "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO",
+        "QNT. PROG", "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO",
     ]
     for col in essenciais:
         real = _col(col)
@@ -284,8 +283,10 @@ def load_cortes() -> pd.DataFrame:
             if "DATA" in df.columns:
                 datas = parse_date_series(df["DATA"])
                 sub["SEMANA"] = datas.dt.isocalendar().week.astype("Int64")
+                sub["DATA"] = datas
             else:
                 sub["SEMANA"] = pd.array([pd.NA] * len(sub), dtype="Int64")
+                sub["DATA"] = pd.NaT
 
             frames.append(sub)
             logging.debug(f"load_cortes: {fonte} → {len(sub)} registros")
@@ -322,8 +323,10 @@ def load_cortes() -> pd.DataFrame:
             if "DATA" in df_len.columns:
                 datas = pd.to_datetime(df_len["DATA"], errors="coerce")
                 sub["SEMANA"] = datas.dt.isocalendar().week.astype("Int64")
+                sub["DATA"] = datas
             else:
                 sub["SEMANA"] = pd.array([pd.NA] * len(sub), dtype="Int64")
+                sub["DATA"] = pd.NaT
             frames.append(sub)
             logging.debug(f"load_cortes: Lençol → {len(sub)} registros")
         else:
@@ -407,7 +410,12 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
             _fonte_up.str.contains("LEN", na=False) &
             _mat_str.str.contains(r"\bFUNDO\b", case=False, na=False, regex=True)
         )
-        _op_map: dict = _cortes[~_is_lencol_fundo].groupby("_OPN")["QUANTIDADE"].sum().to_dict()
+        # Só exclui FUNDO quando a mesma OP também tem registros não-FUNDO (CIMA).
+        # OPs que só possuem registros FUNDO (pedidos exclusivos de lençol fundo)
+        # ficam preservadas — sem isso, QNT_CORTADA sempre daria 0 para elas.
+        _ops_com_nao_fundo = set(_cortes.loc[~_is_lencol_fundo, "_OPN"].unique())
+        _excluir = _is_lencol_fundo & _cortes["_OPN"].isin(_ops_com_nao_fundo)
+        _op_map: dict = _cortes[~_excluir].groupby("_OPN")["QUANTIDADE"].sum().to_dict()
     else:
         _op_map: dict = _cortes.groupby("_OPN")["QUANTIDADE"].sum().to_dict()
 
@@ -423,7 +431,24 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
             for opn, grp in _cm.groupby("_OPN"):
                 _prod_map[opn] = list(grp.groupby("_MAT")["QUANTIDADE"].sum().items())
 
-    df["_PEDN"] = df["PED. CLIENTE"].map(normalize_op)
+    # "_PEDN" é a chave de join com o corte. Usa PED. CLIENTE primeiro; se não
+    # existir nos cortes, tenta PED. INT / OP INTERNA / OC. Isso permite que
+    # "PROG 83" (corte) → "83" bata com a linha de programação que tem PED. INT=83,
+    # mesmo quando o PED. CLIENTE é "700761-3722-27" (inexistente no corte).
+    _known_opns: set[str] = set(_cortes["_OPN"].unique())
+    _alt_cols_pedn = [c for c in ["PED. INT", "OP INTERNA", "OC"] if c in df.columns]
+
+    def _best_pedn(row) -> str:
+        k = normalize_op(str(row.get("PED. CLIENTE", "")))
+        if k in _known_opns:
+            return k
+        for _ac in _alt_cols_pedn:
+            k2 = normalize_op(str(row.get(_ac, "")))
+            if k2 and k2 in _known_opns:
+                return k2
+        return k  # fallback: PED. CLIENTE mesmo sem match
+
+    df["_PEDN"] = df.apply(_best_pedn, axis=1)
 
     # Quantidade de linhas por OP **na mesma semana** — evita contar a mesma OP
     # em semanas diferentes como se fossem "múltiplos produtos".
@@ -1073,8 +1098,7 @@ with tab_detalhe:
         colunas_det = [
             "SEMANA", "CLIENTE", "LOCAL", "PRODUTO", "PED. CLIENTE",
             "PED. INT", "OP INTERNA", "OC", "DESCRIÇÃO DO PRODUTO",
-            "QNT. PROG", "REPRO./INCLUIDO(S/N)", "MOTIVO REPRO./INCLUSÃO",
-            "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO",
+            "QNT. PROG", "DATA INICIO", "DATA FINALIZADO", "PREV. INDUSTRIALIZAÇÃO",
             "QNT CORTADA", "STATUS PRODUÇÃO", "STATUS CORTE", "EFICIÊNCIA %", "DIFERENÇA",
         ]
         colunas_det = [c for c in colunas_det if c in df_det.columns]
@@ -1145,7 +1169,16 @@ else:
     _sem_op_pcs = int(_cortes.loc[_cortes["_OPN"] == "", "QUANTIDADE"].sum())
     _cortes = _cortes[_cortes["_OPN"] != ""]
 
-    _peds_prog_fora = {o for o in df_prog_raw["PED. CLIENTE"].map(_nop_fora).unique() if o}
+    # Coleta OPs reconhecidas de TODAS as colunas de referência da programação:
+    # PED. CLIENTE (ex: 700761-3722-27), PED. INT (ex: 83), OP INTERNA, OC.
+    # Assim "PROG 83" → "83" bate com PED. INT=83 e não aparece como "fora".
+    _cols_ref = ["PED. CLIENTE", "PED. INT", "OP INTERNA", "OC"]
+    _peds_prog_fora: set[str] = set()
+    for _c in _cols_ref:
+        if _c in df_prog_raw.columns:
+            _peds_prog_fora.update(
+                o for o in df_prog_raw[_c].map(_nop_fora).unique() if o
+            )
     _fora = _cortes[~_cortes["_OPN"].isin(_peds_prog_fora)]
 
     _total_cort_all = int(_cortes["QUANTIDADE"].sum())
@@ -1173,7 +1206,14 @@ else:
             })
             return " / ".join(vals)
 
-        _agg_kwargs = {"Peças": ("QUANTIDADE", "sum"), "Fonte": ("FONTE", _join_unicos)}
+        _agg_kwargs = {"QNT CORTADA": ("QUANTIDADE", "sum"), "Fonte": ("FONTE", _join_unicos)}
+        if "DATA" in _fora.columns:
+            _agg_kwargs["Data(s)"] = (
+                "DATA",
+                lambda s: " / ".join(
+                    sorted({d.strftime("%d/%m/%Y") for d in s.dropna()})
+                ),
+            )
         if "MATERIAL" in _fora.columns:
             _agg_kwargs["Material"] = ("MATERIAL", _join_unicos)
         if "CLIENTE" in _fora.columns:
@@ -1192,21 +1232,28 @@ else:
             )
             _tab["Semana(s)"] = _tab["OP"].map(_sem)
 
-        _tab = _tab.sort_values("Peças", ascending=False).reset_index(drop=True)
+        _tab = _tab.sort_values("QNT CORTADA", ascending=False).reset_index(drop=True)
+        # Reordena: OP, QNT CORTADA, Data(s), restante
+        _col_order = ["OP", "QNT CORTADA"]
+        if "Data(s)" in _tab.columns:
+            _col_order.append("Data(s)")
+        _col_order += [c for c in _tab.columns if c not in _col_order]
+        _tab = _tab[_col_order]
+
         _tab_fmt = _tab.copy()
-        _tab_fmt["Peças"] = _tab_fmt["Peças"].map(lambda x: f"{int(x):,}".replace(",", "."))
+        _tab_fmt["QNT CORTADA"] = _tab_fmt["QNT CORTADA"].map(lambda x: f"{int(x):,}".replace(",", "."))
 
         st.dataframe(_tab_fmt, use_container_width=True, hide_index=True)
 
         # Gráfico — top 15 OPs cortadas fora do plano
-        _top = _tab.head(15).sort_values("Peças", ascending=True)
+        _top = _tab.head(15).sort_values("QNT CORTADA", ascending=True)
         # OP é rótulo (categoria), não número — senão o eixo trata "1895301001"
         # como 1,8 bilhão e o gráfico fica achatado.
         _y_labels = _top["OP"].astype(str).tolist()
         fig_fora = go.Figure(go.Bar(
-            x=_top["Peças"].tolist(), y=_y_labels, orientation="h",
+            x=_top["QNT CORTADA"].tolist(), y=_y_labels, orientation="h",
             marker_color="#f59e0b",
-            text=[f"{int(v):,}".replace(",", ".") for v in _top["Peças"]],
+            text=[f"{int(v):,}".replace(",", ".") for v in _top["QNT CORTADA"]],
             textposition="outside",
         ))
         fig_fora.update_layout(
@@ -1334,17 +1381,3 @@ def _html_ctrl_prog() -> bytes:
     )
     return html.encode("utf-8")
 
-_col_l_cp, _col_c_cp, _col_r_cp = st.columns([3, 2, 3])
-with _col_c_cp:
-    st.download_button(
-        label="📄 Gerar Relatório PDF",
-        data=_html_ctrl_prog(),
-        file_name=f"relatorio_programacao_{datetime.now().strftime('%Y%m%d')}.html",
-        mime="text/html",
-        use_container_width=True,
-    )
-st.markdown(
-    "<p style='text-align:center;color:#718096;font-size:.8rem;margin-top:4px'>"
-    "Abre no navegador &rarr; <kbd>Ctrl+P</kbd> &rarr; Salvar como PDF</p>",
-    unsafe_allow_html=True,
-)

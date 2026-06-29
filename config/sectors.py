@@ -41,9 +41,8 @@ SECTORS_ANALISE = [
         "title": "Previsão de Cargas",
         "subtitle": "Logística · Previsão vs. Realizado",
         "description": (
-            "Dashboard analítico de previsão de cargas com comparativo mensal "
-            "previsão vs. realizado, aderência por destino, timeline de cargas, "
-            "análise por origem, cancelamentos e heatmap semanal."
+            "Comparativo mensal previsão vs. realizado, aderência por destino, "
+            "análise por origem e timeline de cargas."
         ),
         "icon": "🚛",
         "page_path": "pages/8_Previsao_Cargas.py",
@@ -90,46 +89,6 @@ SECTORS_ANALISE = [
         "admin_only": True,
         "maintenance": True,
     },
-    {
-        "key": "apontador_gut",
-        "title": "Central de Controle GUT",
-        "subtitle": "Apontador Zanattex — Controle de eficiência",
-        "description": (
-            "Painel de acompanhamento em tempo real do GUT (Giattex) com dados de "
-            "eficiência, horas, operadores e performance."
-        ),
-        "icon": "⏱️",
-        "external_url": (
-            "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303"
-            "#appName=ApontadorZanattex-819603934"
-            "&group=%5B%7B%22Column%22%3A%22Data%22%2C%22Order%22%3A%22Descending%22%7D%5D"
-            "&page=fastTable"
-            "&sort=%5B%7B%22Column%22%3A%22Hora%22%2C%22Order%22%3A%22Descending%22%7D"
-            "%2C%7B%22Column%22%3A%22Efici%C3%AAncia%22%2C%22Order%22%3A%22Descending%22%7D%5D"
-            "&table=GIATTEX&view=GIATTEX"
-        ),
-        "color_a": "#1F4A5A",
-        "color_b": "#2E8B9E",
-        "accent":  "#26D0CE",
-        "tags": ["GUT", "Eficiência", "Real-time"],
-        "requires_auth": True,
-    },
-    {
-        "key": "analise_dados_gut",
-        "title": "Análise de Dados GUT",
-        "subtitle": "Dashboard analítico — Insights e tendências",
-        "description": (
-            "Análise completa dos dados do GUT em formato de dashboard interativo. "
-            "Visualize tendências, indicadores de desempenho e insights estratégicos."
-        ),
-        "icon": "📈",
-        "external_url": "https://datastudio.google.com/u/0/reporting/720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd",
-        "color_a": "#3D2817",
-        "color_b": "#D97706",
-        "accent":  "#FBBF24",
-        "tags": ["Análise", "GUT", "Insights"],
-        "requires_auth": True,
-    },
 ]
 
 SECTORS_CONTROLADORIA = [
@@ -165,6 +124,23 @@ SECTORS_CONTROLADORIA = [
         "color_b": "#047857",
         "accent":  "#34D399",
         "tags": ["Pedidos", "Comercial", "Análise"],
+        "requires_auth": True,
+    },
+    {
+        "key": "relatorios",
+        "title": "Relatórios",
+        "subtitle": "Central de geração de PDFs",
+        "description": (
+            "Gere relatórios PDF completos de todos os módulos em um único lugar: "
+            "Corte (Arealva, Lençol, Iacanga), Produção Geral, Facções, "
+            "Previsão de Cargas, Carteira de Pedidos e Programação de Corte."
+        ),
+        "icon": "📄",
+        "page_path": "pages/10_Relatorios.py",
+        "color_a": "#1A2744",
+        "color_b": "#2563EB",
+        "accent":  "#60A5FA",
+        "tags": ["PDF", "Relatórios", "Exportar"],
         "requires_auth": True,
     },
     {

@@ -2258,34 +2258,39 @@ def gerar_pdf_previsao_cargas(
     story.append(Paragraph('Detalhe de Registros', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    df_det = df_cargos[df_cargos['PREVISAO'] > 0].copy() if not df_cargos.empty else df_cargos
-    cabec_det = ['Mês', 'Data', 'Destino', 'Origem', 'Cliente', 'Previsão (R$)', 'Status']
+    # VALOR_FRETE nunca é zerado (PREVISAO pode ser 0 em meses com previsto oficial).
+    # REALIZADO_DIA = total diário do painel direito da planilha (0 se não disponível).
+    df_det = df_cargos[df_cargos['VALOR_FRETE'] > 0].copy() if not df_cargos.empty else df_cargos
+    cabec_det = ['Mês', 'Data', 'Destino', 'Origem', 'Cliente', 'Previsto (R$)', 'Realizado Dia (R$)', 'Status']
     linhas_det = []
     for row in df_det.itertuples():
         data_s = pd.Timestamp(row.DATA).strftime('%d/%m/%Y') if pd.notna(row.DATA) else ''
+        real_dia = float(getattr(row, 'REALIZADO_DIA', 0.0) or 0.0)
+        real_s = _r(real_dia) if real_dia > 0 else '—'
         linhas_det.append([
             str(row.MES),
             data_s,
             str(row.DESTINO)[:25],
             str(row.LOCAL),
             str(row.CLIENTE)[:22],
-            _r(float(row.PREVISAO)),
+            _r(float(row.VALOR_FRETE)),
+            real_s,
             str(row.STATUS),
         ])
 
-    cw_det = [1.8*cm, 2.0*cm, 3.8*cm, 1.8*cm, 3.2*cm, 2.8*cm, 2.0*cm]
+    cw_det = [1.6*cm, 1.9*cm, 3.3*cm, 1.6*cm, 2.8*cm, 2.4*cm, 2.4*cm, 1.4*cm]
     t_det = _tabela_generica(cabec_det, linhas_det[:200], e, cw_det)
     for ri, row in enumerate(linhas_det[:200], start=1):
-        st = row[6]
+        st = row[7]
         if st == 'Cancelada':
             t_det.setStyle(TableStyle([
-                ('TEXTCOLOR', (6, ri), (6, ri), C_RED),
-                ('FONTNAME',  (6, ri), (6, ri), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (7, ri), (7, ri), C_RED),
+                ('FONTNAME',  (7, ri), (7, ri), 'Helvetica-Bold'),
             ]))
         elif st == 'Adiada':
             t_det.setStyle(TableStyle([
-                ('TEXTCOLOR', (6, ri), (6, ri), C_AMBER),
-                ('FONTNAME',  (6, ri), (6, ri), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (7, ri), (7, ri), C_AMBER),
+                ('FONTNAME',  (7, ri), (7, ri), 'Helvetica-Bold'),
             ]))
     story.append(t_det)
     if len(linhas_det) > 200:
@@ -2700,3 +2705,556 @@ def gerar_pdf_carteira_pedidos(
 
     doc.build(story)
     return buf_pdf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — PRODUÇÃO POR FACÇÃO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_faccoes(
+    tabela: pd.DataFrame,
+    df_mes: pd.DataFrame,
+    total_mes: int,
+    meta_mes_total: int,
+    pct_mes: float,
+    pct_ritmo: float,
+    meta_dia_total: float,
+    data_ini: date,
+    data_fim: date,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Produção por Facção.
+
+    Parameters
+    ----------
+    tabela        : DataFrame com colunas Produto, Empresa, Facção, Produzido, Meta Mês, % Meta, Restante
+    df_mes        : DataFrame filtrado com DATA, FACCAO, PRODUTO, CLIENTE, QUANTIDADE
+    total_mes     : total de peças produzidas no período
+    meta_mes_total: meta total do mês
+    pct_mes       : % da meta atingida
+    pct_ritmo     : % do ritmo esperado
+    meta_dia_total: meta diária calculada
+    data_ini/fim  : período selecionado
+    filtros_texto : string descritiva dos filtros ativos
+    """
+    e = _estilos()
+    periodo_str = (
+        f"{data_ini.strftime('%d/%m/%Y')}  até  {data_fim.strftime('%d/%m/%Y')}"
+        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
+    )
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel='Relatório de Produção · Facções',
+        subtitulo_rel='Acompanhamento de Produção — Facções Externas',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = [PageBreak()]
+
+    # ── Resumo Executivo ─────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    kpis = [
+        {'label': 'Producao do Mes',  'valor': _fmt(total_mes),       'cor': C_TEAL_LT},
+        {'label': 'Meta Mensal',      'valor': _fmt(meta_mes_total),   'cor': C_GRAY_BG},
+        {'label': '% da Meta',        'valor': f'{pct_mes:.1f}%',      'cor': _pct_bg(pct_mes)},
+        {'label': 'Ritmo do Mes',     'valor': f'{pct_ritmo:.1f}%',    'cor': _pct_bg(pct_ritmo)},
+        {'label': 'Meta Diaria',      'valor': _fmt(meta_dia_total),   'cor': C_AMBER_LT},
+        {'label': 'Faccoes Ativas',   'valor': str(df_mes['FACCAO'].nunique()) if not df_mes.empty else '0', 'cor': C_GRAY_BG},
+        {'label': 'Produtos',         'valor': str(df_mes['PRODUTO'].nunique()) if not df_mes.empty else '0', 'cor': C_GRAY_BG},
+        {'label': 'Clientes',         'valor': str(df_mes['CLIENTE'].nunique()) if not df_mes.empty else '0', 'cor': C_GRAY_BG},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Gráfico produção diária ──────────────────────────────────────────────
+    if not df_mes.empty:
+        prod_diaria = (
+            df_mes.groupby('DATA')['QUANTIDADE'].sum()
+            .reset_index().sort_values('DATA')
+        )
+        try:
+            buf_chart = _chart_producao_diaria(
+                prod_diaria, meta_dia_total,
+                titulo=f'Producao Diaria — Faccoes  |  Meta/dia: {_fmt(meta_dia_total)} pc',
+                largura=16.0, altura=5.0,
+            )
+            story.append(_imagem_de_buf(buf_chart, largura_cm=16.5))
+            story.append(Spacer(1, 0.4 * cm))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_faccoes: chart diario: %s', _ex)
+
+    story.append(PageBreak())
+
+    # ── Tabela de progresso ──────────────────────────────────────────────────
+    story.append(Paragraph('Progresso por Produto / Empresa / Faccao', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    cabec = ['Produto', 'Empresa', 'Faccao', 'Produzido', 'Meta Mes', '% Meta', 'Restante']
+    cw = [3.0*cm, 2.5*cm, 3.5*cm, 2.0*cm, 2.0*cm, 1.8*cm, 2.0*cm]
+
+    linhas_tab = []
+    for _, r in tabela.iterrows():
+        pct_v = r.get('% Meta')
+        pct_s = f"{pct_v:.1f}%" if pct_v is not None and not (isinstance(pct_v, float) and pd.isna(pct_v)) else '-'
+        meta_s = _fmt(r['Meta Mes']) if r.get('Meta Mes') is not None and not (isinstance(r['Meta Mes'], float) and pd.isna(r['Meta Mes'])) else '-'
+        rest_s = _fmt(r['Restante']) if r.get('Restante') is not None and not (isinstance(r['Restante'], float) and pd.isna(r['Restante'])) else '-'
+        linhas_tab.append([
+            str(r['Produto']), str(r['Empresa']), str(r['Faccao']),
+            _fmt(r['Produzido']), meta_s, pct_s, rest_s,
+        ])
+
+    t_prog = _tabela_generica(cabec, linhas_tab, e, cw, cor_header=colors.HexColor('#065F46'))
+    for ri, row in enumerate(linhas_tab, start=1):
+        try:
+            pct_val = float(row[5].replace('%', ''))
+            cor_s = C_GREEN if pct_val >= 100 else (C_AMBER if pct_val >= 75 else C_RED)
+            t_prog.setStyle(TableStyle([('TEXTCOLOR', (5, ri), (5, ri), cor_s),
+                                        ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold')]))
+        except Exception:
+            pass
+    story.append(t_prog)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # ── Gráfico top facções ──────────────────────────────────────────────────
+    if not df_mes.empty:
+        fac_total = df_mes.groupby('FACCAO')['QUANTIDADE'].sum().reset_index()
+        try:
+            buf_fac = _chart_barras_h(fac_total, 'FACCAO', 'QUANTIDADE',
+                                      'Producao Total por Faccao no Periodo', top_n=20)
+            story.append(_imagem_de_buf(buf_fac, largura_cm=16.5))
+            story.append(Spacer(1, 0.4 * cm))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_faccoes: chart faccoes: %s', _ex)
+
+    story.append(PageBreak())
+
+    # ── Detalhe por facção ───────────────────────────────────────────────────
+    story.append(Paragraph('Detalhe Diario por Faccao', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    if not df_mes.empty:
+        cab_det = ['Data', 'Produto', 'Empresa', 'Qtd']
+        cw_det = [2.2*cm, 4.0*cm, 3.5*cm, 2.2*cm]
+
+        for faccao in sorted(df_mes['FACCAO'].unique()):
+            df_f = df_mes[df_mes['FACCAO'] == faccao]
+            total_fac = int(df_f['QUANTIDADE'].sum())
+            det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'])['QUANTIDADE']
+                   .sum().reset_index().sort_values('DATA'))
+
+            _t_hdr = Table([[Paragraph(
+                f'{faccao}  -  Total: {_fmt(total_fac)} pcs',
+                ParagraphStyle('_fh', parent=e['subtitulo_secao'],
+                               textColor=C_WHITE, fontName='Helvetica-Bold',
+                               fontSize=9, spaceBefore=0, spaceAfter=0),
+            )]], colWidths=[PAGE_W - 2 * MARGIN])
+            _t_hdr.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0F4C5C')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(_t_hdr)
+
+            linhas_det = []
+            for _, r in det.iterrows():
+                linhas_det.append([
+                    pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'),
+                    str(r['PRODUTO']), str(r['CLIENTE']), _fmt(r['QUANTIDADE']),
+                ])
+            story.append(_tabela_generica(cab_det, linhas_det, e, cw_det,
+                                          cor_header=colors.HexColor('#2A6496')))
+            story.append(Spacer(1, 0.3 * cm))
+
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
+        f'Producao por Faccao  ·  {gerado_em}',
+        ParagraphStyle('ass_fac', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — CONTROLADORIA / PROGRAMAÇÃO DE CORTE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_programacao(
+    df_agg: pd.DataFrame,
+    total_ops: int,
+    concluidas: int,
+    parciais: int,
+    pendentes: int,
+    aderencia_pct: float,
+    total_prog_pcs: int,
+    total_cort_pcs: int,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Programação de Corte (Controladoria).
+
+    Parameters
+    ----------
+    df_agg         : DataFrame agregado por OP — colunas SEMANA, PED. CLIENTE,
+                     CLIENTE, LOCAL, PRODUTO, QNT_PROG_TOTAL, QNT_CORTADA,
+                     EFICIÊNCIA_PRC, STATUS_CORTE
+    total_ops, concluidas, parciais, pendentes, aderencia_pct,
+    total_prog_pcs, total_cort_pcs : KPIs já calculados na página
+    filtros_texto  : string descritiva dos filtros ativos
+    """
+    e = _estilos()
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+    ef_total = (total_cort_pcs / total_prog_pcs * 100) if total_prog_pcs > 0 else 0
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel='Relatorio Programacao de Corte',
+        subtitulo_rel='Controladoria — Planejado vs. Realizado',
+        periodo=gerado_em,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = [PageBreak()]
+
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    kpis = [
+        {'label': 'Total de OPs',      'valor': str(total_ops),          'cor': C_GRAY_BG},
+        {'label': 'Concluidas',         'valor': str(concluidas),         'cor': C_GREEN_LT},
+        {'label': 'Parciais',           'valor': str(parciais),           'cor': C_AMBER_LT},
+        {'label': 'Pendentes',          'valor': str(pendentes),          'cor': C_RED_LT},
+        {'label': 'Aderencia',          'valor': f'{aderencia_pct:.1f}%', 'cor': _pct_bg(aderencia_pct)},
+        {'label': 'Pecas Programadas',  'valor': _fmt(total_prog_pcs),    'cor': C_GRAY_BG},
+        {'label': 'Pecas Cortadas',     'valor': _fmt(total_cort_pcs),    'cor': _pct_bg(ef_total)},
+        {'label': 'Eficiencia Geral',   'valor': f'{ef_total:.1f}%',      'cor': _pct_bg(ef_total)},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Gráfico Programado vs Cortado por Semana ──────────────────────────────
+    if not df_agg.empty and 'SEMANA' in df_agg.columns:
+        try:
+            semanas = sorted(df_agg['SEMANA'].dropna().unique())
+            sem_data = [
+                {
+                    'SEMANA': str(s),
+                    'Programado': int(df_agg[df_agg['SEMANA'] == s]['QNT_PROG_TOTAL'].sum()),
+                    'Cortado': int(df_agg[df_agg['SEMANA'] == s]['QNT_CORTADA'].sum()),
+                }
+                for s in semanas
+            ]
+            df_sem = pd.DataFrame(sem_data)
+
+            fig_sem, ax_sem = plt.subplots(figsize=(14, 4.5))
+            fig_sem.patch.set_facecolor(MP_BG)
+            ax_sem.set_facecolor(MP_BG)
+            x = range(len(df_sem))
+            w = 0.35
+            ax_sem.bar([i - w/2 for i in x], df_sem['Programado'], w,
+                       label='Programado', color='#5D6D7E', alpha=0.85)
+            ax_sem.bar([i + w/2 for i in x], df_sem['Cortado'], w,
+                       label='Cortado', color=MP_BAR_OK, alpha=0.85)
+            ax_sem.set_xticks(list(x))
+            ax_sem.set_xticklabels(df_sem['SEMANA'].tolist(), fontsize=8, color=MP_TEXT)
+            ax_sem.set_title('Programado vs Cortado por Semana', fontsize=11,
+                             fontweight='bold', color=MP_TEXT)
+            ax_sem.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: _fmt(v)))
+            ax_sem.legend(fontsize=8)
+            ax_sem.grid(axis='y', color=MP_GRID, linewidth=0.7, alpha=0.8)
+            ax_sem.spines['top'].set_visible(False)
+            ax_sem.spines['right'].set_visible(False)
+            plt.tight_layout()
+            buf_sem = io.BytesIO()
+            fig_sem.savefig(buf_sem, format='png', dpi=150,
+                            bbox_inches='tight', facecolor=MP_BG)
+            plt.close(fig_sem)
+            buf_sem.seek(0)
+            story.append(_imagem_de_buf(buf_sem, largura_cm=16.5))
+            story.append(Spacer(1, 0.4 * cm))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_programacao: chart semanas: %s', _ex)
+
+    story.append(PageBreak())
+
+    # ── Tabela de OPs ────────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo por Ordem de Producao (OP)', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    cabec_op = ['Sem.', 'OP', 'Cliente', 'Local', 'Produto', 'Prog.', 'Cortado', 'Efic.%', 'Status']
+    cw_op = [1.0*cm, 2.2*cm, 2.8*cm, 1.8*cm, 3.5*cm, 1.8*cm, 1.8*cm, 1.5*cm, 2.1*cm]
+
+    linhas_op = []
+    for _, r in df_agg.iterrows():
+        ef = float(r.get('EFICIENCIA_PRC', r.get('EFICIÊNCIA_PRC', 0)))
+        status_c = str(r.get('STATUS_CORTE', ''))
+        op_val = str(r.get('PED. CLIENTE', '')).strip() or '-'
+        linhas_op.append([
+            str(r.get('SEMANA', '')),
+            op_val,
+            str(r.get('CLIENTE', ''))[:20],
+            str(r.get('LOCAL', ''))[:12],
+            str(r.get('PRODUTO', ''))[:25],
+            _fmt(r.get('QNT_PROG_TOTAL', 0)),
+            _fmt(r.get('QNT_CORTADA', 0)),
+            f'{ef:.1f}%',
+            status_c,
+        ])
+
+    t_ops = _tabela_generica(cabec_op, linhas_op, e, cw_op,
+                             cor_header=colors.HexColor('#1E1B4B'))
+    for ri, row in enumerate(linhas_op, start=1):
+        status_v = row[8]
+        cor_st = C_GREEN if status_v == 'Concluido' else (C_AMBER if status_v == 'Parcial' else C_RED)
+        t_ops.setStyle(TableStyle([('TEXTCOLOR', (8, ri), (8, ri), cor_st),
+                                   ('FONTNAME', (8, ri), (8, ri), 'Helvetica-Bold')]))
+        try:
+            ef_num = float(row[7].replace('%', ''))
+            cor_ef = C_GREEN if ef_num >= 96 else (C_AMBER if ef_num >= 50 else C_RED)
+            t_ops.setStyle(TableStyle([('TEXTCOLOR', (7, ri), (7, ri), cor_ef)]))
+        except Exception:
+            pass
+    story.append(t_ops)
+
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
+        f'Programacao de Corte  ·  {gerado_em}',
+        ParagraphStyle('ass_prog', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — RELATÓRIO CONSOLIDADO DE CORTE (todas as regiões)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_corte_consolidado(
+    df_manta: pd.DataFrame,
+    df_lencol: pd.DataFrame,
+    df_iacanga: pd.DataFrame,
+    df_itaju: pd.DataFrame,
+    ini: date,
+    fim: date,
+    metas_arealva: dict,
+    metas_iacanga: dict,
+) -> bytes:
+    """
+    Relatório mensal consolidado de corte — Arealva Manta, Lençol, Iacanga e Itaju.
+    Formato compacto para envio por e-mail.
+    """
+    from datetime import timedelta as _tdc
+    e = _estilos()
+    periodo_str = f"{ini.strftime('%d/%m/%Y')}  até  {fim.strftime('%d/%m/%Y')}"
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+    meses_pt = {1:'Janeiro',2:'Fevereiro',3:'Março',4:'Abril',5:'Maio',6:'Junho',
+                7:'Julho',8:'Agosto',9:'Setembro',10:'Outubro',11:'Novembro',12:'Dezembro'}
+    mes_label = meses_pt.get(ini.month, '') + f'/{ini.year}'
+
+    _wdays = sum(1 for i in range((fim - ini).days + 1)
+                 if (ini + _tdc(days=i)).weekday() < 5)
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel=f'✂  Relatório de Corte · {mes_label}',
+        subtitulo_rel='Consolidado — Arealva Manta · Lençol · Iacanga · Itaju',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+    )
+    story = [PageBreak()]  # capa
+
+    # ── helper interno ────────────────────────────────────────────────────────
+    def _secao_corte(titulo: str, cor_titulo, df_sec: pd.DataFrame,
+                     meta_total: float, col_est: str = 'ESTACAO',
+                     col_quant: str = 'QUANTIDADE', col_data: str = 'DATA'):
+        """Renderiza uma seção de corte: título + KPIs + gráfico + tabela por estação."""
+        if df_sec is None or df_sec.empty:
+            story.append(Paragraph(f'{titulo} — sem dados no período', e['nota']))
+            story.append(Spacer(1, 0.3*cm))
+            return
+
+        total = int(df_sec[col_quant].sum())
+        dias  = df_sec[col_data].dt.date.nunique()
+        media = total / max(dias, 1)
+        pct   = (media / meta_total * 100) if meta_total > 0 else 0
+
+        # Título da seção com fundo colorido
+        _t_hdr = Table([[Paragraph(titulo, ParagraphStyle(
+            '_sh', parent=e['subtitulo_secao'],
+            textColor=C_WHITE, fontName='Helvetica-Bold', fontSize=11,
+            spaceBefore=0, spaceAfter=0,
+        ))]],
+            colWidths=[PAGE_W - 2 * MARGIN],
+        )
+        _t_hdr.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), cor_titulo),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ]))
+        story.append(_t_hdr)
+        story.append(Spacer(1, 0.25*cm))
+
+        # KPIs
+        kpis_s = [
+            {'label': 'Total Peças', 'valor': _fmt(total), 'cor': C_TEAL_LT},
+            {'label': 'Dias Trab.',  'valor': str(dias),   'cor': C_GRAY_BG},
+            {'label': 'Média/Dia',   'valor': _fmt(media), 'cor': _pct_bg(pct)},
+            {'label': '% Meta',      'valor': f'{pct:.1f}%', 'cor': _pct_bg(pct)},
+        ]
+        story.append(_bloco_kpis(kpis_s, e, colunas=4))
+        story.append(Spacer(1, 0.3*cm))
+
+        # Gráfico diário
+        try:
+            prod_dia = df_sec.groupby(col_data)[col_quant].sum().reset_index()
+            prod_dia.columns = ['DATA', 'QUANTIDADE']
+            prod_dia = prod_dia.sort_values('DATA')
+            buf_c = _chart_producao_diaria(prod_dia, meta_total,
+                                           titulo=f'Produção Diária — {titulo}',
+                                           largura=16.0, altura=4.5)
+            story.append(_imagem_de_buf(buf_c, largura_cm=16.5))
+            story.append(Spacer(1, 0.3*cm))
+        except Exception as _ex:
+            logger.warning(f'chart {titulo}: {_ex}')
+
+        # Tabela por estação (se disponível)
+        if col_est in df_sec.columns:
+            est_tab = (df_sec.groupby(col_est)[col_quant]
+                       .sum().reset_index().sort_values(col_quant, ascending=False))
+            est_tab = est_tab[est_tab[col_quant] > 0]
+            if not est_tab.empty:
+                est_tab['%'] = (est_tab[col_quant] / total * 100).round(1)
+                cab = [col_est.replace('_', ' ').title(), 'Peças', '% Total']
+                lins = [
+                    [str(r[col_est])[:30], _fmt(r[col_quant]), f"{r['%']:.1f}%"]
+                    for _, r in est_tab.iterrows()
+                ]
+                cw = [8.0*cm, 3.5*cm, 2.5*cm]
+                story.append(_tabela_generica(cab, lins, e, cw))
+
+        story.append(Spacer(1, 0.5*cm))
+
+    # ── Resumo Executivo ─────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo — Todos os Cortes', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    def _safe_total(df, col='QUANTIDADE'):
+        return int(df[col].sum()) if df is not None and not df.empty else 0
+
+    tot_manta  = _safe_total(df_manta)
+    tot_lencol = _safe_total(df_lencol, 'QUANT') if 'QUANT' in (df_lencol.columns if df_lencol is not None else []) else _safe_total(df_lencol)
+    tot_iac    = _safe_total(df_iacanga)
+    tot_itaju  = _safe_total(df_itaju)
+    tot_geral  = tot_manta + tot_lencol + tot_iac + tot_itaju
+
+    kpis_geral = [
+        {'label': '✂ Arealva Manta',  'valor': _fmt(tot_manta),  'cor': C_TEAL_LT},
+        {'label': '🧵 Arealva Lençol', 'valor': _fmt(tot_lencol), 'cor': C_AMBER_LT},
+        {'label': '✂ Iacanga',         'valor': _fmt(tot_iac),    'cor': C_GREEN_LT},
+        {'label': '✂ Itaju',           'valor': _fmt(tot_itaju),  'cor': C_GRAY_BG},
+    ]
+    story.append(_bloco_kpis(kpis_geral, e, colunas=4))
+    story.append(Spacer(1, 0.2*cm))
+
+    _tot_style = ParagraphStyle('_tot', parent=e['corpo'],
+                                fontName='Helvetica-Bold', fontSize=11,
+                                textColor=C_NAVY, alignment=TA_CENTER)
+    story.append(Paragraph(f'Total Geral: {_fmt(tot_geral)} peças no período', _tot_style))
+    story.append(Spacer(1, 0.5*cm))
+    story.append(_linha_divisoria(cor=C_GRAY_LINE, espessura=0.8))
+
+    # ── Seção Arealva Manta ──────────────────────────────────────────────────
+    story.append(Paragraph('1. Arealva — Manta', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    meta_manta = sum(metas_arealva.get(k, {}).get('_DEFAULT', 0) for k in metas_arealva) if metas_arealva else 0
+
+    _df_manta_mes = df_manta[
+        (df_manta['DATA'] >= pd.Timestamp(ini)) &
+        (df_manta['DATA'] <= pd.Timestamp(fim))
+    ] if df_manta is not None and not df_manta.empty else pd.DataFrame()
+
+    _secao_corte('Arealva — Manta', colors.HexColor('#1F3A93'), _df_manta_mes,
+                 meta_manta, col_est='ESTACAO')
+
+    story.append(PageBreak())
+
+    # ── Seção Arealva Lençol ─────────────────────────────────────────────────
+    story.append(Paragraph('2. Arealva — Lençol', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    _df_ln = df_lencol
+    if _df_ln is not None and not _df_ln.empty and 'DATA' in _df_ln.columns:
+        _df_ln = _df_ln[
+            (pd.to_datetime(_df_ln['DATA'], errors='coerce') >= pd.Timestamp(ini)) &
+            (pd.to_datetime(_df_ln['DATA'], errors='coerce') <= pd.Timestamp(fim))
+        ].copy()
+        _df_ln['DATA'] = pd.to_datetime(_df_ln['DATA'], errors='coerce')
+        _col_q_ln = 'QUANT' if 'QUANT' in _df_ln.columns else 'QUANTIDADE'
+        _df_ln[_col_q_ln] = pd.to_numeric(_df_ln[_col_q_ln], errors='coerce').fillna(0)
+        _secao_corte('Arealva — Lençol', colors.HexColor('#5D4037'), _df_ln,
+                     meta_total=0, col_est='PRESTADOR' if 'PRESTADOR' in _df_ln.columns else 'ESTACAO',
+                     col_quant=_col_q_ln)
+    else:
+        story.append(Paragraph('Arealva Lençol — sem dados no período.', e['nota']))
+
+    story.append(PageBreak())
+
+    # ── Seção Iacanga ────────────────────────────────────────────────────────
+    story.append(Paragraph('3. Iacanga — Manta (Giattex)', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    meta_iac = sum(
+        v.get('CASAL', v.get('_DEFAULT', 0))
+        for v in metas_iacanga.values()
+    ) if metas_iacanga else 0
+
+    _df_iac = df_iacanga
+    if _df_iac is not None and not _df_iac.empty:
+        _df_iac = _df_iac[
+            (_df_iac['DATA'] >= pd.Timestamp(ini)) &
+            (_df_iac['DATA'] <= pd.Timestamp(fim))
+        ]
+    _secao_corte('Iacanga — Manta', colors.HexColor('#4A0E8F'), _df_iac,
+                 meta_iac, col_est='ESTACAO')
+
+    story.append(PageBreak())
+
+    # ── Seção Itaju ──────────────────────────────────────────────────────────
+    story.append(Paragraph('4. Itaju — Ponto Palito', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    _df_it = df_itaju
+    if _df_it is not None and not _df_it.empty:
+        _df_it = _df_it[
+            (_df_it['DATA'] >= pd.Timestamp(ini)) &
+            (_df_it['DATA'] <= pd.Timestamp(fim))
+        ]
+    _secao_corte('Itaju — Ponto Palito', colors.HexColor('#064E3B'), _df_it,
+                 meta_total=0, col_est='ESTACAO' if _df_it is not None and 'ESTACAO' in _df_it.columns else 'PRODUTO')
+
+    # ── Rodapé final ─────────────────────────────────────────────────────────
+    story.append(Spacer(1, 1.0*cm))
+    story.append(Paragraph(
+        f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
+        f'Corte Consolidado · {mes_label}  ·  {gerado_em}',
+        ParagraphStyle('ass_cc', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()

@@ -34,11 +34,18 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
         # O Google (gviz/tq) adivinha o cabeçalho de forma instável quando há título
         # mesclado na linha 1. Em vez de confiar nisso, lemos a grade crua (header=None)
         # e localizamos a linha que contém os rótulos reais (PRESTADOR + OP).
+        import re as _re
+        # Variações conhecidas para o cabeçalho da coluna OP (ex: "OP", "N° OP", "Nº OP")
+        _OP_HEADER_RE = _re.compile(r'^N?[°º]?\s*OP\.?$')
+
+        def _is_op_header(v: str) -> bool:
+            return bool(_OP_HEADER_RE.match(v))
+
         raw = pd.read_csv(io.StringIO(conteudo), header=None, dtype=str)
         hdr_idx = 0
-        for i in range(min(12, len(raw))):
+        for i in range(min(20, len(raw))):
             vals = [str(v).strip().upper() for v in raw.iloc[i].tolist()]
-            if any("PRESTADOR" in v for v in vals) and any(v == "OP" for v in vals):
+            if any("PRESTADOR" in v for v in vals) and any(_is_op_header(v) for v in vals):
                 hdr_idx = i
                 break
         df = raw.iloc[hdr_idx + 1:].copy().reset_index(drop=True)
@@ -50,12 +57,12 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
 
         logger.debug(f"CSV carregado: {len(df)} linhas (cabeçalho na linha {hdr_idx})")
         logger.debug(f"Colunas: {list(df.columns)[:6]}")
-        
+
         # ── Mapeia colunas por CONTEÚDO (não por nome confuso) ─────────────────────────
         col_map = {}
-        
-        # Estratégia: Iterar primeiras 12 colunas (dados) e analisar conteúdo
-        for i, col in enumerate(df.columns[:12]):
+
+        # Estratégia: Iterar primeiras 20 colunas (dados) e analisar conteúdo
+        for i, col in enumerate(df.columns[:20]):
             col_upper = col.upper().strip()
             
             # Pega amostra de valores não-vazios
@@ -82,7 +89,7 @@ def load_lencol_smart_xlsx() -> pd.DataFrame:
                 col_map["PRESTADOR"] = col
                 logger.debug(f"  Col[{i}] '{col}' → PRESTADOR")
             
-            elif col_upper == "OP":
+            elif _is_op_header(col_upper):
                 col_map["OP"] = col
                 logger.debug(f"  Col[{i}] '{col}' → OP")
             

@@ -1191,11 +1191,13 @@ if screen == 'analysis_type':
                 <span class="rc-tag">KPIs</span>
                 <span class="rc-tag">Manta · Lençol · Giattex</span>
             </div>
+            <div style="margin-top:14px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);
+                        border-radius:8px;padding:10px 14px;font-size:.82rem;color:#FCD34D;line-height:1.4;">
+                🔧 <strong>Em desenvolvimento</strong> — funcionalidades ainda em construção.
+            </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True):
-            _go('eficiencia_dashboard')
-        st.caption("💡 Eficiência por linha: Manta (Arealva/Iacanga), Lençol e Giattex")
+        st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True, disabled=True)
 
     st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
     col_back_inicio, *_ = st.columns([2, 5])
@@ -1306,9 +1308,9 @@ elif screen == 'regions':
         if st.button("Abrir Itaju  →", key="btn_itaju", use_container_width=True):
             _go('itaju')
 
-    st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
-    col_back, *_ = st.columns([2, 5])
-    with col_back:
+    st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
+    col_back2, *_ = st.columns([2, 5])
+    with col_back2:
         if st.button("← Voltar ao Tipo de Análise", key="back_to_analysis_type", use_container_width=True):
             _go('analysis_type')
 
@@ -2091,54 +2093,6 @@ elif screen == 'iacanga_rendimento':
             fig_sem_iac.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
             st.plotly_chart(fig_sem_iac, use_container_width=True)
 
-    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
-    st.markdown("---")
-    _col_pdf_l_iac, _col_pdf_c_iac, _col_pdf_r_iac = st.columns([2, 4, 2])
-    with _col_pdf_c_iac:
-        _filtros_iac = []
-        if ops_sel_iac:
-            _filtros_iac.append(f"OPs: {', '.join(map(str, ops_sel_iac[:3]))}{'...' if len(ops_sel_iac) > 3 else ''}")
-        if est_sel_iac:
-            _filtros_iac.append(f"Estações: {', '.join(est_sel_iac)}")
-        if prod_sel_iac:
-            _filtros_iac.append(f"Produtos: {', '.join(prod_sel_iac[:3])}{'...' if len(prod_sel_iac) > 3 else ''}")
-        if tam_sel_iac:
-            _filtros_iac.append(f"Tamanhos: {', '.join(tam_sel_iac)}")
-        _filtros_iac_str = '  |  '.join(_filtros_iac) if _filtros_iac else 'Nenhum filtro adicional'
-
-        if st.button(
-            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_iac",
-            use_container_width=True, type="primary",
-            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
-        ):
-            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
-                from utils.pdf_report import gerar_pdf_iacanga_manta, nome_arquivo_pdf
-                _pdf_bytes_iac = gerar_pdf_iacanga_manta(
-                    df_filtrado_iac, _ini_iac, _fim_iac,
-                    META_TOTAL_IAC, METAS_POR_TAMANHO, _filtros_iac_str,
-                )
-            st.session_state["pdf_iac_bytes"] = _pdf_bytes_iac
-            st.session_state["pdf_iac_nome"] = nome_arquivo_pdf(
-                "iacanga_manta", _ini_iac, _fim_iac
-            )
-
-        if st.session_state.get("pdf_iac_bytes"):
-            _col_dl_iac, _col_clr_iac = st.columns([5, 1])
-            with _col_dl_iac:
-                st.download_button(
-                    label="⬇️  Baixar Relatório PDF",
-                    data=st.session_state["pdf_iac_bytes"],
-                    file_name=st.session_state.get("pdf_iac_nome", "relatorio.pdf"),
-                    mime="application/pdf",
-                    key="dl_pdf_iac",
-                    use_container_width=True,
-                )
-            with _col_clr_iac:
-                if st.button("🗑️", key="clr_pdf_iac", use_container_width=True,
-                             help="Limpar e gerar novamente"):
-                    st.session_state.pop("pdf_iac_bytes", None)
-                    st.rerun()
-
     # footer
     st.markdown("---")
     st.markdown(
@@ -2691,54 +2645,6 @@ elif screen == 'arealva_manta':
         fig_sem.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
         fig_sem.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
         st.plotly_chart(fig_sem, use_container_width=True)
-
-    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
-    st.markdown("---")
-    _col_pdf_l_am, _col_pdf_c_am, _col_pdf_r_am = st.columns([2, 4, 2])
-    with _col_pdf_c_am:
-        _filtros_am = []
-        if ops_selecionadas:
-            _filtros_am.append(f"OPs: {', '.join(map(str, ops_selecionadas[:3]))}{'...' if len(ops_selecionadas) > 3 else ''}")
-        if estacoes_selecionadas:
-            _filtros_am.append(f"Estações: {', '.join(estacoes_selecionadas)}")
-        if produtos_selecionados:
-            _filtros_am.append(f"Produtos: {', '.join(produtos_selecionados[:3])}{'...' if len(produtos_selecionados) > 3 else ''}")
-        if tamanhos_selecionados:
-            _filtros_am.append(f"Tamanhos: {', '.join(tamanhos_selecionados)}")
-        _filtros_am_str = '  |  '.join(_filtros_am) if _filtros_am else 'Nenhum filtro adicional'
-
-        if st.button(
-            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_am",
-            use_container_width=True, type="primary",
-            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
-        ):
-            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
-                from utils.pdf_report import gerar_pdf_arealva_manta, nome_arquivo_pdf
-                _pdf_bytes_am = gerar_pdf_arealva_manta(
-                    df_filtrado, _ini_periodo, _fim_periodo,
-                    META_TOTAL_AREALVA, METAS, _filtros_am_str,
-                )
-            st.session_state["pdf_am_bytes"] = _pdf_bytes_am
-            st.session_state["pdf_am_nome"] = nome_arquivo_pdf(
-                "arealva_manta", _ini_periodo, _fim_periodo
-            )
-
-        if st.session_state.get("pdf_am_bytes"):
-            _col_dl_am, _col_clr_am = st.columns([5, 1])
-            with _col_dl_am:
-                st.download_button(
-                    label="⬇️  Baixar Relatório PDF",
-                    data=st.session_state["pdf_am_bytes"],
-                    file_name=st.session_state.get("pdf_am_nome", "relatorio.pdf"),
-                    mime="application/pdf",
-                    key="dl_pdf_am",
-                    use_container_width=True,
-                )
-            with _col_clr_am:
-                if st.button("🗑️", key="clr_pdf_am", use_container_width=True,
-                             help="Limpar e gerar novamente"):
-                    st.session_state.pop("pdf_am_bytes", None)
-                    st.rerun()
 
     # footer
     st.markdown("---")
@@ -3993,58 +3899,6 @@ elif screen == 'arealva_lencol':
                     }),
                     use_container_width=True, height=320, hide_index=True,
                 )
-
-    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────────
-    st.markdown("---")
-    _col_pdf_l_ln, _col_pdf_c_ln, _col_pdf_r_ln = st.columns([2, 4, 2])
-    with _col_pdf_c_ln:
-        _filtros_ln = []
-        if sel_prest_ln:
-            _filtros_ln.append(f"Prestadores: {', '.join(sel_prest_ln[:3])}{'...' if len(sel_prest_ln) > 3 else ''}")
-        if sel_emp_ln:
-            _filtros_ln.append(f"Empresas: {', '.join(sel_emp_ln)}")
-        if sel_cat_ln:
-            _filtros_ln.append(f"Categorias: {', '.join(sel_cat_ln[:3])}{'...' if len(sel_cat_ln) > 3 else ''}")
-        _filtros_ln_str = '  |  '.join(_filtros_ln) if _filtros_ln else 'Nenhum filtro adicional'
-
-        if st.button(
-            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_ln",
-            use_container_width=True, type="primary",
-            help="Gera relatório completo do período filtrado (ideal para fechamento de mês)",
-        ):
-            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
-                from utils.pdf_report import gerar_pdf_lencol, nome_arquivo_pdf
-                _pdf_bytes_ln = gerar_pdf_lencol(
-                    df_ln, p_ini_ln, p_fim_ln, _filtros_ln_str,
-                    caseamento_df=lencol_caseamento(df_ln),
-                    totais_jf={
-                        "total_pecas": total_pecas_ln,
-                        "total_sem_fundo": total_sem_fundo_ln,
-                        "total_fundos": total_fundos_ln,
-                        "total_jogos_duplo": total_jogos_duplo_ln,
-                    },
-                )
-            st.session_state["pdf_ln_bytes"] = _pdf_bytes_ln
-            st.session_state["pdf_ln_nome"] = nome_arquivo_pdf(
-                "lencol", p_ini_ln, p_fim_ln
-            )
-
-        if st.session_state.get("pdf_ln_bytes"):
-            _col_dl_ln, _col_clr_ln = st.columns([5, 1])
-            with _col_dl_ln:
-                st.download_button(
-                    label="⬇️  Baixar Relatório PDF",
-                    data=st.session_state["pdf_ln_bytes"],
-                    file_name=st.session_state.get("pdf_ln_nome", "relatorio.pdf"),
-                    mime="application/pdf",
-                    key="dl_pdf_ln",
-                    use_container_width=True,
-                )
-            with _col_clr_ln:
-                if st.button("🗑️", key="clr_pdf_ln", use_container_width=True,
-                             help="Limpar e gerar novamente"):
-                    st.session_state.pop("pdf_ln_bytes", None)
-                    st.rerun()
 
     # Footer
     st.markdown("---")

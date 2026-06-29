@@ -158,6 +158,12 @@ def load_faccoes() -> pd.DataFrame:
 
     result = pd.concat(dfs, ignore_index=True)
 
+    # Remove linhas onde PRODUTO == FACCAO — artefato de linhas de cabeçalho/grupo
+    # na aba QUARTERIZADAS onde o nome do prestador aparece como "produto".
+    result = result[
+        result["PRODUTO"].str.upper() != result["FACCAO"].str.upper()
+    ].reset_index(drop=True)
+
     # Aplica alias de produtos (OUTLET PRENSADO → MANTA PRENSADA, FRONHA → FRONHAS, etc.)
     prod_alias = {normalize_text(k): v for k, v in FACCOES_PRODUTO_ALIAS.items()}
     result["PRODUTO"] = result["PRODUTO"].apply(

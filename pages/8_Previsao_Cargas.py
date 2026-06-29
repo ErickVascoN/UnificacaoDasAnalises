@@ -150,17 +150,45 @@ def _is_zero_money(s: str) -> bool:
 
 
 def _parse_date_pt(s: str) -> date | None:
-    s = str(s).lower().strip()
-    m = re.search(r"(\w+),\s+(\w+)\s+(\d+),\s+(\d{4})", s)
-    if not m:
-        return None
-    month = MESES_PT.get(m.group(2))
-    if not month:
-        return None
-    try:
-        return date(int(m.group(4)), month, int(m.group(3)))
-    except ValueError:
-        return None
+    raw = str(s).strip()
+    sl = raw.lower()
+
+    # Formato primário: "quinta-feira, junho 1, 2026" (gviz PT locale)
+    m = re.search(r"(\w+),\s+(\w+)\s+(\d+),\s+(\d{4})", sl)
+    if m:
+        month = MESES_PT.get(m.group(2))
+        if month:
+            try:
+                return date(int(m.group(4)), month, int(m.group(3)))
+            except ValueError:
+                pass
+
+    # Fallback: "dd/mm/yyyy" ou "d/m/yyyy" (BR) ou "m/d/yyyy" (US)
+    m2 = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", raw.strip())
+    if m2:
+        a, b, y = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
+        # a > 12 → certamente é dia (DD/MM/YYYY)
+        # b > 12 → certamente é mês (MM/DD/YYYY)
+        # ambos ≤ 12 → assume DD/MM/YYYY (padrão BR)
+        try:
+            if a > 12:
+                return date(y, b, a)
+            elif b > 12:
+                return date(y, a, b)
+            else:
+                return date(y, b, a)   # DD/MM/YYYY
+        except ValueError:
+            pass
+
+    # Fallback: "yyyy-mm-dd" (ISO)
+    m3 = re.match(r"^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$", raw.strip())
+    if m3:
+        try:
+            return date(int(m3.group(1)), int(m3.group(2)), int(m3.group(3)))
+        except ValueError:
+            pass
+
+    return None
 
 
 def _is_date_str(s: str) -> bool:
@@ -206,18 +234,48 @@ def _first_frete(row: list[str]) -> float:
     return 0.0
 
 
-def _find_realizado_mensal(rows: list[list[str]]) -> float:
-    """Retorna o total REALIZADO mensal a partir da linha de resumo da planilha.
+def _parse_num(s: str) -> float | None:
+    """Parse numérico permissivo — aceita valor com ou sem prefixo R$ ('2.450.000,00')."""
+    s = str(s).strip()
+    if not s or s in ("-", "R$", "R$  -", "R$-"):
+        return None
+    clean = re.sub(r"[R$\s\-]", "", s).replace(".", "").replace(",", ".")
+    try:
+        v = float(clean)
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
+def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
+    """Retorna (previsto_mensal, realizado_mensal) a partir da linha de resumo da planilha.
 
     Estratégia:
-    1. Linha com 'GERAL' em cols 8-14 → col[GERAL+2] é o realizado (ex: JANEIRO).
-    2. Maior valor não-redondo (not % 1.000) > R$1 M em cols 8-14 de linhas
-       não-data → essa célula é o total acumulado do mês (ex: FEVEREIRO row[120]
-       col[10]=3.365.242, MARÇO row[140] col[10]=3.972.017, ABRIL row[119]
-       col[14]=3.283.794).
-    3. Fallback 0.0 — mês sem realizado lançado ainda (MAIO/JUNHO em progresso).
+    1. Cabeçalho "Previsto total" no painel direito → lê os dois primeiros valores
+       numéricos > R$10K da linha seguinte (previsto, realizado). Aplicada PRIMEIRO
+       pois é a mais confiável e funciona mesmo quando o realizado > R$1M (que
+       interferiria com a estratégia 2).
+    2. Linha com 'GERAL' em cols 8-14 → col[GERAL+2] é o realizado (JANEIRO).
+    3. Maior valor não-redondo (not % 1.000) > R$1 M em cols 8-15 de linhas
+       não-data → realizado oficial do mês (FEVEREIRO-ABRIL concluídos).
     """
-    # 1. Linha GERAL (JANEIRO)
+
+    # 1. Linha de resumo com DOIS valores > R$1.5M na mesma linha (sem data).
+    # Só a linha "Previsto total | Realizado total" tem esse padrão — valores
+    # de dias individuais ficam abaixo de R$1M. Não depende de texto nem de
+    # posição de coluna; aceita número puro sem prefixo R$ ("2.450.000,00").
+    for row in rows:
+        if _parse_date_pt(row[1] if len(row) > 1 else ""):
+            continue
+        big: list[float] = []
+        for cell in row:
+            v = _parse_num(str(cell))
+            if v and v > 1_500_000:
+                big.append(v)
+        if len(big) >= 2:
+            return (big[0], big[1])
+
+    # 2. Linha GERAL (JANEIRO)
     for row in rows:
         if _parse_date_pt(row[1] if len(row) > 1 else ""):
             continue
@@ -227,9 +285,9 @@ def _find_realizado_mensal(rows: list[list[str]]) -> float:
                 if len(row) > real_col:
                     v = _parse_money(row[real_col])
                     if v and abs(v) > 1_000_000:
-                        return abs(v)
+                        return (0.0, abs(v))
 
-    # 2. Maior valor não-redondo > R$1M em cols 8-15
+    # 3. Maior valor não-redondo > R$1M em cols 8-15
     best = 0.0
     for row in rows:
         if _parse_date_pt(row[1] if len(row) > 1 else ""):
@@ -242,10 +300,64 @@ def _find_realizado_mensal(rows: list[list[str]]) -> float:
             if av <= 1_000_000:
                 continue
             if round(av) % 1_000 == 0:
-                continue  # valor redondo = meta/previsto planejado, não realizado
+                continue
             if av > best:
                 best = av
-    return best
+    if best > 0:
+        return (0.0, best)
+
+    return (0.0, 0.0)
+
+
+def _find_realizado_mensal(rows: list[list[str]]) -> float:
+    """Compat wrapper — retorna apenas o realizado."""
+    _, real = _find_resumo_mensal(rows)
+    return real
+
+
+def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict:
+    """
+    Lê o painel direito do CSV (cols 8-13) e retorna {(data, cliente_norm): realizado}.
+
+    Estrutura real do CSV por bloco de dia:
+      col[8] = "DD-jun." (cabeçalho do dia, com col[9]="previsto" col[11]="diferença")
+      linhas de cliente: col[8]=NOME, col[9]='R$', col[10]=previsto_val,
+                         col[11]=realizado_val (número direto, sem prefixo separado)
+      linha de total/separador: col[8]='' ou contém 'R$' — ignorada
+    """
+    day_real: dict = {}
+    current_date = None
+
+    for row in rows:
+        if len(row) <= 8:
+            continue
+        cell8 = str(row[8]).strip()
+
+        # Cabeçalho de dia: "1-jun.", "19-jun.", etc.
+        m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell8.lower())
+        if m:
+            try:
+                current_date = date(ano, mes_num, int(m.group(1)))
+            except ValueError:
+                current_date = None
+            continue
+
+        # Separador / total: col[8] vazio ou contém 'R$' — ignora
+        if not cell8 or 'R$' in cell8:
+            continue
+
+        if current_date is None or len(row) <= 11:
+            continue
+
+        # Linha de cliente: col[8]=nome, col[11]=realizado por cliente
+        cliente_raw = cell8.strip().upper()
+        v = _parse_num(str(row[11]).strip())
+        if v and v > 0 and cliente_raw:
+            key = (current_date, _norm(cliente_raw))
+            # Acumula caso haja mais de uma linha para o mesmo cliente no dia
+            day_real[key] = day_real.get(key, 0.0) + v
+
+    return day_real
 
 
 def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -> list[dict]:
@@ -258,10 +370,12 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
       2. UM registro CARGO_REAL por mês com o REALIZADO total detectado pela
          função _find_realizado_mensal (linha GERAL ou maior não-redondo > 1M).
 
-    PREVISTO mensal = soma dos fretes individuais dos cargos.
+    PREVISTO mensal = soma dos fretes individuais dos cargos OU previsto do painel
+    direito quando disponível (meses em andamento com linha de resumo).
     REALIZADO mensal = valor oficial da planilha (linha de resumo).
     """
-    realizado_mensal = _find_realizado_mensal(rows)
+    previsto_mensal, realizado_mensal = _find_resumo_mensal(rows)
+    day_realized = _extract_day_realized(rows, mes_num, ano)
 
     # Pré-computa índices de "linha mesclada": linha sem data onde SOMENTE col[6]
     # tem valor (todos os outros cols estão vazios) E a próxima linha tem data.
@@ -419,15 +533,23 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
             "TIPO_VEICULO": tipo_veiculo,
             "VALOR_FRETE":  valor_frete,
             "CLIENTE":      cliente,
-            "PREVISAO":     valor_frete,
-            "REALIZADO":    0.0,
-            "DIFERENCA":    0.0,
-            "OBS":          obs_raw,
-            "STATUS":       status,
+            # Quando o painel direito tem previsto oficial, zera o frete individual
+            # para evitar dupla contagem (previsto total vai no CARGO_REAL).
+            "PREVISAO":       0.0 if previsto_mensal > 0 else valor_frete,
+            "REALIZADO":      0.0,
+            # Painel direito usa nome da empresa (= DESTINO). Tenta também CLIENTE
+            # como fallback para meses onde ambos coincidem.
+            "REALIZADO_DIA":  (
+                day_realized.get((data_carga, _norm(destino)), 0.0)
+                or day_realized.get((data_carga, _norm(cliente)), 0.0)
+            ),
+            "DIFERENCA":      0.0,
+            "OBS":            obs_raw,
+            "STATUS":         status,
         })
 
-    # Registro único de REALIZADO mensal (detectado da linha de resumo da planilha)
-    if realizado_mensal > 0:
+    # Registro único de REALIZADO e PREVISTO mensal (da linha de resumo da planilha)
+    if realizado_mensal > 0 or previsto_mensal > 0:
         proxy_date = _last_cargo_date or date(ano, mes_num, 28)
         records.append({
             "MES":          mes_nome,
@@ -441,11 +563,12 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
             "TIPO_VEICULO": "",
             "VALOR_FRETE":  0.0,
             "CLIENTE":      mes_nome,
-            "PREVISAO":     0.0,
-            "REALIZADO":    realizado_mensal,
-            "DIFERENCA":    0.0,
-            "OBS":          "",
-            "STATUS":       "CARGO_REAL",
+            "PREVISAO":      previsto_mensal,
+            "REALIZADO":     realizado_mensal,
+            "REALIZADO_DIA": 0.0,
+            "DIFERENCA":     0.0,
+            "OBS":           "",
+            "STATUS":        "CARGO_REAL",
         })
 
     return records
@@ -553,6 +676,8 @@ with st.sidebar:
         "Incluir cargas sem realizado", value=False, key="toggle_sem_real"
     )
 
+
+
 # ── Aplicar filtros ───────────────────────────────────────────────────────────
 # Linhas CARGO_REAL (tabela lateral de realizado) são preservadas sem filtro de
 # destino/local/status para que o KPI de realizado seja sempre o total real do mês.
@@ -567,7 +692,12 @@ if sel_locais:
 if sel_status:
     df_cargo_filt = df_cargo_filt[df_cargo_filt["STATUS"].isin(sel_status)]
 if not mostrar_sem_real:
-    df_cargo_filt = df_cargo_filt[df_cargo_filt["PREVISAO"] > 0]
+    # Mantém cargos de meses com previsto oficial mesmo que PREVISAO individual = 0
+    _meses_com_prev_ofic = set(df_real_fixo[df_real_fixo["PREVISAO"] > 0]["MES_NUM"])
+    df_cargo_filt = df_cargo_filt[
+        (df_cargo_filt["PREVISAO"] > 0) |
+        df_cargo_filt["MES_NUM"].isin(_meses_com_prev_ofic)
+    ]
 
 df = pd.concat([df_real_fixo, df_cargo_filt], ignore_index=True)
 
@@ -590,12 +720,14 @@ st.markdown(
 st.divider()
 
 # ── KPIs globais ──────────────────────────────────────────────────────────────
-# PREVISTO = soma dos fretes individuais das linhas de cargo
-# REALIZADO = soma das linhas CARGO_REAL (tabela lateral, detectada por cliente)
+# PREVISTO = soma de df["PREVISAO"] (cargo fretes + CARGO_REAL.PREVISAO oficial).
+# Para meses sem previsto oficial: fretes somados dos cargos; CARGO_REAL.PREVISAO = 0.
+# Para meses com previsto oficial: fretes dos cargos = 0; CARGO_REAL.PREVISAO = oficial.
+# Assim df["PREVISAO"].sum() nunca dupla-conta.
 df_cargos    = df[df["STATUS"].isin(["Normal", "Cancelada", "Adiada", "Armazenagem"])]
 df_realizados = df[df["STATUS"] == "CARGO_REAL"]
 
-total_prev   = df_cargos["PREVISAO"].sum()
+total_prev   = df["PREVISAO"].sum()
 total_real   = df_realizados["REALIZADO"].sum()
 diferenca_g  = total_real - total_prev if total_prev > 0 else 0.0
 
@@ -604,7 +736,7 @@ _meses_com_real = set(
     df_realizados.groupby("MES_NUM")["REALIZADO"]
     .sum().pipe(lambda s: s[s > 0].index)
 )
-_prev_adh = df_cargos[df_cargos["MES_NUM"].isin(_meses_com_real)]["PREVISAO"].sum()
+_prev_adh = df[df["MES_NUM"].isin(_meses_com_real)]["PREVISAO"].sum()
 _real_adh = df_realizados[df_realizados["MES_NUM"].isin(_meses_com_real)]["REALIZADO"].sum()
 aderencia_g  = (_real_adh / _prev_adh * 100) if _prev_adh > 0 else 0.0
 n_cargas     = df_cargos["DATA"].nunique()
@@ -645,7 +777,7 @@ st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 st.markdown("<div class='sec-title'>📊 Previsão vs. Realizado por Mês</div>", unsafe_allow_html=True)
 
 _prev_mes = (
-    df_cargos.groupby(["MES", "MES_NUM"])["PREVISAO"].sum().reset_index()
+    df.groupby(["MES", "MES_NUM"])["PREVISAO"].sum().reset_index()
 )
 _real_mes = (
     df_realizados.groupby(["MES", "MES_NUM"])["REALIZADO"].sum().reset_index()
@@ -1006,16 +1138,21 @@ if busca.strip():
 
 df_table = df_show[[
     "MES", "DATA", "DESTINO", "LOCAL", "TIPO_VEICULO",
-    "CLIENTE", "PREVISAO", "REALIZADO", "DIFERENCA", "STATUS", "OBS"
+    "CLIENTE", "VALOR_FRETE", "REALIZADO_DIA", "STATUS", "OBS"
 ]].copy()
+df_table["DIFERENCA"] = df_table["REALIZADO_DIA"] - df_table["VALOR_FRETE"]
 
 df_table["DATA"] = df_table["DATA"].dt.strftime("%d/%m/%Y")
-for col in ["PREVISAO", "REALIZADO", "DIFERENCA"]:
+for col in ["VALOR_FRETE", "REALIZADO_DIA", "DIFERENCA"]:
     df_table[col] = df_table[col].apply(lambda v: _fmt(v))
 
+df_table = df_table[[
+    "MES", "DATA", "DESTINO", "LOCAL", "TIPO_VEICULO",
+    "CLIENTE", "VALOR_FRETE", "REALIZADO_DIA", "DIFERENCA", "STATUS", "OBS"
+]]
 df_table.columns = [
     "Mês", "Data Carga", "Destino", "Origem", "Veículo",
-    "Cliente", "Previsão", "Realizado", "Diferença", "Status", "Obs",
+    "Cliente", "Previsão", "Realizado Dia", "Diferença", "Status", "Obs",
 ]
 
 st.dataframe(
@@ -1053,31 +1190,6 @@ df_resumo.columns = [
     "Canceladas", "Adiadas", "Destinos Únicos", "Aderência %", "Diferença",
 ]
 st.dataframe(df_resumo, use_container_width=True, hide_index=True)
-
-st.divider()
-_col_l_pc, _col_c_pc, _col_r_pc = st.columns([3, 2, 3])
-with _col_c_pc:
-    with st.spinner("Gerando PDF…"):
-        _pdf_bytes = gerar_pdf_previsao_cargas(
-            df_cargos=df_cargos,
-            df_realizados=df_realizados,
-            df_mes=df_mes,
-            total_prev=total_prev,
-            total_real=total_real,
-            diferenca_g=diferenca_g,
-            aderencia_g=aderencia_g,
-            n_canceladas=int(n_canceladas),
-            n_adiadas=int(n_adiadas),
-            n_clientes=int(n_clientes),
-            sel_meses=sel_meses,
-        )
-    st.download_button(
-        label="📄 Gerar Relatório PDF",
-        data=_pdf_bytes,
-        file_name=f"relatorio_cargas_{datetime.now().strftime('%Y%m%d')}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-    )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")

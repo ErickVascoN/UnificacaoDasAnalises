@@ -45,9 +45,8 @@ PRODUCAO_INTERNO_SHEETS = {
 }
 PRODUCAO_INTERNO_CACHE_TTL = 300  # segundos
 
-# plano de metas
-METAS_SHEET_ID = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
-METAS_GID      = "1593003426"
+# plano de metas (aliases de SHEET_ID_METAS/GID_METAS — definidos abaixo)
+# METAS_SHEET_ID e METAS_GID são declarados como alias após a definição canônica.
 
 # Mapeamento CENTRO DE CUSTO (normalizado) → planilha de lançamentos diários.
 # Apenas os IDs são fixos; produtos, metas e preços vêm da leitura dinâmica.
@@ -139,8 +138,9 @@ FACCOES_ABAS: dict[str, dict] = {
     "GGTTEX (CORTINA)": {"gid": "1766002384", "faccao": "GGTTEX CORTINA"},
     "ZANATTA":          {"gid": "670406828",  "faccao": "ZANATTA"},
     "PREVITTEX MATRIZ": {"gid": "1938192189", "faccao": "PREVITTEX MATRIZ"},
-    "MEGA BARIRI":      {"gid": "1219460477", "faccao": "MEGA BARIRI"},
-    "MEGA PREVEN":      {"gid": "431490653",  "faccao": "MEGA PREVEN"},
+    "MEGA BARIRI":         {"gid": "1219460477", "faccao": "MEGA BARIRI"},
+    "MEGA PREVEN (BOCA)":  {"gid": "431490653",  "faccao": "MEGA PREVEN (BOCA)"},
+    "MEGA PREVEN FILIAL":  {"gid": "524251509",  "faccao": "MEGA PREVEN FILIAL"},
     # Litex — planilha separada; colunas com nomes diferentes (EMPRESA, TOTAL DE PEÇAS)
     "LITEX (ENFARDAMENTO)": {
         "sheet_id": "1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p",
@@ -155,19 +155,32 @@ FACCOES_ABAS: dict[str, dict] = {
 
 # Alias de nomes de produtos: como aparecem na planilha → nome canônico das metas.
 FACCOES_PRODUTO_ALIAS: dict[str, str] = {
-    "OUTLET PRENSADO": "MANTA PRENSADA",
-    "OUTLET C/CINTA":  "MANTA C/CINTA",
-    "FRONHA":          "FRONHAS",
-    "JOGO":            "JOGO DE CAMA",
-    "JOGOS DE CAMA":   "JOGO DE CAMA",
-    "MICRO 180G":      "COBERTOR 180G",           # nome alternativo → canônico
-    "MANTA MAGICA":    "MICRO 180G (MAGICA)",  # diferencia do COBERTOR 180G normal
-    # Litex: variantes de lençol → nome canônico
-    "LENCOL QE":       "LENCOL AVULSO",
-    "LENCOL ST":       "LENCOL AVULSO",
-    "LENCOL CS":       "LENCOL AVULSO",
-    "LENCOL KING":     "LENCOL AVULSO",
-    "LECOL QE":        "LENCOL AVULSO",   # typo frequente na planilha
+    "OUTLET PRENSADO":       "MANTA PRENSADA",
+    "OUTLET C/CINTA":        "MANTA C/CINTA",
+    # Fronhas: variantes → canônico
+    "FRONHA":                "FRONHA AVULSA",
+    "FRONHAS":               "FRONHA AVULSA",
+    "FRONHAS PONTO PALITO":  "FRONHA PONTO PALITO",
+    # Cobertores: nome curto → canônico
+    "BABY":                  "COBERTOR BABY",
+    "VELOUR":                "COBERTOR VELOUR",
+    "MICRO 180G":            "COBERTOR 180G",
+    "MANTA MAGICA":          "MICRO 180G (MAGICA)",
+    # Jogos: variantes → canônico
+    "JOGO":                  "JOGOS DUPLOS",
+    "JOGO DUPLO":            "JOGOS DUPLOS",
+    "JOGO DE CAMA":          "JOGOS DUPLOS",
+    "JOGOS DE CAMA":         "JOGOS DUPLOS",
+    "JOGO CAMA":             "JOGOS DUPLOS",
+    "JOGO SIMPLES":          "JOGOS SIMPLES",
+    # Ponto palito
+    "JG DUPLO PONTO PALITO": "JG PONTO PALITO",
+    # Lençol: variantes Litex → canônico
+    "LENCOL QE":             "LENCOL AVULSO",
+    "LENCOL ST":             "LENCOL AVULSO",
+    "LENCOL CS":             "LENCOL AVULSO",
+    "LENCOL KING":           "LENCOL AVULSO",
+    "LECOL QE":              "LENCOL AVULSO",
 }
 
 # Alias de nomes de clientes/empresas: variante na planilha → nome canônico.
@@ -178,34 +191,120 @@ FACCOES_CLIENTE_ALIAS: dict[str, str] = {
     "NC INDUSTRIA": "NIAZITTEX",   # NC Indústria = Niazittex = Niazi (mesma empresa)
 }
 
+# Alias de nomes de facções/prestadores: variante encontrada na planilha → nome canônico.
+# Usado para unificar grafias diferentes do mesmo prestador (typos na QUARTERIZADAS)
+# e para casar os nomes da guia de metas com os nomes da produção.
+FACCOES_FACCAO_ALIAS: dict[str, str] = {
+    # Typos recorrentes na QUARTERIZADAS
+    "NATHIELLY":              "NATCHIELLY",
+    # Guia de metas usa nomes diferentes da produção
+    "LITTEX":                 "LITEX",
+    "CORTINA (GGTTEX)":       "GGTTEX CORTINA",
+    "RUTE (ZANATTEX)":        "GGTTEX RUTE",      # Rute Zanattex = GGTTEX (Rute)
+    "RUTE ZANATTEX":          "GGTTEX RUTE",      # variante do mesmo nome
+    "MEGA FILIAL":            "MEGA PREVEN FILIAL",   # nome na guia de metas → faccao da produção
+    "BOCA":                   "MEGA PREVEN (BOCA)",   # variante curta
+    "PREVITTEX":              "PREVITTEX MATRIZ",
+    "PREVITTEX FILIAL":       "PREVITTEX MATRIZ",
+    # Quarterizadas — nome na guia de metas → nome na aba QUARTERIZADAS
+    "LUIZ CARLOS (ZARO)":     "LUIS CARLOS",
+    "RUTE TALITA E TAMARA":   "RUTE E TALITA",
+    "LETICIA (GIATTEX)":      "LETICIA",
+}
+
+# Metas de facções — guia dentro da planilha de facções (fonte primária)
+# Colunas: FACÇÃO, PRODUTO, CLIENTE, META MÊS
+FACCOES_GID_METAS = "1797767576"
+
+# Planilha de metas de facções (fonte secundária — planilha separada legada)
+SHEET_ID_METAS = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
+GID_METAS      = "1593003426"
+METAS_TTL      = 3600  # 1 hora
+# Aliases para compatibilidade com 7_Plano_de_Metas.py
+METAS_SHEET_ID = SHEET_ID_METAS
+METAS_GID      = GID_METAS
+
 # Metas mensais por (produto, cliente, faccao).
 # Nomes comparados após normalize_text() — acentos e caixa são ignorados.
-# Meta diária é calculada dinamicamente: meta_mes / dias_uteis_do_mes.
+# Meta diária = meta_mes / dias_uteis_do_mes.
+# ATENÇÃO: este fallback é usado apenas se a planilha acima estiver indisponível.
+# Facções que produzem mas não têm entrada aqui aparecem na tabela sem meta.
 METAS_FACCOES: list[dict] = [
-    {"produto": "COBERTOR TOQUE DE SEDA", "cliente": "NIAZITTEX",     "faccao": "MEGA BARIRI",      "meta_mes": 30_000,  "meta_semana": 7_500},
-    {"produto": "MANTA",                  "cliente": "NIAZITTEX",     "faccao": "MEGA BARIRI",      "meta_mes": 13_000,  "meta_semana": 3_250},
-    {"produto": "FRONHAS",                "cliente": "BURDAYS",       "faccao": "LITEX",            "meta_mes": 250_000, "meta_semana": 62_500},
-    {"produto": "LENCOL AVULSO",          "cliente": "BURDAYS",       "faccao": "ZANATTEX",         "meta_mes": 110_000, "meta_semana": 27_500},
-    {"produto": "CORTINA",                "cliente": "ANDREZA",       "faccao": "GGTTEX",           "meta_mes": 15_000,  "meta_semana": 3_750},
-    {"produto": "MANTA BABY",             "cliente": "ANDREZA",       "faccao": "PREVITTEX MATRIZ", "meta_mes": 20_000,  "meta_semana": 5_000},
-    {"produto": "JOGO DE CAMA",           "cliente": "CAMESA",        "faccao": "PREVITTEX MATRIZ", "meta_mes": 50_000,  "meta_semana": 12_500},
-    {"produto": "FRONHAS",                "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 100_000, "meta_semana": 25_000},
-    {"produto": "VELOUR",                 "cliente": "CAMESA",        "faccao": "PREVITTEX MATRIZ", "meta_mes": 33_000,  "meta_semana": 8_250},
-    {"produto": "MANTA PRENSADA",         "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 200_000, "meta_semana": 50_000},
-    {"produto": "MANTA C/CINTA",          "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 15_000,  "meta_semana": 3_750},
-    {"produto": "COBERTOR 180G",          "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 63_000,  "meta_semana": 15_750},
-    {"produto": "MICRO 180G (MAGICA)",    "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 63_000,  "meta_semana": 15_750},  # ajuste a meta se necessário
-    {"produto": "BABY",                   "cliente": "CAMESA",        "faccao": "ZANATTEX",         "meta_mes": 70_000,  "meta_semana": 17_500},
-    {"produto": "JOGO DE CAMA",           "cliente": "CORTTEX",       "faccao": "PREVITTEX FILIAL", "meta_mes": 14_000,  "meta_semana": 3_500},
-    {"produto": "CORTINA",                "cliente": "DECOR",         "faccao": "GGTTEX",           "meta_mes": 10_000,  "meta_semana": 2_500},
-    {"produto": "JOGO DE CAMA",           "cliente": "DECOR",         "faccao": "GGTTEX",           "meta_mes": 5_000,   "meta_semana": 1_250},
-    {"produto": "CORTINA",                "cliente": "SULTAN",        "faccao": "ZANATTEX",         "meta_mes": 60_000,  "meta_semana": 15_000},
-    {"produto": "FRONHAS",                "cliente": "SULTAN",        "faccao": "ZANATTEX",         "meta_mes": 10_000,  "meta_semana": 2_500},
-    {"produto": "JG DUPLO PONTO PALITO",  "cliente": "MARCELINO",     "faccao": "MEGA PREVEN",      "meta_mes": 4_000,   "meta_semana": 1_000},
-    {"produto": "FRONHAS PONTO PALITO",   "cliente": "MARCELINO",     "faccao": "MEGA PREVEN",      "meta_mes": 20_000,  "meta_semana": 5_000},
-    {"produto": "FRONHAS",                "cliente": "SEVEN",         "faccao": "ZANATTEX",         "meta_mes": 80_000,  "meta_semana": 20_000},
-    {"produto": "LENCOL AVULSO",          "cliente": "SEVEN",         "faccao": "ZANATTEX",         "meta_mes": 20_000,  "meta_semana": 5_000},
-    {"produto": "FRONHA PLUSH",           "cliente": "SEVEN",         "faccao": "ZANATTEX",         "meta_mes": 18_000,  "meta_semana": 4_500},
+    # ── CAMESA ─────────────────────────────────────────────────────────────────
+    {"produto": "COBERTOR VELOUR",     "cliente": "CAMESA",    "faccao": "PREVITTEX MATRIZ",          "meta_mes": 20_000,  "meta_semana": 5_000},
+    {"produto": "MANTA PRENSADA",      "cliente": "CAMESA",    "faccao": "MEGA BARIRI",               "meta_mes": 42_000,  "meta_semana": 7_000},
+    {"produto": "MANTA PRENSADA",      "cliente": "CAMESA",    "faccao": "CAROL MENDES",              "meta_mes": 88_000,  "meta_semana": 20_000},
+    {"produto": "COBERTOR 180G",       "cliente": "CAMESA",    "faccao": "VANIA CAPOTTI",             "meta_mes": 21_000,  "meta_semana": 5_250},
+    {"produto": "COBERTOR 180G",       "cliente": "CAMESA",    "faccao": "JOSIANE STEFANI",           "meta_mes": 7_000,   "meta_semana": 1_750},
+    {"produto": "COBERTOR BABY",       "cliente": "CAMESA",    "faccao": "GUSTAVO ITAJU",             "meta_mes": 8_400,   "meta_semana": 2_100},
+    {"produto": "COBERTOR BABY",       "cliente": "CAMESA",    "faccao": "KELLY ITAJU",               "meta_mes": 8_400,   "meta_semana": 2_100},
+    {"produto": "COBERTOR BABY",       "cliente": "CAMESA",    "faccao": "LITEX",                     "meta_mes": 2_000,   "meta_semana": 500},
+    {"produto": "JOGOS DUPLOS",        "cliente": "CAMESA",    "faccao": "GGTTEX RUTE",               "meta_mes": 21_000,  "meta_semana": 5_250},
+    {"produto": "FRONHA AVULSA",       "cliente": "CAMESA",    "faccao": "FERNANDA SOUZA",            "meta_mes": 18_000,  "meta_semana": 4_500},
+    {"produto": "FRONHA AVULSA",       "cliente": "CAMESA",    "faccao": "FRANCIANE",                 "meta_mes": 18_000,  "meta_semana": 4_500},
+    {"produto": "MANTA",               "cliente": "CAMESA",    "faccao": "MARCIA GONÇALVES",          "meta_mes": 33_000,  "meta_semana": 7_500},
+    {"produto": "DIVERSOS",            "cliente": "CAMESA",    "faccao": "CAROL MENDES (NATCHIELLY)", "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "MANTA",               "cliente": "CAMESA",    "faccao": "VANIA CONFECÇÕES",          "meta_mes": 55_000,  "meta_semana": 12_500},
+    {"produto": "MANTA",               "cliente": "CAMESA",    "faccao": "JOSIANE STEFANI",           "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "MANTA",               "cliente": "CAMESA",    "faccao": "PREVITTEX MATRIZ",          "meta_mes": 55_000,  "meta_semana": 12_500},
+    {"produto": "JOGOS DUPLOS",        "cliente": "CAMESA",    "faccao": "RUTE ZANATTEX",             "meta_mes": 66_000,  "meta_semana": 15_000},
+    {"produto": "FRONHA AVULSA",       "cliente": "CAMESA",    "faccao": "FRANCIELE LOPES",           "meta_mes": 44_000,  "meta_semana": 10_000},
+    # ── BURDAYS ────────────────────────────────────────────────────────────────
+    {"produto": "LENCOL AVULSO",       "cliente": "BURDAYS",   "faccao": "RUTE E TALITA",             "meta_mes": 18_000,  "meta_semana": 4_500},
+    {"produto": "LENCOL AVULSO",       "cliente": "BURDAYS",   "faccao": "MEGA PREVEN",               "meta_mes": 15_000,  "meta_semana": 3_750},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "FERNANDA SOUZA",            "meta_mes": 18_000,  "meta_semana": 4_500},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "SUZANA",                    "meta_mes": 18_000,  "meta_semana": 4_500},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "ANAILA",                    "meta_mes": 6_000,   "meta_semana": 1_500},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "FRAN ALMERIN",              "meta_mes": 6_000,   "meta_semana": 1_500},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "LITEX",                     "meta_mes": 12_000,  "meta_semana": 3_000},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "RONILDA",                   "meta_mes": 6_000,   "meta_semana": 1_500},
+    {"produto": "CORTINA",             "cliente": "BURDAYS",   "faccao": "GGTTEX CORTINA",            "meta_mes": 3_000,   "meta_semana": 750},
+    {"produto": "CORTINA",             "cliente": "BURDAYS",   "faccao": "MEGA PREVEN",               "meta_mes": 10_010,  "meta_semana": 2_275},
+    {"produto": "LENCOL AVULSO",       "cliente": "BURDAYS",   "faccao": "RUTE ZANATTEX",             "meta_mes": 14_960,  "meta_semana": 3_400},
+    {"produto": "LENCOL AVULSO",       "cliente": "BURDAYS",   "faccao": "ZARO TEXTIL",               "meta_mes": 11_000,  "meta_semana": 2_500},
+    {"produto": "CORTINA",             "cliente": "BURDAYS",   "faccao": "MARCELA",                   "meta_mes": 10_010,  "meta_semana": 2_275},
+    {"produto": "PORTA",               "cliente": "BURDAYS",   "faccao": "SUZANA",                    "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "MANTA",               "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 199_980, "meta_semana": 45_450},
+    {"produto": "KIT COLCHA",          "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 39_996,  "meta_semana": 9_090},
+    {"produto": "PROTETOR",            "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 17_996,  "meta_semana": 4_090},
+    {"produto": "JOGOS DUPLOS",        "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 29_986,  "meta_semana": 6_815},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 110_000, "meta_semana": 25_000},
+    {"produto": "LENCOL AVULSO",       "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 79_992,  "meta_semana": 18_180},
+    {"produto": "PORTA",               "cliente": "BURDAYS",   "faccao": "ZANATTA",                   "meta_mes": 66_000,  "meta_semana": 15_000},
+    {"produto": "SHERPA",              "cliente": "BURDAYS",   "faccao": "KELLY",                     "meta_mes": 49_940,  "meta_semana": 11_350},
+    {"produto": "FRONHA AVULSA",       "cliente": "BURDAYS",   "faccao": "FRANCIANE",                 "meta_mes": 22_000,  "meta_semana": 5_000},
+    # ── SEVEN ──────────────────────────────────────────────────────────────────
+    {"produto": "FRONHA PLUSH",        "cliente": "SEVEN",     "faccao": "LITEX",                     "meta_mes": 4_500,   "meta_semana": 1_125},
+    {"produto": "LENCOL AVULSO",       "cliente": "SEVEN",     "faccao": "LITEX",                     "meta_mes": 5_000,   "meta_semana": 1_250},
+    {"produto": "FRONHA AVULSA",       "cliente": "SEVEN",     "faccao": "FRANCIANE",                 "meta_mes": 9_900,   "meta_semana": 2_475},
+    {"produto": "FRONHA AVULSA",       "cliente": "SEVEN",     "faccao": "SUZANA",                    "meta_mes": 15_500,  "meta_semana": 3_875},
+    {"produto": "FRONHA AVULSA",       "cliente": "SEVEN",     "faccao": "LITEX",                     "meta_mes": 6_000,   "meta_semana": 1_500},
+    # ── CORTTEX ────────────────────────────────────────────────────────────────
+    {"produto": "JOGOS DUPLOS",        "cliente": "CORTTEX",   "faccao": "MEGA PREVEN",               "meta_mes": 24_500,  "meta_semana": 6_125},
+    {"produto": "JOGOS SIMPLES",       "cliente": "CORTTEX",   "faccao": "MEGA PREVEN",               "meta_mes": 10_000,  "meta_semana": 2_500},
+    {"produto": "JOGOS DUPLOS",        "cliente": "CORTTEX",   "faccao": "PREVITTEX MATRIZ",          "meta_mes": 77_000,  "meta_semana": 17_500},
+    {"produto": "JOGOS DUPLOS",        "cliente": "CORTTEX",   "faccao": "RUTE ZANATTEX",             "meta_mes": 11_220,  "meta_semana": 2_550},
+    {"produto": "MANTA",               "cliente": "CORTTEX",   "faccao": "ZANATTA",                   "meta_mes": 132_000, "meta_semana": 30_000},
+    {"produto": "JOGOS DUPLOS",        "cliente": "CORTTEX",   "faccao": "ZARO TEXTIL",               "meta_mes": 26_400,  "meta_semana": 6_000},
+    # ── DECOR ──────────────────────────────────────────────────────────────────
+    {"produto": "CORTINA",             "cliente": "DECOR",     "faccao": "GGTTEX CORTINA",            "meta_mes": 5_390,   "meta_semana": 1_348},
+    # ── FORTEX ─────────────────────────────────────────────────────────────────
+    {"produto": "MANTA",               "cliente": "FORTEX",    "faccao": "ZANATTA",                   "meta_mes": 99_000,  "meta_semana": 22_500},
+    # ── MARCELINO ──────────────────────────────────────────────────────────────
+    {"produto": "JG PONTO PALITO",     "cliente": "MARCELINO", "faccao": "MEGA PREVEN",               "meta_mes": 3_500,   "meta_semana": 875},
+    {"produto": "FRONHA PONTO PALITO", "cliente": "MARCELINO", "faccao": "MEGA PREVEN",               "meta_mes": 3_500,   "meta_semana": 875},
+    {"produto": "JOGOS DUPLOS",        "cliente": "MARCELINO", "faccao": "ZANATTEX (RUTE)",           "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "JOGOS DUPLOS",        "cliente": "MARCELINO", "faccao": "ZARO TEXTIL",               "meta_mes": 22_000,  "meta_semana": 5_000},
+    {"produto": "JOGOS DUPLOS",        "cliente": "MARCELINO", "faccao": "MEGA PREVEN",               "meta_mes": 22_000,  "meta_semana": 5_000},
+    # ── SULTAN ─────────────────────────────────────────────────────────────────
+    {"produto": "LENCOL AVULSO",       "cliente": "SULTAN",    "faccao": "LUIS CARLOS",               "meta_mes": 2_500,   "meta_semana": 625},
+    {"produto": "CORTINA",             "cliente": "SULTAN",    "faccao": "GGTTEX CORTINA",            "meta_mes": 600,     "meta_semana": 150},
+    {"produto": "FRONHA AVULSA",       "cliente": "SULTAN",    "faccao": "FERNANDA SOUZA",            "meta_mes": 66_000,  "meta_semana": 15_000},
+    {"produto": "AVULSOS",             "cliente": "SULTAN",    "faccao": "PREVITTEX MATRIZ",          "meta_mes": 66_000,  "meta_semana": 15_000},
+    {"produto": "FRONHA AVULSA",       "cliente": "SULTAN",    "faccao": "FRANCIELE LOPES",           "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "MANTA",               "cliente": "SULTAN",    "faccao": "ZANATTA",                   "meta_mes": 132_000, "meta_semana": 30_000},
+    {"produto": "JOGOS DUPLOS",        "cliente": "SULTAN",    "faccao": "ZANATTA",                   "meta_mes": 44_000,  "meta_semana": 10_000},
+    {"produto": "AVULSOS",             "cliente": "SULTAN",    "faccao": "ZARO TEXTIL",               "meta_mes": 11_000,  "meta_semana": 2_500},
 ]
 
 # eficiência de corte

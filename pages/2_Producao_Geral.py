@@ -1292,48 +1292,6 @@ def render_home(all_data):
     st.dataframe(df_resumo.style.format({"Total Produzido": _fmt_int, "Média Diária": _fmt_int}),
                  width="stretch", hide_index=True)
 
-    # ── Botão: Gerar Relatório PDF ─────────────────────────────────────────
-    st.markdown("---")
-    _col_pdf_l_pg, _col_pdf_c_pg, _col_pdf_r_pg = st.columns([2, 4, 2])
-    with _col_pdf_c_pg:
-        # Período efetivo = faixa de datas presentes nos dados filtrados
-        _all_dates_pg = pd.concat([df["Data"] for df in filtered_data.values()])
-        _ini_pg = _all_dates_pg.min().date()
-        _fim_pg = _all_dates_pg.max().date()
-        _filtros_pg = f"Empresas: {', '.join(list(filtered_data.keys())[:5])}{'...' if len(filtered_data) > 5 else ''}"
-
-        if st.button(
-            "📄  Gerar Relatório PDF de Fechamento", key="gen_pdf_pg",
-            use_container_width=True, type="primary",
-            help="Gera relatório completo de produção de todas as empresas em PDF",
-        ):
-            with st.spinner("⏳ Gerando relatório... aguarde alguns segundos."):
-                from utils.pdf_report import gerar_pdf_producao_geral, nome_arquivo_pdf
-                _pdf_bytes_pg = gerar_pdf_producao_geral(
-                    filtered_data, _ini_pg, _fim_pg, _filtros_pg,
-                )
-            st.session_state["pdf_pg_bytes"] = _pdf_bytes_pg
-            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf(
-                "producao_geral", _ini_pg, _fim_pg
-            )
-
-        if st.session_state.get("pdf_pg_bytes"):
-            _col_dl_pg, _col_clr_pg = st.columns([5, 1])
-            with _col_dl_pg:
-                st.download_button(
-                    label="⬇️  Baixar Relatório PDF",
-                    data=st.session_state["pdf_pg_bytes"],
-                    file_name=st.session_state.get("pdf_pg_nome", "relatorio.pdf"),
-                    mime="application/pdf",
-                    key="dl_pdf_pg",
-                    use_container_width=True,
-                )
-            with _col_clr_pg:
-                if st.button("🗑️", key="clr_pdf_pg", use_container_width=True,
-                             help="Limpar e gerar novamente"):
-                    st.session_state.pop("pdf_pg_bytes", None)
-                    st.rerun()
-
 # ─
 # PAGINA DA EMPRESA (ANALISE DETALHADA)
 # ─
@@ -1852,7 +1810,7 @@ def _sidebar_nav_producao(screen: str):
         elif screen == 'colaborador_type':
             if st.button("← Tipo de Análise", key="prod_sb_back_colab", use_container_width=True):
                 _go_prod('analysis_type')
-        elif screen in ('interno', 'externo'):
+        elif screen == 'interno':
             if st.button("← Por Colaborador", key="prod_sb_back_intext", use_container_width=True):
                 _go_prod('colaborador_type')
             if st.button("← Tipo de Análise", key="prod_sb_back2", use_container_width=True):
@@ -1916,6 +1874,20 @@ def _screen_analysis_type():
             st.session_state.producao_screen = 'analysis_type'
             st.switch_page("app.py")
 
+_GUT_APONTADOR_URL = (
+    "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303"
+    "#appName=ApontadorZanattex-819603934"
+    "&group=%5B%7B%22Column%22%3A%22Data%22%2C%22Order%22%3A%22Descending%22%7D%5D"
+    "&page=fastTable"
+    "&sort=%5B%7B%22Column%22%3A%22Hora%22%2C%22Order%22%3A%22Descending%22%7D"
+    "%2C%7B%22Column%22%3A%22Efici%C3%AAncia%22%2C%22Order%22%3A%22Descending%22%7D%5D"
+    "&table=GIATTEX&view=GIATTEX"
+)
+_GUT_ANALISE_URL = (
+    "https://datastudio.google.com/u/0/reporting/"
+    "720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd"
+)
+
 def _screen_colaborador_type():
     st.markdown("""
     <div class="breadcrumb">
@@ -1928,13 +1900,13 @@ def _screen_colaborador_type():
     st.markdown("""
     <div class="page-header" style="padding-top:18px;">
         <div class="page-badge">👥 Por Colaborador</div>
-        <h1 class="page-title">Interno ou <span class="accent">Externo</span></h1>
-        <p class="page-subtitle">Escolha o grupo de colaboradores para visualizar o painel</p>
+        <h1 class="page-title">Colaboradores e <span class="accent">GUT</span></h1>
+        <p class="page-subtitle">Escolha o painel de colaboradores ou acesse o sistema GUT</p>
     </div>
     <div class="page-divider"></div>
     """, unsafe_allow_html=True)
 
-    _, c1, c2, _ = st.columns([0.5, 3, 3, 0.5])
+    _, c1, c2, c3, _ = st.columns([0.25, 3, 3, 3, 0.25])
     with c1:
         st.markdown("""
         <div class="region-card" style="--rc-a:#1A3A2A; --rc-b:#2A9D5C; --rc-accent:#2A9D5C;">
@@ -1957,54 +1929,47 @@ def _screen_colaborador_type():
 
     with c2:
         st.markdown("""
-        <div class="region-card disabled" style="--rc-a:#3D2817; --rc-b:#D97706; --rc-accent:#FFA726;">
-            <div class="rc-icon">🚚</div>
-            <div class="rc-label">Colaboradores · Externos</div>
-            <div class="rc-title">Externo</div>
+        <div class="region-card" style="--rc-a:#1F4A5A; --rc-b:#2E8B9E; --rc-accent:#26D0CE;">
+            <div class="rc-icon">⏱️</div>
+            <div class="rc-label">Apontador Zanattex · GUT</div>
+            <div class="rc-title">Central de Controle GUT</div>
             <div class="rc-desc">
-                Produção dos prestadores/facções externos.
-                Em construção — planilhas serão integradas em breve.
+                Painel de acompanhamento em tempo real do GUT (Giattex) com dados de
+                eficiência, horas, operadores e performance.
             </div>
             <div class="rc-tags">
-                <span class="rc-tag-soon">🚧 Em breve</span>
+                <span class="rc-tag">GUT</span>
+                <span class="rc-tag">Eficiência</span>
+                <span class="rc-tag">Real-time</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Abrir Externo  →", key="btn_externo", use_container_width=True):
-            _go_prod('externo')
+        st.link_button("Abrir Central GUT  →", url=_GUT_APONTADOR_URL, use_container_width=True)
+
+    with c3:
+        st.markdown("""
+        <div class="region-card" style="--rc-a:#3D2817; --rc-b:#D97706; --rc-accent:#FBBF24;">
+            <div class="rc-icon">📈</div>
+            <div class="rc-label">Dashboard Analítico · GUT</div>
+            <div class="rc-title">Análise de Dados GUT</div>
+            <div class="rc-desc">
+                Análise completa dos dados do GUT em formato de dashboard interativo.
+                Visualize tendências, indicadores de desempenho e insights estratégicos.
+            </div>
+            <div class="rc-tags">
+                <span class="rc-tag">Análise</span>
+                <span class="rc-tag">GUT</span>
+                <span class="rc-tag">Insights</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.link_button("Abrir Análise GUT  →", url=_GUT_ANALISE_URL, use_container_width=True)
 
     st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
     col_back, *_ = st.columns([2, 5])
     with col_back:
         if st.button("← Voltar ao Tipo de Análise", key="prod_back_type_colab", use_container_width=True):
             _go_prod('analysis_type')
-
-def _screen_externo():
-    st.markdown("""
-    <div class="breadcrumb">
-        <span class="bc-link">Análise de Produção</span>
-        <span class="bc-sep">›</span>
-        <span class="bc-link">Por Colaborador</span>
-        <span class="bc-sep">›</span>
-        <span class="bc-active">Externo</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="text-align:center; padding:60px 20px;">
-        <div style="font-size:3.5rem; margin-bottom:16px;">🚧</div>
-        <h2 style="color:#FFFFFF; font-family:'Sora',sans-serif; font-weight:800;">Em breve</h2>
-        <p style="color:#A0A0A0; max-width:520px; margin:10px auto; line-height:1.6;">
-            O painel de produção dos colaboradores <b>externos</b> (prestadores/facções)
-            está sendo construído. As planilhas serão integradas em breve.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_back, *_ = st.columns([2, 5])
-    with col_back:
-        if st.button("← Voltar a Por Colaborador", key="prod_back_colab_ext", use_container_width=True):
-            _go_prod('colaborador_type')
 
 # ─
 # INTERNO — dashboard com 4 guias (uma por unidade)
@@ -2876,8 +2841,6 @@ def main():
         _screen_colaborador_type()
     elif screen == 'interno':
         _screen_interno()
-    elif screen == 'externo':
-        _screen_externo()
     else:  # 'por_cliente' — dashboard de Produção Geral existente
         st.markdown("""
         <div class="breadcrumb">

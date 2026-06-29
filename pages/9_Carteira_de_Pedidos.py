@@ -348,6 +348,14 @@ st.markdown(
     "<p class='pg-sub' style='text-align:center'>Análise de pedidos por cliente, produto, período e região</p>",
     unsafe_allow_html=True,
 )
+
+st.warning(
+    "⚠️ **OBS — Sultan:** A carteira da Sultan está poluída com pedidos antigos/duplicados "
+    "que ainda não foram baixados do sistema. Por isso, os volumes exibidos para esse cliente "
+    "estão inflados e não refletem a carteira real em aberto.",
+    icon=None,
+)
+
 st.divider()
 
 # ── KPIs globais ──────────────────────────────────────────────────────────────
@@ -356,17 +364,16 @@ total_pecas   = int(df["QUANTIDADE"].sum())
 n_pedidos     = df["PEDIDO"].nunique()
 n_clientes    = df["CLIENTE_CURTO"].nunique()
 n_produtos    = df["COD_PROD"].nunique()
-ticket_medio  = total_valor / n_pedidos if n_pedidos > 0 else 0
+ticket_medio  = total_valor / n_pedidos if n_pedidos > 0 else 0  # usado no PDF
 valor_medio_p = total_valor / total_pecas if total_pecas > 0 else 0
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+c1, c2, c3, c4, c5 = st.columns(5)
 _kpis = [
     (c1, "💰 Valor Total",     _fmt_r(total_valor),       f"{n_pedidos} pedidos",    "teal"),
     (c2, "📦 Total de Peças",  _fmt_n(total_pecas),        "unidades",               "teal"),
     (c3, "🛒 Pedidos Únicos",  _fmt_n(n_pedidos),          "",                       "teal"),
     (c4, "🏢 Clientes Ativos", str(n_clientes),            "",                       "teal"),
-    (c5, "🎁 Ticket Médio",    _fmt_r(ticket_medio),       "por pedido",             "teal"),
-    (c6, "🏷 Produtos Únicos", _fmt_n(n_produtos),         f"{len(df['CATEGORIA'].unique())} categorias", "teal"),
+    (c5, "🏷 Produtos Únicos", _fmt_n(n_produtos),         f"{len(df['CATEGORIA'].unique())} categorias", "teal"),
 ]
 for col, label, value, sub, color in _kpis:
     with col:
@@ -688,6 +695,13 @@ st.plotly_chart(fig_top, use_container_width=True)
 # ── Tabela de Resumo por Cliente ─────────────────────────────────────────────
 st.markdown("<div class='sec-title'>📋 Resumo por Cliente</div>", unsafe_allow_html=True)
 
+st.warning(
+    "⚠️ **OBS — Sultan:** A carteira da Sultan está poluída com pedidos antigos/duplicados "
+    "que ainda não foram baixados do sistema. Por isso, os volumes exibidos para esse cliente "
+    "estão inflados e não refletem a carteira real em aberto.",
+    icon=None,
+)
+
 df_resumo_cli = (
     df.groupby(["CLIENTE_CURTO", "ESTADO"])
     .agg(
@@ -700,16 +714,14 @@ df_resumo_cli = (
     .reset_index()
     .sort_values("Valor", ascending=False)
 )
-df_resumo_cli["Ticket Médio"] = (df_resumo_cli["Valor"] / df_resumo_cli["Pedidos"]).round(2)
-df_resumo_cli["% Carteira"]   = (df_resumo_cli["Valor"] / total_valor * 100).round(1)
+df_resumo_cli["% Carteira"] = (df_resumo_cli["Valor"] / total_valor * 100).round(1)
 
 df_show_cli = df_resumo_cli.copy()
-df_show_cli["Peças"]        = df_show_cli["Peças"].apply(_fmt_n)
-df_show_cli["Valor"]        = df_show_cli["Valor"].apply(_fmt_r)
-df_show_cli["Ticket Médio"] = df_show_cli["Ticket Médio"].apply(_fmt_r)
-df_show_cli["% Carteira"]   = df_show_cli["% Carteira"].apply(lambda v: f"{v:.1f}%")
+df_show_cli["Peças"]      = df_show_cli["Peças"].apply(_fmt_n)
+df_show_cli["Valor"]      = df_show_cli["Valor"].apply(_fmt_r)
+df_show_cli["% Carteira"] = df_show_cli["% Carteira"].apply(lambda v: f"{v:.1f}%")
 df_show_cli.columns = ["Cliente", "Estado", "Pedidos", "Peças", "Valor Total",
-                        "Produtos", "Categorias", "Ticket Médio", "% Carteira"]
+                        "Produtos", "Categorias", "% Carteira"]
 st.dataframe(df_show_cli, use_container_width=True, hide_index=True)
 
 # ── Tabela de Detalhes ────────────────────────────────────────────────────────
@@ -745,46 +757,6 @@ st.dataframe(
     hide_index=True,
     height=min(50 + len(df_table) * 35, 500),
 )
-
-# ── Relatório PDF ─────────────────────────────────────────────────────────────
-st.divider()
-_col_l_pdf, _col_c_pdf, _col_r_pdf = st.columns([3, 2, 3])
-with _col_c_pdf:
-    if st.button("📄 Gerar Relatório PDF", use_container_width=True, key="btn_pdf_cart"):
-        # Monta string de período e filtros ativos
-        _anos_str  = ', '.join(str(a) for a in anos_sel)
-        _meses_str = ', '.join(meses_sel) if meses_sel else 'Todos'
-        _periodo   = f"{_anos_str} — {_meses_str}"
-        _filtros_partes = []
-        if clientes_sel:
-            _filtros_partes.append(f"Clientes: {', '.join(clientes_sel)}")
-        if cats_sel:
-            _filtros_partes.append(f"Categorias: {', '.join(cats_sel)}")
-        if tam_sel:
-            _filtros_partes.append(f"Tamanhos: {', '.join(tam_sel)}")
-        if estados_sel:
-            _filtros_partes.append(f"Estados: {', '.join(estados_sel)}")
-        _filtros_txt = ' · '.join(_filtros_partes) if _filtros_partes else ''
-
-        with st.spinner("Gerando PDF…"):
-            _pdf_bytes = gerar_pdf_carteira_pedidos(
-                df=df,
-                total_valor=total_valor,
-                total_pecas=total_pecas,
-                n_pedidos=n_pedidos,
-                n_clientes=n_clientes,
-                n_produtos=n_produtos,
-                ticket_medio=ticket_medio,
-                periodo=_periodo,
-                filtros_texto=_filtros_txt,
-            )
-        st.download_button(
-            label="⬇️ Baixar PDF",
-            data=_pdf_bytes,
-            file_name=f"carteira_pedidos_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")

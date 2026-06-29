@@ -6,6 +6,220 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "29/06/2026",
+        "tag": "melhoria",
+        "title": "Facções: metas da nova guia + dashboard Facção × Meta",
+        "description": (
+            "Metas de facções agora carregadas da guia dedicada na planilha de facções "
+            "(GID 1797767576) como fonte primária, com fallback para a planilha legada. "
+            "Dashboard aprimorado: gráfico de comparação direta Facção × Meta (overlay), "
+            "tabela com Meta Mês, Meta Semana, % da Meta e Restante por facção. "
+            "Relatório HTML reformulado com seção 'Facção × Meta' em destaque (barras de progresso visuais), "
+            "contadores de facções acima/abaixo da meta e meta individual exibida no cabeçalho de cada facção. "
+            "Botão de download do relatório agora visível na aba Mensal."
+        ),
+    },
+    {
+        "date": "25/06/2026",
+        "tag": "novo",
+        "title": "Central de Relatórios PDF (página 10)",
+        "description": (
+            "Criada a página Relatórios (pages/10_Relatorios.py) com geração centralizada de todos "
+            "os relatórios PDF do sistema. Organizada em abas: Corte (Consolidado, Arealva Manta, "
+            "Iacanga, Lençol), Produção Geral, Facções, Cargas, Carteira de Pedidos e Programação. "
+            "Botões de PDF removidos das páginas individuais (2, 3, 4, 5, 8 e 9). "
+            "Card 'Relatórios' adicionado à seção Controladoria da Home."
+        ),
+    },
+    {
+        "date": "25/06/2026",
+        "tag": "novo",
+        "title": "PDFs reais para Produção por Facção e Programação de Corte",
+        "description": (
+            "Substituídos os exports HTML das páginas 4 e 5 por relatórios PDF reais via ReportLab. "
+            "gerar_pdf_faccoes: capa, KPIs, gráfico diário, tabela de progresso por facção/produto/empresa, "
+            "gráfico top facções, detalhe diário por facção. "
+            "gerar_pdf_programacao: capa, KPIs, gráfico programado vs cortado por semana, tabela de OPs "
+            "com status colorido e eficiência. Ambos com header/footer automáticos e capa navy."
+        ),
+    },
+    {
+        "date": "25/06/2026",
+        "tag": "melhoria",
+        "title": "Metas de facção carregadas dinamicamente da planilha Google Sheets",
+        "description": (
+            "O dashboard Produção por Facção agora lê as metas diretamente da planilha de "
+            "planejamento (SHEET_ID_METAS). Para cada (produto, cliente, facção), pega o "
+            "registro PREVISTO mais recente por DATA BASE. Fallback automático para JSON local "
+            "e depois para config/settings.py se a planilha estiver indisponível. "
+            "Também adicionado gráfico de Produção Diária por Facção ao lado do acumulado."
+        ),
+    },
+    {
+        "date": "24/06/2026",
+        "tag": "correção",
+        "title": "Mapa de calor por facção: dados completos e NATHIELLY unificada",
+        "description": (
+            "Heatmap 'Mapa de Calor: Facção × Dia' agora usa todos os dados do período "
+            "sem os filtros de produto/cliente, mostrando todos os dias de produção de cada facção. "
+            "Também unificou a grafia NATHIELLY → NATCHIELLY (typo recorrente na aba QUARTERIZADAS), "
+            "eliminando a linha duplicada no heatmap e em todas as análises."
+        ),
+    },
+    {
+        "date": "24/06/2026",
+        "tag": "melhoria",
+        "title": "Análise detalhada por facção em Produção Facções Externas",
+        "description": (
+            "Aba 'Por Facção' expandida com: KPIs globais, ranking com % da meta (barras coloridas), "
+            "análise de consistência (regularidade e assiduidade por facção com gráficos e tabela), "
+            "mapa de calor Facção × Dia, evolução acumulada por facção, mix de produtos "
+            "(barras empilhadas + heatmap Produto × Facção) e tabela de detalhe com meta por linha."
+        ),
+    },
+    {
+        "date": "24/06/2026",
+        "tag": "melhoria",
+        "title": "Cards GUT movidos da Home para a tela de Por Colaborador",
+        "description": (
+            "Os cards 'Central de Controle GUT' e 'Análise de Dados GUT' foram removidos da "
+            "página inicial e adicionados à tela 'Por Colaborador' em Análise de Produção, "
+            "substituindo o card 'Externo' (em breve). A tela agora exibe 3 cards lado a lado: "
+            "Interno, Central de Controle GUT e Análise de Dados GUT."
+        ),
+    },
+    {
+        "date": "23/06/2026",
+        "tag": "melhoria",
+        "title": "Aviso de carteira Sultan poluída na página Carteira de Pedidos",
+        "description": (
+            "Adicionado OBS de alerta logo acima da tabela 'Resumo por Cliente' informando que "
+            "a carteira da Sultan contém pedidos antigos/duplicados não baixados do sistema, "
+            "fazendo os volumes exibidos estarem inflados."
+        ),
+    },
+    {
+        "date": "23/06/2026",
+        "tag": "correção",
+        "title": "Loader de lençol não encontrava coluna OP com variações de nome",
+        "description": (
+            "A detecção de cabeçalho e coluna OP em lencol_loader_smart.py exigia a string exata 'OP'. "
+            "Se a célula estivesse como 'N° OP', 'Nº OP' ou similar, o loader retornava vazio e "
+            "toda a fonte Lençol ficava ausente — OPs registradas como 'PROG 83' mostravam QNT CORTADA = 0 "
+            "mesmo com corte existente. Regex agora aceita variações (N°/Nº + espaços + ponto final). "
+            "Limite de varredura ampliado de 12 para 20 colunas."
+        ),
+    },
+    {
+        "date": "23/06/2026",
+        "tag": "correção",
+        "title": "Corte lençol FUNDO-only não zerava mais no cruzamento",
+        "description": (
+            "OPs do CORTE LENÇOL cujo produto é exclusivamente FUNDO (ex: CORTTEX OP 83) "
+            "apareciam com QNT CORTADA = 0 mesmo com corte registrado. O filtro _is_lencol_fundo "
+            "excluía todos os registros para evitar dupla-contagem CIMA+FUNDO nos jogos, mas "
+            "eliminava também pedidos legítimos de só-FUNDO. Agora o filtro só exclui registros "
+            "FUNDO quando a mesma OP também possui registros não-FUNDO (CIMA)."
+        ),
+    },
+    {
+        "date": "23/06/2026",
+        "tag": "melhoria",
+        "title": "Metas de produção por facção ampliadas",
+        "description": (
+            "Adicionadas 36 novas entradas em METAS_FACCOES cobrindo ZANATTA (BURDAYS, FORTEX, SULTAN, CORTTEX), "
+            "PREVITTEX e ZARO TEXTIL (CORTTEX, SULTAN), MARCIA GONÇALVES / VANIA CONFECÇÕES / FRANCIELE LOPES (CAMESA), "
+            "RUTE ZANATTEX (BURDAYS, CAMESA, CORTTEX), KELLY/SHERPA (BURDAYS), ZANATTEX(RUTE)/ZARO/MEGA PREVEN (MARCELINO). "
+            "Nova seção FORTEX adicionada. Meta de CAROL MENDES/MANTA PRENSADA/CAMESA atualizada para 4 000/dia. "
+            "Alias 'JOGO CAMA' → 'JOGOS DUPLOS' incluído."
+        ),
+    },
+    {
+        "date": "22/06/2026",
+        "tag": "correção",
+        "title": "Realizado por cliente corrigido em Previsão de Cargas",
+        "description": (
+            "_extract_day_realized() agora indexa por (data, cliente_norm) ao invés de só (data). "
+            "Antes, o total do dia era repetido em cada cargo individual — agora cada cargo "
+            "recebe o valor correto do painel direito da planilha."
+        ),
+    },
+    {
+        "date": "22/06/2026",
+        "tag": "melhoria",
+        "title": "Filtro de período por intervalo de datas em Facções",
+        "description": (
+            "Substituídos seletores de Mês/Ano por date_input de intervalo em pages/5. "
+            "Todos os filtros (df_mes, df_mp, df_mes_fac) e cálculos de dias úteis "
+            "passam a usar data_ini/data_fim. Default: 1º do mês atual → hoje."
+        ),
+    },
+    {
+        "date": "22/06/2026",
+        "tag": "correção",
+        "title": "Corrigido erro de layout duplicado no gráfico de barras empilhadas",
+        "description": (
+            "Corrigido TypeError no update_layout do gráfico de barras por produto/facção: "
+            "DARK_LAYOUT já continha a chave 'legend', causando conflito ao passá-la novamente. "
+            "Separado em dois update_layout consecutivos."
+        ),
+    },
+    {
+        "date": "22/06/2026",
+        "tag": "melhoria",
+        "title": "Metas de facção atualizadas por prestador e setor",
+        "description": (
+            "METAS_FACCOES substituído: 32 entradas por prestador/setor com metas mensais e semanais reais. "
+            "FACCOES_PRODUTO_ALIAS atualizado com nomes canônicos novos: FRONHA AVULSA, COBERTOR BABY, "
+            "COBERTOR VELOUR, JOGOS DUPLOS, JOGOS SIMPLES, JG PONTO PALITO, FRONHA PONTO PALITO."
+        ),
+    },
+    {
+        "date": "20/06/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas: realizado por dia corrigido no PDF",
+        "description": (
+            "Corrigido parser do painel direito do CSV (_extract_day_realized): "
+            "col[11] contém o valor de realizado diretamente (sem prefixo 'R$' separado), "
+            "e linhas de separador/total (col[8] vazio ou com 'R$') são ignoradas. "
+            "A coluna 'Realizado Dia (R$)' no PDF agora exibe os valores corretos."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "melhoria",
+        "title": "PDF Previsão de Cargas: coluna Realizado por dia",
+        "description": (
+            "Adicionada coluna 'Realizado Dia (R$)' no Detalhe de Registros do PDF. "
+            "O valor é extraído do painel direito da planilha (soma dos realizados de "
+            "todos os clientes no mesmo dia). A coluna 'Frete' foi renomeada para 'Previsto'. "
+            "Dias sem lançamento exibem '—'."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas: PREVISÃO TOTAL corrigido para R$ 2.450.000",
+        "description": (
+            "Corrigido PREVISÃO TOTAL (antes mostrava soma dos fretes individuais = R$3.390.000). "
+            "A detecção da linha de resumo agora procura a linha sem data que tenha dois valores "
+            "> R$1,5M — padrão exclusivo da linha 'Previsto total | Realizado total' da planilha. "
+            "A abordagem anterior (busca por texto 'Previsto') disparava falso positivo nos cabeçalhos "
+            "de dias ('previsto'), retornando valor errado antes de alcançar o resumo."
+        ),
+    },
+    {
+        "date": "19/06/2026",
+        "tag": "novo",
+        "title": "Relatório Mensal Consolidado — todos os cortes",
+        "description": (
+            "Botão 'Gerar Relatório Mensal — Todos os Cortes' adicionado à tela de seleção "
+            "de região (página 3). Gera automaticamente um PDF com seções para Arealva Manta, "
+            "Arealva Lençol, Iacanga e Itaju cobrindo o mês atual: KPIs, gráfico diário e "
+            "tabela por estação/prestador para cada região."
+        ),
+    },
+    {
         "date": "19/06/2026",
         "tag": "melhoria",
         "title": "PDF: Meta do Período e % Atingido na tabela de Facções",
