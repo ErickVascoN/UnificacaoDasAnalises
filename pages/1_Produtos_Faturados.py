@@ -14,6 +14,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
 import streamlit as st
+from components.sidebar import render_home_button
+
+from styles.global_ui import get_global_ui_css
 
 DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/1tpQmqkinlA4AscPI8kIkmm5DGD9Jw_wHb-5sy5itSGg/edit?gid=1255712550#gid=1255712550"
 CACHE_TTL_SECONDS = 300
@@ -35,6 +38,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # guarda de autenticação — somente admin pode acessar esta página
 if st.session_state.get("auth_nivel") != "admin":
@@ -1270,6 +1274,7 @@ def render_presentation_mode(
 
 def main() -> None:
     inject_styles()
+    render_home_button()
 
     st.markdown(
         """

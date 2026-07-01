@@ -15,8 +15,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from styles.global_ui import get_global_ui_css
 from utils.pdf_report import gerar_pdf_carteira_pedidos
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
 
 # ── Configuração ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -25,6 +27,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 SHEET_ID  = "1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7"
 SHEET_GID = "611396912"
@@ -286,6 +290,8 @@ if df_raw.empty:
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+render_home_button()
+
 with st.sidebar:
     st.markdown("## 📦 Filtros")
     st.caption(f"Atualizado a cada {CACHE_TTL}s · {datetime.now().strftime('%H:%M:%S')}")

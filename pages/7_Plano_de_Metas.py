@@ -26,6 +26,8 @@ from plotly.subplots import make_subplots
 import requests
 import streamlit as st
 
+from styles.global_ui import get_global_ui_css
+
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -37,6 +39,7 @@ from config.settings import (
     NOME_EQUIVALENCIAS,
 )
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
 
 # ─
 # CONFIG DA PÁGINA
@@ -47,6 +50,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 if st.session_state.get("auth_nivel") not in ("usuario", "admin"):
     st.error("🔒 Acesso restrito. Faça login na página inicial.")
@@ -875,6 +880,7 @@ def main():
     )
     meses_labels = {d: f"{_MESES_PT_LABEL.get(d.month, d.month)}/{d.year}" for d in meses_disponiveis}
 
+    render_home_button()
     with st.sidebar:
         st.markdown("### Filtros")
         mes_sel = st.selectbox(

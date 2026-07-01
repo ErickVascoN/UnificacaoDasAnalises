@@ -6,11 +6,8 @@ Abas: Manta Arealva (Zanattex), Lençol, GIattex
 import streamlit as st
 import pandas as pd
 import logging
-import plotly.express as px
 import plotly.graph_objects as go
 import io
-import urllib.request
-from urllib.error import HTTPError, URLError
 import numpy as np
 
 # CONFIG

@@ -6,6 +6,30 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "01/07/2026",
+        "tag": "melhoria",
+        "title": "Meta ponderada por produto+cliente para ZANATTA e suporte a colunas METAS 2/3 nomeadas",
+        "description": (
+            "metas_manager.py: detecção de colunas extras expandida para aceitar 'METAS 2'/'METAS 3' além de 'Unnamed:'; "
+            "nova lógica de tabela secundária detecta FACÇÃO.1/PRODUTO.1/METAS.1/CLIENTE.1 para suportar a estrutura ZANATTA. "
+            "5_Producao_Faccoes.py: ponderação de metas estendida para 4 casos — sem cliente/produto (soma direta), "
+            "só produto, só cliente (CORTINA), produto+cliente (ZANATTA) — usando _qty_fac_prod_cli para peso correto."
+        ),
+    },
+    {
+        "date": "30/06/2026",
+        "tag": "melhoria",
+        "title": "Limpeza geral: remoção de código morto em todo o projeto",
+        "description": (
+            "Auditoria completa do projeto: removidos imports não utilizados (render_kpi_row em app.py, "
+            "plotly.express/urllib em eficiencia_corte.py, import io inline em 3_Controle_de_Corte.py), "
+            "funções mortas (pode_acessar em auth.py, _pct_bar e MESES_PT em 5_Producao_Faccoes.py), "
+            "bloco __main__ de debug em faccao_loader.py. "
+            "Funções _color_pct e _cor_cons unificadas em uma única função parametrizada. "
+            "Imports de metas_manager.py reorganizados para o topo do arquivo."
+        ),
+    },
+    {
         "date": "29/06/2026",
         "tag": "melhoria",
         "title": "Facções: metas da nova guia + dashboard Facção × Meta",

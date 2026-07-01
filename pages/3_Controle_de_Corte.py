@@ -18,6 +18,8 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
+from styles.global_ui import get_global_ui_css
 
 try:
     from config import GOOGLE_SHEETS_ID, GOOGLE_SHEETS_GID, METAS, META_TOTAL, CACHE_TTL
@@ -247,6 +249,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # CSS
 
@@ -1008,8 +1012,7 @@ def load_itaju() -> pd.DataFrame:
     content = _gr(ITAJU_SHEET_ID, ITAJU_GID, ttl=ITAJU_CACHE_TTL)
     if not content:
         return pd.DataFrame()
-    import io as _io
-    raw = pd.read_csv(_io.StringIO(content), dtype=str, header=0)
+    raw = pd.read_csv(io.StringIO(content), dtype=str, header=0)
     raw.columns = [str(c).strip() for c in raw.columns]
     # normaliza nomes de colunas com possível encoding quebrado
     col_map = {}
@@ -1100,6 +1103,7 @@ def _go(screen: str):
     st.rerun()
 
 # SIDEBAR
+render_home_button()
 
 with st.sidebar:
     st.markdown("### ✂️ Controle de Corte")

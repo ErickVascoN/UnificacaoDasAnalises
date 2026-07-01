@@ -195,21 +195,3 @@ def load_faccoes() -> pd.DataFrame:
 
     return result
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import os
-    import sys
-
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    logging.basicConfig(level=logging.INFO)
-
-    df = load_faccoes()
-    print(f"\nTotal: {len(df)} linhas | colunas: {list(df.columns)}")
-    if not df.empty:
-        print(f"Período: {df['DATA'].min().date()} → {df['DATA'].max().date()}")
-        print(f"Facções: {sorted(df['FACCAO'].unique())}")
-        print(f"Produtos: {sorted(df['PRODUTO'].unique())}")
-        print(f"Empresas: {sorted(df['CLIENTE'].unique())}")
-        print(f"Total peças: {df['QUANTIDADE'].sum():,}")
-        print(df.groupby("FACCAO")["QUANTIDADE"].sum().sort_values(ascending=False))

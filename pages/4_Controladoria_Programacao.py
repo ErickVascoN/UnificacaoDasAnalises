@@ -19,8 +19,10 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from utils.auth import init_session_state
+from styles.global_ui import get_global_ui_css
 from utils.navigation import safe_switch
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
 
 # constantes
 PROG_ID     = "1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA"
@@ -45,6 +47,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # css
 st.markdown("""
@@ -123,6 +127,8 @@ if not st.session_state.get("auth_nivel"):
     st.stop()
 
 # sidebar nav
+render_home_button()
+
 with st.sidebar:
     st.markdown("### 📊 Controle de Programação")
     st.markdown("---")

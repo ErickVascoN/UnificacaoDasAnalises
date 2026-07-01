@@ -137,7 +137,8 @@ FACCOES_ABAS: dict[str, dict] = {
     "GGTTEX (RUTE)":    {"gid": "1265193869", "faccao": "GGTTEX RUTE"},
     "GGTTEX (CORTINA)": {"gid": "1766002384", "faccao": "GGTTEX CORTINA"},
     "ZANATTA":          {"gid": "670406828",  "faccao": "ZANATTA"},
-    "PREVITTEX MATRIZ": {"gid": "1938192189", "faccao": "PREVITTEX MATRIZ"},
+    "PREVITTEX MATRIZ":  {"gid": "1938192189", "faccao": "PREVITTEX MATRIZ"},
+    "PREVITTEX FILIAL":  {"gid": "1921426222", "faccao": "PREVITTEX FILIAL"},
     "MEGA BARIRI":         {"gid": "1219460477", "faccao": "MEGA BARIRI"},
     "MEGA PREVEN (BOCA)":  {"gid": "431490653",  "faccao": "MEGA PREVEN (BOCA)"},
     "MEGA PREVEN FILIAL":  {"gid": "524251509",  "faccao": "MEGA PREVEN FILIAL"},
@@ -149,7 +150,7 @@ FACCOES_ABAS: dict[str, dict] = {
         "col_map":  {"cliente": "EMPRESA", "quantidade": "TOTAL"},
     },
 }
-# Obs: PREVITTEX FILIAL não está mais entre as abas visíveis da planilha. A meta
+# Obs: PREVITTEX FILIAL reativada em 30/06/2026 com gid=1921426222. A meta
 # JOGO DE CAMA/CORTTEX (antes atribuída a FILIAL) continua cruzando por
 # (produto, cliente) com a produção lançada em PREVITTEX MATRIZ.
 
@@ -205,7 +206,6 @@ FACCOES_FACCAO_ALIAS: dict[str, str] = {
     "MEGA FILIAL":            "MEGA PREVEN FILIAL",   # nome na guia de metas → faccao da produção
     "BOCA":                   "MEGA PREVEN (BOCA)",   # variante curta
     "PREVITTEX":              "PREVITTEX MATRIZ",
-    "PREVITTEX FILIAL":       "PREVITTEX MATRIZ",
     # Quarterizadas — nome na guia de metas → nome na aba QUARTERIZADAS
     "LUIZ CARLOS (ZARO)":     "LUIS CARLOS",
     "RUTE TALITA E TAMARA":   "RUTE E TALITA",

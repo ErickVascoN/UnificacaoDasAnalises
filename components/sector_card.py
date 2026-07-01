@@ -1,7 +1,6 @@
 """Componente de renderização dos cards de setor."""
 
 import streamlit as st
-from utils.auth import verificar_acesso
 from utils.navigation import safe_switch
 
 _COLS_PER_ROW = 3
@@ -154,45 +153,10 @@ def _render_card_button(
             ):
                 safe_switch(sector["page_path"])
 
-    elif st.session_state.auth_target == key:
-        _render_inline_auth(sector, key)
-
     else:
-        if st.button(
-            f"🔒 Abrir {sector['title']}  →",
+        st.button(
+            f"🔒 Faça login para abrir {sector['title']}",
             key=f"open_{key}",
             use_container_width=True,
-        ):
-            st.session_state.auth_target = key
-            st.rerun()
-
-def _render_inline_auth(sector: dict, key: str) -> None:
-    senha_input = st.text_input(
-        "Senha",
-        type="password",
-        key=f"senha_{key}",
-        placeholder="Digite a senha...",
-        label_visibility="collapsed",
-    )
-    col_ok, col_x = st.columns([4, 1])
-    with col_ok:
-        if st.button("Entrar  →", key=f"ok_{key}", use_container_width=True):
-            if not senha_input:
-                st.warning("⚠️ Digite a senha.")
-            else:
-                nivel = verificar_acesso(senha_input)
-                if nivel == "negado":
-                    st.error("❌ Senha incorreta.")
-                elif sector.get("admin_only") and nivel != "admin":
-                    st.error("🔒 Este módulo requer senha de Administrador.")
-                else:
-                    st.session_state.auth_nivel = nivel
-                    st.session_state.auth_target = None
-                    if "page_path" in sector:
-                        safe_switch(sector["page_path"])
-                    else:
-                        st.rerun()
-    with col_x:
-        if st.button("✕", key=f"cancel_{key}", use_container_width=True):
-            st.session_state.auth_target = None
-            st.rerun()
+            disabled=True,
+        )

@@ -1,5 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
+from components.sidebar import render_home_button
 import pandas as pd
 import logging
 import plotly.express as px
@@ -19,6 +20,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from utils.auth import init_session_state
+from styles.global_ui import get_global_ui_css
 from styles.selector_cards import get_selector_cards_css
 from config.settings import PRODUCAO_INTERNO_SHEETS
 from utils.producao_interno_loader import load_interno_unidade
@@ -32,6 +34,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # ─
 # CSS CUSTOMIZADO
@@ -1007,6 +1010,7 @@ _FILTROS_BTN_HTML = """
 # TELA INICIAL (HOME)
 # ─
 def render_home(all_data):
+    render_home_button()
     with st.sidebar:
         st.markdown("### Filtros")
 

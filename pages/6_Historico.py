@@ -13,8 +13,10 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from utils.auth import init_session_state
+from styles.global_ui import get_global_ui_css
 from utils.db_manager import tabelas_status, query as db_query
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
 
 st.set_page_config(
     page_title="Histórico — Banco de Dados",
@@ -22,6 +24,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 st.markdown("""
 <style>
@@ -104,6 +108,8 @@ tabelas_disponiveis = [t for t in TABELAS_INFO if t in status_df["Tabela"].value
 if not tabelas_disponiveis:
     st.info("Nenhuma tabela com dados ainda.")
     st.stop()
+
+render_home_button()
 
 with st.sidebar:
     st.markdown("### 🗄️ Histórico")

@@ -57,9 +57,7 @@ SECTORS_ANALISE = [
         "title": "Análise de Metas / Previsão de Custos",
         "subtitle": "Progresso automático vs. metas e projeção",
         "description": (
-            "Acompanhamento automático do plano de metas por prestador e unidade, "
-            "com previsão de atingimento até o fim do mês e projeção de custos "
-            "e receita baseada no rendimento diário real."
+            "Metas por prestador e unidade, com projeção de atingimento e custos."
         ),
         "icon": "🎯",
         "page_path": "pages/7_Plano_de_Metas.py",

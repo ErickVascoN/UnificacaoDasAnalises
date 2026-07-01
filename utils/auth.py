@@ -11,17 +11,17 @@ def verificar_acesso(senha: str) -> str:
         return "usuario"
     return "negado"
 
-def pode_acessar(card_key: str, nivel_acesso: str) -> bool:
-    """Verifica se o nível de acesso permite abrir um card específico."""
-    if nivel_acesso == "admin":
-        return True
-    if nivel_acesso == "usuario":
-        return card_key != "faturados"
-    return False
-
 def init_session_state() -> None:
     """Inicializa as chaves de autenticação no session_state."""
     if "auth_nivel" not in st.session_state:
         st.session_state.auth_nivel = ""
-    if "auth_target" not in st.session_state:
-        st.session_state.auth_target = None
+
+
+def set_auth_session(nivel: str) -> None:
+    """Marca a sessão como autenticada no nível informado."""
+    st.session_state.auth_nivel = nivel
+
+
+def clear_auth_session() -> None:
+    """Remove a autenticação da sessão atual."""
+    st.session_state.auth_nivel = ""

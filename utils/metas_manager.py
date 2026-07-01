@@ -11,10 +11,12 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 from pathlib import Path
 
 import pandas as pd
 
+from utils.date_parser import parse_date_series
 from utils.normalize import normalize_text, is_blank
 
 logger = logging.getLogger(__name__)
@@ -76,7 +78,6 @@ def _rows_from_df(
         df["_meta_semana"] = (df["_meta_mes"] / 4.4).astype(int)
 
     if c_data:
-        from utils.date_parser import parse_date_series
         df["_data_base"] = parse_date_series(df[c_data])
         df = df.sort_values("_data_base", ascending=False, na_position="last")
         df = df.drop_duplicates(subset=[c_cliente, c_faccao, c_produto], keep="first")
@@ -135,45 +136,105 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
         c_cliente = "__CLIENTE__"
         logger.info("faccoes_metas: sem coluna CLIENTE — metas valem para todos os clientes.")
 
-    df["_meta_mes"] = df[c_meta_mes].apply(_to_int)
-    df = df[df["_meta_mes"] > 0].copy()
-    if df.empty:
-        return None
-
-    df["_meta_semana"] = (df["_meta_mes"] / 4.4).astype(int)
-
-    # Aplica aliases de facção para casar com os nomes usados na produção
+    # Alias de facção
     try:
         from config.settings import FACCOES_FACCAO_ALIAS
         fac_alias = {normalize_text(k): v.upper() for k, v in FACCOES_FACCAO_ALIAS.items()}
     except Exception:
         fac_alias = {}
 
+    def _apply_alias(name: str) -> str:
+        return fac_alias.get(normalize_text(name), name)
+
+    def _make_entry(faccao: str, produto: str, cliente: str, meta_dia: int) -> dict:
+        return {
+            "produto":     produto,
+            "cliente":     cliente,
+            "faccao":      _apply_alias(faccao.strip().upper()),
+            "meta_dia":    meta_dia,
+            "meta_mes":    0,
+            "meta_semana": int(meta_dia * 5),
+        }
+
+    # ── Colunas extras da tabela principal ────────────────────────────────────
+    # Suporta tanto "Unnamed: N" (cabeçalho vazio) quanto "METAS 2", "METAS 3"
+    # (cabeçalhos nomeados). Nesses campos, o valor vem no formato "CLIENTE VALOR"
+    # (ex: "BURDAYS 500") — uma entrada por cliente.
+    _extra_cols = [
+        c for c in df.columns
+        if c.startswith("Unnamed:")
+        or re.match(r"METAS?\s*[2-9]", normalize_text(c))
+    ]
+
+    df["_meta_mes"] = df[c_meta_mes].apply(_to_int)
+    df = df.copy()
+    df["_tem_extras"] = False
+    if _extra_cols:
+        def _tem_extras_fn(row):
+            if row["_meta_mes"] > 0:
+                return False
+            for c in _extra_cols:
+                v = str(row[c]).strip() if pd.notna(row[c]) else ""
+                if re.search(r"\d", v):
+                    return True
+            return False
+        df["_tem_extras"] = df.apply(_tem_extras_fn, axis=1)
+
+    # ── Tabela secundária (ex: ZANATTA) ────────────────────────────────────────
+    # Estrutura: colunas duplicadas FACÇÃO.1 | PRODUTO.1 | METAS.1 | CLIENTE.1
+    # ou qualquer coluna cujo nome normalizado começa por FACCAO e não é o c_faccao principal.
+    c_fac2  = next((c for c in df.columns if normalize_text(c).startswith("FACCAO") and c != c_faccao), None)
+    c_prod2 = next((c for c in df.columns if normalize_text(c).startswith("PRODUTO") and c != c_produto), None)
+    c_meta2 = next((c for c in df.columns if normalize_text(c).startswith("META") and c not in [c_meta_mes] + _extra_cols and c != c_faccao and c != c_produto), None)
+    c_cli2  = next((c for c in df.columns if normalize_text(c).startswith("CLIENTE") and c != c_cliente), None) or c_cliente
+
     rows: list[dict] = []
-    for _, row in df.iterrows():
-        faccao_raw = str(row[c_faccao]).strip().upper()
+
+    # ── Parseia tabela principal ───────────────────────────────────────────────
+    df_main = df[(df["_meta_mes"] > 0) | df["_tem_extras"]].copy()
+    for _, row in df_main.iterrows():
+        faccao_raw  = str(row[c_faccao]).strip().upper()
         produto_raw = str(row[c_produto]).strip().upper()
-        cliente = str(row[c_cliente]).strip().upper()
+        cliente_raw = str(row[c_cliente]).strip().upper()
         if is_blank(faccao_raw) or is_blank(produto_raw):
             continue
 
-        # Aplica alias de facção
-        faccao = fac_alias.get(normalize_text(faccao_raw), faccao_raw)
+        if row["_tem_extras"]:
+            # Linha com metas por cliente em colunas extras (ex: CORTINA)
+            for ec in _extra_cols:
+                v = str(row[ec]).strip() if pd.notna(row[ec]) else ""
+                m = re.match(r"^(.+?)\s+(\d[\d.,]*)$", v.strip())
+                if not m:
+                    continue
+                cli_extra = m.group(1).strip().upper()
+                meta_dia  = _to_int(m.group(2))
+                if meta_dia > 0 and not is_blank(cli_extra):
+                    rows.append(_make_entry(faccao_raw, produto_raw, cli_extra, meta_dia))
+        else:
+            meta_dia = int(row["_meta_mes"])
+            cliente  = "" if cliente_raw == "__ALL__" else cliente_raw
+            rows.append(_make_entry(faccao_raw, produto_raw, cliente, meta_dia))
 
-        meta_mes    = int(row["_meta_mes"])
-        meta_semana = int(row["_meta_semana"])
+    # ── Parseia tabela secundária (ZANATTA-style: facção+produto+meta+cliente) ─
+    if c_fac2 and c_prod2 and c_meta2:
+        df_sec = df[df[c_fac2].notna() & (df[c_fac2].str.strip() != "")].copy()
+        df_sec["_meta2"] = df_sec[c_meta2].apply(_to_int)
+        df_sec = df_sec[df_sec["_meta2"] > 0]
+        for _, row in df_sec.iterrows():
+            fac2  = str(row[c_fac2]).strip().upper()
+            prod2 = str(row[c_prod2]).strip().upper() if pd.notna(row[c_prod2]) else ""
+            cli2  = str(row[c_cli2]).strip().upper() if pd.notna(row[c_cli2]) else ""
+            meta2 = int(row["_meta2"])
+            if is_blank(fac2) or is_blank(prod2):
+                continue
+            rows.append(_make_entry(fac2, prod2, cli2, meta2))
+        logger.info("faccoes_metas_sheet (tabela secundária): %d entradas.", len(df_sec))
 
-        rows.append({
-            "produto":     produto_raw,
-            "cliente":     "" if cliente == "__ALL__" else cliente,
-            "faccao":      faccao,
-            "meta_dia":    meta_mes,   # campo "METAS" da planilha = diário
-            "meta_mes":    0,          # calculado na página com du_mes real
-            "meta_semana": meta_semana,
-        })
+    if not rows:
+        return None
 
-    logger.info("faccoes_metas_sheet: %d metas carregadas.", len(rows))
-    return rows or None
+    logger.info("faccoes_metas_sheet: %d metas carregadas no total.", len(rows))
+    return rows
 
 
 def load_metas_from_sheet(sheet_id: str, gid: str, ttl: int = 3600) -> list[dict] | None:

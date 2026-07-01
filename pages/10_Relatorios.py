@@ -17,12 +17,14 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+from components.sidebar import render_home_button
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from utils.auth import init_session_state
+from styles.global_ui import get_global_ui_css
 from utils.cache_manager import get_raw
 from utils.date_parser import parse_date_series
 from utils.faccao_loader import load_faccoes
@@ -55,6 +57,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # ── Constantes ─────────────────────────────────────────────────────────────────
 _TTL = 300
@@ -145,6 +149,8 @@ if not st.session_state.get("auth_nivel"):
     st.stop()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+render_home_button()
+
 with st.sidebar:
     st.markdown("### 📄 Central de Relatórios")
     st.markdown("---")

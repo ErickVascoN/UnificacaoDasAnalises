@@ -21,7 +21,9 @@ from utils.metas_manager import load_metas, save_metas, reset_metas
 from utils.anotacoes_manager import add_anotacao, remove_anotacao, load_anotacoes, apply_to_fig
 from utils.normalize import normalize_text
 from components.filtros_btn import render_filtros_btn
+from components.sidebar import render_home_button
 from config.settings import FACCOES_FACCAO_ALIAS
+from styles.global_ui import get_global_ui_css
 
 st.set_page_config(
     page_title="Produção Facções",
@@ -29,6 +31,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(get_global_ui_css(), unsafe_allow_html=True)
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -82,12 +86,6 @@ DARK_LAYOUT = dict(
     separators=",.",
 )
 
-MESES_PT = {
-    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
-    5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
-    9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
-}
-
 # Cores fixas para as facções "fixas". Os prestadores quarterizados (facções
 # dinâmicas) recebem cores automáticas do Plotly — color_discrete_map só mapeia
 # as categorias que casam e auto-atribui o restante.
@@ -112,9 +110,19 @@ def _fmt(n: float | int) -> str:
     return f"{int(n):,}".replace(",", ".")
 
 
-def _pct_bar(pct: float) -> str:
-    filled = min(int(pct / 5), 20)
-    return "█" * filled + "░" * (20 - filled) + f"  {pct:.1f}%"
+def _color_pct(val, t_green: float = 100, t_yellow: float = 75) -> str:
+    """Colore um valor de % por faixas. Usado em st.dataframe style."""
+    try:
+        v = float(val)
+        if pd.isna(v):
+            return ""
+    except Exception:
+        return ""
+    if v >= t_green:
+        return "color: #4ECDC4; font-weight: bold"
+    if v >= t_yellow:
+        return "color: #FFA726"
+    return "color: #FF6B6B"
 
 
 def _build_goals() -> pd.DataFrame:
@@ -180,6 +188,8 @@ _goals_tem_dia = not goals_df.empty and (goals_df["META_DIA"] > 0).any()
 today = date.today()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+render_home_button()
+
 with st.sidebar:
     st.markdown("### 🗓 Período")
     _primeiro_mes = today.replace(day=1)
@@ -328,13 +338,82 @@ if empresas_sel:
 if produtos_sel:
     gf = gf[gf["PRODUTO"].isin([p.upper() for p in produtos_sel])]
 
-# Meta da facção: agrupada por FACCAO_N (soma META_DIA por facção → META_MES por facção)
-# Para metas da nova guia, cada facção tem uma meta diária total independente de produto/cliente.
-meta_fac_df = (
-    goals_df.groupby("FACCAO_N")
-    .agg(META_DIA_FAC=("META_DIA", "sum"), META_MES_FAC=("META_MES", "sum"),
-         META_SEM_FAC=("META_SEMANA", "sum"), FACCAO=("FACCAO", "first"))
-    .reset_index()
+# Meta da facção: agrupada por FACCAO_N.
+# Para metas com CLIENTE específico (ex: CORTINA tem metas diferentes por cliente),
+# usa média ponderada pela produção de cada cliente no período.
+# Metas sem cliente (CLIENTE_N == "") somam diretamente.
+
+# Produção por (facção, produto, cliente) e (facção, cliente) para ponderação
+_qty_fac_cli: dict[tuple, int] = {}       # (fn, cn) → qty
+_qty_fac_prod_cli: dict[tuple, int] = {}  # (fn, pn, cn) → qty
+_qty_fac_total: dict[str, int] = {}       # fn → qty total
+_qty_fac_prod: dict[tuple, int] = {}      # (fn, pn) → qty total do produto
+if not _df_periodo_pre.empty:
+    _tmp = _df_periodo_pre.assign(
+        _cn=_df_periodo_pre["CLIENTE"].apply(normalize_text),
+        _pn=_df_periodo_pre["PRODUTO"].apply(normalize_text),
+    )
+    for (fn, cn), qty in _tmp.groupby(["FACCAO_N", "_cn"])["QUANTIDADE"].sum().items():
+        _qty_fac_cli[(fn, cn)] = int(qty)
+        _qty_fac_total[fn] = _qty_fac_total.get(fn, 0) + int(qty)
+    for (fn, pn, cn), qty in _tmp.groupby(["FACCAO_N", "_pn", "_cn"])["QUANTIDADE"].sum().items():
+        _qty_fac_prod_cli[(fn, pn, cn)] = int(qty)
+        _qty_fac_prod[(fn, pn)] = _qty_fac_prod.get((fn, pn), 0) + int(qty)
+
+_meta_fac_rows = []
+for fn, grp in goals_df.groupby("FACCAO_N"):
+    faccao_label = grp["FACCAO"].iloc[0]
+    meta_dia_fac  = 0.0
+    meta_sem_fac  = 0.0
+
+    # Entradas sem cliente nem produto específico → soma direta
+    sem_cli = grp[(grp["CLIENTE_N"] == "") & (grp["PRODUTO_N"] == "")]
+    meta_dia_fac += float(sem_cli["META_DIA"].sum())
+    meta_sem_fac += float(sem_cli["META_SEMANA"].sum())
+
+    # Entradas com produto mas sem cliente (ex: ZANATTA só produto)
+    com_prod_sem_cli = grp[(grp["PRODUTO_N"] != "") & (grp["CLIENTE_N"] == "")]
+    meta_dia_fac += float(com_prod_sem_cli["META_DIA"].sum())
+    meta_sem_fac += float(com_prod_sem_cli["META_SEMANA"].sum())
+
+    # Entradas com cliente mas sem produto (ex: CORTINA por cliente)
+    com_cli_sem_prod = grp[(grp["CLIENTE_N"] != "") & (grp["PRODUTO_N"] == "")]
+    if not com_cli_sem_prod.empty:
+        total_qty = _qty_fac_total.get(fn, 0)
+        for _, grow in com_cli_sem_prod.iterrows():
+            cn = grow["CLIENTE_N"]
+            qty_cli = _qty_fac_cli.get((fn, cn), 0)
+            if total_qty > 0 and qty_cli > 0:
+                peso = qty_cli / total_qty
+                meta_dia_fac += float(grow["META_DIA"]) * peso
+                meta_sem_fac += float(grow["META_SEMANA"]) * peso
+
+    # Entradas com produto E cliente (ex: ZANATTA por produto+cliente)
+    com_prod_cli = grp[(grp["PRODUTO_N"] != "") & (grp["CLIENTE_N"] != "")]
+    if not com_prod_cli.empty:
+        # Agrupa por produto para ponderar dentro de cada produto
+        for pn, pgrp in com_prod_cli.groupby("PRODUTO_N"):
+            total_prod = _qty_fac_prod.get((fn, pn), 0)
+            for _, grow in pgrp.iterrows():
+                cn = grow["CLIENTE_N"]
+                qty_pc = _qty_fac_prod_cli.get((fn, pn, cn), 0)
+                if total_prod > 0 and qty_pc > 0:
+                    peso = qty_pc / total_prod
+                    meta_dia_fac += float(grow["META_DIA"]) * peso
+                    meta_sem_fac += float(grow["META_SEMANA"]) * peso
+
+    dias_fac = _dias_fac.get(fn, du_mes)
+    meta_mes_fac = int(round(meta_dia_fac * dias_fac))
+    _meta_fac_rows.append({
+        "FACCAO_N":    fn,
+        "FACCAO":      faccao_label,
+        "META_DIA_FAC": int(round(meta_dia_fac)),
+        "META_MES_FAC": meta_mes_fac,
+        "META_SEM_FAC": int(round(meta_sem_fac)),
+    })
+
+meta_fac_df = pd.DataFrame(_meta_fac_rows) if _meta_fac_rows else pd.DataFrame(
+    columns=["FACCAO_N", "FACCAO", "META_DIA_FAC", "META_MES_FAC", "META_SEM_FAC"]
 )
 
 meta_mes_total = int(meta_fac_df["META_MES_FAC"].sum())
@@ -360,13 +439,14 @@ else:
 
 # Meta por facção vem de meta_fac_df (META_DIA × du_mes já calculado)
 rank_df = _fac_grp.merge(
-    meta_fac_df[["FACCAO_N", "META_MES_FAC", "META_SEM_FAC"]].rename(
-        columns={"META_MES_FAC": "META_MES", "META_SEM_FAC": "META_SEMANA"}
+    meta_fac_df[["FACCAO_N", "META_DIA_FAC", "META_MES_FAC", "META_SEM_FAC"]].rename(
+        columns={"META_DIA_FAC": "META_DIA", "META_MES_FAC": "META_MES", "META_SEM_FAC": "META_SEMANA"}
     ),
     on="FACCAO_N", how="outer",
 )
 rank_df["FACCAO"]     = rank_df["FACCAO"].fillna(rank_df.get("FACCAO", ""))
 rank_df["QUANTIDADE"] = rank_df["QUANTIDADE"].fillna(0).astype(int)
+rank_df["META_DIA"]   = rank_df["META_DIA"].fillna(0).astype(int)
 rank_df["META_MES"]   = rank_df["META_MES"].fillna(0).astype(int)
 rank_df["META_SEMANA"]= rank_df["META_SEMANA"].fillna(0).astype(int)
 
@@ -498,6 +578,51 @@ with tab_mes:
         )
         fig_cum = apply_to_fig(fig_cum, _d_ini, _d_fim, pagina="faccoes", x_fmt="%d/%m")
         st.plotly_chart(fig_cum, use_container_width=True)
+
+        dias_com_prod_mes = int(daily["DATA"].dt.date.nunique())
+        media_dia_mes = total_mes / dias_com_prod_mes if dias_com_prod_mes else 0
+        top_dia_mes = daily.loc[daily["QUANTIDADE"].idxmax()]
+        saldo_meta_mes = total_mes - meta_mes_total
+        top_fac_mes = (
+            df_mes.groupby("FACCAO")["QUANTIDADE"]
+            .sum().reset_index().sort_values("QUANTIDADE", ascending=False)
+        )
+        top3_share_mes = (
+            top_fac_mes.head(3)["QUANTIDADE"].sum() / total_mes * 100
+            if total_mes > 0 and not top_fac_mes.empty else 0
+        )
+
+        st.markdown("### 📌 Leitura Rápida do Mês")
+        st.caption(
+            f"Concentração das 3 maiores facções: {top3_share_mes:.1f}% do total do período. "
+            f"Saldo atual versus meta: {_fmt(abs(saldo_meta_mes))} {'acima' if saldo_meta_mes >= 0 else 'abaixo'} da meta."
+        )
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            st.metric("Dias com produção", dias_com_prod_mes)
+        with c6:
+            st.metric("Média diária", _fmt(round(media_dia_mes)))
+        with c7:
+            st.metric("Melhor dia", top_dia_mes["DATA"].strftime("%d/%m"), delta=_fmt(int(top_dia_mes["QUANTIDADE"])))
+        with c8:
+            st.metric("Saldo da meta", _fmt(abs(saldo_meta_mes)), delta="acima" if saldo_meta_mes >= 0 else "abaixo")
+
+        if not top_fac_mes.empty:
+            top_fac_mes = top_fac_mes.head(5).copy()
+            fig_top_fac_mes = px.bar(
+                top_fac_mes.sort_values("QUANTIDADE"),
+                x="QUANTIDADE",
+                y="FACCAO",
+                orientation="h",
+                color="FACCAO",
+                color_discrete_map=CORES_FACCAO,
+                text="QUANTIDADE",
+                labels={"QUANTIDADE": "Peças", "FACCAO": "Facção"},
+                title="Top Facções no Período",
+            )
+            fig_top_fac_mes.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+            fig_top_fac_mes.update_layout(showlegend=False, **DARK_LAYOUT)
+            st.plotly_chart(fig_top_fac_mes, use_container_width=True)
     else:
         st.info(f"Sem produção registrada no período selecionado.")
 
@@ -530,19 +655,6 @@ with tab_mes:
     tabela = tabela_fac[["FACCAO", "META_DIA_FAC", "META_MES_FAC", "QUANTIDADE", "% Meta", "Restante"]].copy()
     tabela.columns = ["Facção", "Meta/Dia", "Meta Mês", "Produzido", "% Meta", "Restante"]
     tabela = tabela.sort_values("% Meta", ascending=False, na_position="last").reset_index(drop=True)
-
-    def _color_pct(val):
-        try:
-            v = float(val)
-            if pd.isna(v):
-                return ""
-        except Exception:
-            return ""
-        if v >= 100:
-            return "color: #4ECDC4; font-weight: bold"
-        if v >= 75:
-            return "color: #FFA726"
-        return "color: #FF6B6B"
 
     def _fmt_opt(v, fmt):
         return fmt.format(v) if v is not None else "—"
@@ -863,6 +975,30 @@ with tab_dia:
 
         st.markdown("---")
 
+        saldo_dia = total_dia - meta_dia
+        faccoes_ativas_dia = int(df_dia["FACCAO"].nunique())
+        lider_dia = df_dia.groupby("FACCAO")["QUANTIDADE"].sum().sort_values(ascending=False).head(1)
+        produto_lider_dia = df_dia.groupby("PRODUTO")["QUANTIDADE"].sum().sort_values(ascending=False).head(1)
+
+        st.subheader("Resumo da Data")
+        c4, c5, c6, c7 = st.columns(4)
+        with c4:
+            st.metric("Facções ativas", faccoes_ativas_dia)
+        with c5:
+            st.metric("Saldo vs meta", _fmt(abs(saldo_dia)), delta="acima" if saldo_dia >= 0 else "abaixo")
+        with c6:
+            st.metric(
+                "Facção líder",
+                lider_dia.index[0] if not lider_dia.empty else "—",
+                delta=_fmt(int(lider_dia.iloc[0])) if not lider_dia.empty else None,
+            )
+        with c7:
+            st.metric(
+                "Produto líder",
+                produto_lider_dia.index[0] if not produto_lider_dia.empty else "—",
+                delta=_fmt(int(produto_lider_dia.iloc[0])) if not produto_lider_dia.empty else None,
+            )
+
         if df_dia.empty:
             st.info(f"Sem produção em {data_sel.strftime('%d/%m/%Y')}.")
         else:
@@ -914,6 +1050,52 @@ with tab_dia:
                 )
                 prest_grp.columns = ["Prestador", "Produto", "Qtd"]
                 st.dataframe(prest_grp, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            col_fac_dia, col_cli_dia = st.columns(2)
+
+            with col_fac_dia:
+                fac_dia = (
+                    df_dia.groupby("FACCAO")["QUANTIDADE"]
+                    .sum().reset_index().sort_values("QUANTIDADE", ascending=True)
+                )
+                fig_fac_dia = px.bar(
+                    fac_dia,
+                    x="QUANTIDADE",
+                    y="FACCAO",
+                    orientation="h",
+                    color="FACCAO",
+                    color_discrete_map=CORES_FACCAO,
+                    text="QUANTIDADE",
+                    labels={"QUANTIDADE": "Peças", "FACCAO": "Facção"},
+                    title="Produção por Facção na Data",
+                )
+                fig_fac_dia.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+                fig_fac_dia.update_layout(showlegend=False, **DARK_LAYOUT)
+                st.plotly_chart(fig_fac_dia, use_container_width=True)
+
+            with col_cli_dia:
+                cli_dia = (
+                    df_dia.groupby("CLIENTE")["QUANTIDADE"]
+                    .sum().reset_index().sort_values("QUANTIDADE", ascending=True)
+                )
+                if cli_dia.empty:
+                    st.info("Sem dados por empresa para a data selecionada.")
+                else:
+                    fig_cli_dia = px.bar(
+                        cli_dia.tail(8),
+                        x="QUANTIDADE",
+                        y="CLIENTE",
+                        orientation="h",
+                        text="QUANTIDADE",
+                        color="QUANTIDADE",
+                        color_continuous_scale="Teal",
+                        labels={"QUANTIDADE": "Peças", "CLIENTE": "Empresa"},
+                        title="Top Empresas na Data",
+                    )
+                    fig_cli_dia.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+                    fig_cli_dia.update_layout(coloraxis_showscale=False, **DARK_LAYOUT)
+                    st.plotly_chart(fig_cli_dia, use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — SEMANAL
@@ -983,69 +1165,145 @@ with tab_sem:
             DIAS_PT = {"Monday": "Seg", "Tuesday": "Ter", "Wednesday": "Qua",
                        "Thursday": "Qui", "Friday": "Sex"}
 
-            daily_sem = (
-                df_sem.groupby(["DATA", "PRODUTO"])["QUANTIDADE"]
-                .sum()
-                .reset_index()
+            prod_semana = (
+                df_sem.groupby("PRODUTO")["QUANTIDADE"]
+                .sum().reset_index().sort_values("QUANTIDADE", ascending=False)
             )
-            daily_sem["DIA"] = daily_sem["DATA"].dt.day_name().map(
-                lambda d: DIAS_PT.get(d, d)
-            ) + " " + daily_sem["DATA"].dt.strftime("%d/%m")
-            # Ordena dias cronologicamente
-            ordem_dias = sorted(daily_sem["DATA"].unique())
-            ordem_labels = [
-                (DIAS_PT.get(pd.Timestamp(d).day_name(), "") + " " + pd.Timestamp(d).strftime("%d/%m"))
-                for d in ordem_dias
-            ]
+            if not prod_semana.empty:
+                st.markdown("#### 📦 Produtos produzidos na semana")
+                c_prod_graf, c_prod_tab = st.columns([2, 1])
 
-            fig = px.bar(
-                daily_sem,
-                x="DIA",
-                y="QUANTIDADE",
-                color="PRODUTO",
-                color_discrete_sequence=px.colors.qualitative.Set2,
-                category_orders={"DIA": ordem_labels},
-                labels={"QUANTIDADE": "Peças", "DIA": "Dia", "PRODUTO": "Produto"},
-                title="Produção por Dia e Produto",
-            )
-            if meta_dia_sem > 0:
-                fig.add_hline(
-                    y=meta_dia_sem,
-                    line_dash="dash",
-                    line_color="#FF6B6B",
-                    annotation_text=f"Meta/dia ({_fmt(round(meta_dia_sem))})",
-                    annotation_position="top right",
+                daily_sem = (
+                    df_sem.groupby(["DATA", "PRODUTO"])["QUANTIDADE"]
+                    .sum()
+                    .reset_index()
                 )
-            fig.update_layout(**DARK_LAYOUT)
-            st.plotly_chart(fig, use_container_width=True)
+                daily_sem["DIA"] = daily_sem["DATA"].dt.day_name().map(
+                    lambda d: DIAS_PT.get(d, d)
+                ) + " " + daily_sem["DATA"].dt.strftime("%d/%m")
+                ordem_dias = sorted(daily_sem["DATA"].unique())
+                ordem_labels = [
+                    (DIAS_PT.get(pd.Timestamp(d).day_name(), "") + " " + pd.Timestamp(d).strftime("%d/%m"))
+                    for d in ordem_dias
+                ]
+                top_prod_sem = prod_semana.head(6)["PRODUTO"].tolist()
+                daily_top = daily_sem[daily_sem["PRODUTO"].isin(top_prod_sem)].copy()
 
-            # Resumo por produto + empresa + meta semanal.
-            # Match por (PRODUTO, CLIENTE), somando todas as facções.
+                with c_prod_graf:
+                    fig_prod_sem = px.line(
+                        daily_top,
+                        x="DIA",
+                        y="QUANTIDADE",
+                        color="PRODUTO",
+                        markers=True,
+                        category_orders={"DIA": ordem_labels},
+                        color_discrete_sequence=px.colors.qualitative.Set2,
+                        labels={"QUANTIDADE": "Peças", "DIA": "Dia", "PRODUTO": "Produto"},
+                        title="Evolução dos Principais Produtos na Semana",
+                    )
+                    fig_prod_sem.update_layout(**DARK_LAYOUT)
+                    st.plotly_chart(fig_prod_sem, use_container_width=True)
+
+                with c_prod_tab:
+                    tab_prod_sem = prod_semana.head(10).copy()
+                    tab_prod_sem.columns = ["Produto", "Produzido"]
+                    st.dataframe(
+                        tab_prod_sem,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                pivot_sem = (
+                    daily_sem.pivot_table(index="PRODUTO", columns="DIA", values="QUANTIDADE", aggfunc="sum", fill_value=0)
+                )
+                pivot_sem = pivot_sem.reindex(index=prod_semana.head(8)["PRODUTO"].tolist())
+                if not pivot_sem.empty:
+                    st.markdown("##### Matriz por Produto e Dia")
+                    st.dataframe(
+                        pivot_sem,
+                        use_container_width=True,
+                    )
+
+            saldo_sem = total_sem - meta_sem_total
+            dias_sem_prod = int(df_sem["DATA"].dt.date.nunique())
+            media_dia_sem_prod = total_sem / dias_sem_prod if dias_sem_prod else 0
+            fac_sem = (
+                df_sem.groupby("FACCAO")["QUANTIDADE"]
+                .sum().reset_index().sort_values("QUANTIDADE", ascending=False)
+            )
+            dia_sem_total = (
+                df_sem.groupby("DATA")["QUANTIDADE"].sum().reset_index().sort_values("DATA")
+            )
+
+            st.markdown("---")
+            st.subheader("Resumo da Semana")
+            c5, c6, c7, c8 = st.columns(4)
+            with c5:
+                st.metric("Dias com produção", dias_sem_prod)
+            with c6:
+                st.metric("Média/dia", _fmt(round(media_dia_sem_prod)))
+            with c7:
+                st.metric("Saldo da meta", _fmt(abs(saldo_sem)), delta="acima" if saldo_sem >= 0 else "abaixo")
+            with c8:
+                st.metric(
+                    "Facção líder",
+                    fac_sem.iloc[0]["FACCAO"] if not fac_sem.empty else "—",
+                    delta=_fmt(int(fac_sem.iloc[0]["QUANTIDADE"])) if not fac_sem.empty else None,
+                )
+
+            col_sem_dia, col_sem_fac = st.columns(2)
+
+            with col_sem_dia:
+                dia_sem_total["DIA"] = dia_sem_total["DATA"].dt.day_name().map(
+                    lambda d: DIAS_PT.get(d, d)
+                ) + " " + dia_sem_total["DATA"].dt.strftime("%d/%m")
+                fig_semana_total = px.bar(
+                    dia_sem_total,
+                    x="DIA",
+                    y="QUANTIDADE",
+                    text="QUANTIDADE",
+                    labels={"QUANTIDADE": "Peças", "DIA": "Dia"},
+                    title="Produção Total por Dia da Semana",
+                )
+                if meta_dia_sem > 0:
+                    fig_semana_total.add_hline(
+                        y=meta_dia_sem,
+                        line_dash="dash",
+                        line_color="#FF6B6B",
+                        annotation_text=f"Meta/dia ({_fmt(round(meta_dia_sem))})",
+                        annotation_position="top right",
+                    )
+                fig_semana_total.update_traces(marker_color="#4ECDC4", texttemplate="%{text:,.0f}", textposition="outside")
+                fig_semana_total.update_layout(**DARK_LAYOUT)
+                st.plotly_chart(fig_semana_total, use_container_width=True)
+
+            with col_sem_fac:
+                if fac_sem.empty:
+                    st.info("Sem facções para resumir na semana.")
+                else:
+                    fig_sem_faccao = px.bar(
+                        fac_sem.sort_values("QUANTIDADE"),
+                        x="QUANTIDADE",
+                        y="FACCAO",
+                        orientation="h",
+                        color="FACCAO",
+                        color_discrete_map=CORES_FACCAO,
+                        text="QUANTIDADE",
+                        labels={"QUANTIDADE": "Peças", "FACCAO": "Facção"},
+                        title="Produção por Facção na Semana",
+                    )
+                    fig_sem_faccao.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+                    fig_sem_faccao.update_layout(showlegend=False, **DARK_LAYOUT)
+                    st.plotly_chart(fig_sem_faccao, use_container_width=True)
+
             prod_sem = (
-                df_sem.groupby(["PRODUTO_N", "CLIENTE_N"])["QUANTIDADE"]
-                .sum()
-                .reset_index()
+                df_sem.groupby("PRODUTO")["QUANTIDADE"]
+                .sum().reset_index().sort_values("QUANTIDADE", ascending=False)
             )
-            wk = gf.merge(prod_sem, on=["PRODUTO_N", "CLIENTE_N"], how="left")
-            wk["QUANTIDADE"] = wk["QUANTIDADE"].fillna(0).astype(int)
-            wk["% Meta"] = (
-                wk["QUANTIDADE"] / wk["META_SEMANA"] * 100
-            ).round(1).fillna(0)
-            wk = wk.sort_values("% Meta", ascending=False)
-            tab_wk = wk[["PRODUTO", "CLIENTE", "QUANTIDADE", "META_SEMANA", "% Meta"]].copy()
-            tab_wk.columns = ["Produto", "Empresa", "Produzido", "Meta Semana", "% Meta"]
-
-            st.dataframe(
-                tab_wk.style
-                .map(_color_pct, subset=["% Meta"])
-                .format({
-                    "Produzido":   "{:,.0f}",
-                    "Meta Semana": "{:,.0f}",
-                    "% Meta":      "{:.1f}%",
-                }),
-                use_container_width=True,
-                hide_index=True,
-            )
+            if prod_sem.empty:
+                st.info("Sem produção por produto no período selecionado.")
+            else:
+                prod_sem["% do Total"] = (prod_sem["QUANTIDADE"] / max(total_sem, 1) * 100).round(1)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — POR PRODUTO
@@ -1159,48 +1417,6 @@ with tab_prod:
             **DARK_LAYOUT,
         )
         st.plotly_chart(fig_heat, use_container_width=True)
-
-        # Progresso vs meta por produto / empresa (barras coloridas por faixa)
-        st.markdown("---")
-        st.subheader("Atingimento da Meta por Produto")
-        prod_grp_p = (
-            df_mp.groupby(["PRODUTO_N", "CLIENTE_N"])["QUANTIDADE"].sum().reset_index()
-        )
-        # Agrupa metas por (produto, cliente) somando todas as facções
-        meta_by_prod = (
-            gf.groupby(["PRODUTO_N", "CLIENTE_N"])
-            .agg(META_MES=("META_MES", "sum"), PRODUTO=("PRODUTO", "first"), CLIENTE=("CLIENTE", "first"))
-            .reset_index()
-        )
-        mp = meta_by_prod.merge(prod_grp_p, on=["PRODUTO_N", "CLIENTE_N"], how="left")
-        mp["QUANTIDADE"] = mp["QUANTIDADE"].fillna(0).astype(int)
-        mp = mp[mp["QUANTIDADE"] > 0].copy()
-        if mp.empty:
-            st.info("Nenhum produto com meta cadastrada produzido neste mês.")
-        else:
-            mp["PCT"] = (mp["QUANTIDADE"] / mp["META_MES"] * 100).round(1)
-            mp["LABEL"] = mp["PRODUTO"] + " — " + mp["CLIENTE"]
-            mp = mp.sort_values("PCT")
-            cores = mp["PCT"].apply(
-                lambda v: "#4ECDC4" if v >= 100 else "#FFA726" if v >= 75 else "#FF6B6B"
-            )
-            fig_prog = go.Figure()
-            fig_prog.add_bar(
-                x=mp["PCT"], y=mp["LABEL"], orientation="h",
-                marker_color=cores,
-                text=[f"{p:.0f}%" for p in mp["PCT"]], textposition="outside",
-                hovertemplate="%{y}<br>%{x:.1f}% da meta mensal<extra></extra>",
-            )
-            fig_prog.add_vline(
-                x=100, line_dash="dash", line_color="#FFFFFF",
-                annotation_text="Meta", annotation_position="top",
-            )
-            fig_prog.update_layout(
-                title="% da Meta Mensal por Produto / Empresa",
-                xaxis_title="% da Meta", yaxis_title="",
-                **DARK_LAYOUT,
-            )
-            st.plotly_chart(fig_prog, use_container_width=True)
 
         # Evolução diária dos principais produtos
         st.markdown("---")
@@ -1368,11 +1584,11 @@ with tab_fac:
                 st.plotly_chart(fig_meta, use_container_width=True)
 
         # Tabela completa Facção x Meta
-        tab_rank = rank_df_fac[["FACCAO", "QUANTIDADE", "% do Total", "META_MES", "META_SEMANA", "PCT", "RESTANTE"]].copy()
-        tab_rank.columns = ["Facção", "Produzido", "% do Total", "Meta Mês", "Meta Semana", "% da Meta", "Restante"]
+        tab_rank = rank_df_fac[["FACCAO", "QUANTIDADE", "% do Total", "META_MES", "META_DIA", "PCT", "RESTANTE"]].copy()
+        tab_rank.columns = ["Facção", "Produzido", "% do Total", "Meta Mês", "Meta/Dia", "% da Meta", "Restante"]
         tab_rank = tab_rank.sort_values("Produzido", ascending=False).reset_index(drop=True)
-        tab_rank["Meta Mês"]    = tab_rank["Meta Mês"].replace(0.0, None)
-        tab_rank["Meta Semana"] = tab_rank["Meta Semana"].replace(0.0, None)
+        tab_rank["Meta Mês"] = tab_rank["Meta Mês"].replace(0.0, None)
+        tab_rank["Meta/Dia"] = tab_rank["Meta/Dia"].replace(0.0, None)
         def _safe_fmt(v):
             try:
                 return _fmt(v) if v is not None and not pd.isna(v) else "—"
@@ -1389,12 +1605,12 @@ with tab_fac:
             tab_rank.style
             .map(_color_pct, subset=["% da Meta"])
             .format({
-                "Produzido":   "{:,.0f}",
-                "% do Total":  "{:.1f}%",
-                "Meta Mês":    _safe_fmt,
-                "Meta Semana": _safe_fmt,
-                "% da Meta":   _safe_pct,
-                "Restante":    _safe_fmt,
+                "Produzido":  "{:,.0f}",
+                "% do Total": "{:.1f}%",
+                "Meta Mês":   _safe_fmt,
+                "Meta/Dia":   _safe_fmt,
+                "% da Meta":  _safe_pct,
+                "Restante":   _safe_fmt,
             }),
             use_container_width=True, hide_index=True,
         )
@@ -1480,21 +1696,10 @@ with tab_fac:
             fig_ass.update_xaxes(range=[0, 120], title_text="Assiduidade (%)")
             st.plotly_chart(fig_ass, use_container_width=True)
 
-        def _cor_cons(val):
-            try:
-                v = float(val)
-            except Exception:
-                return ""
-            if v >= 80:
-                return "color: #4ECDC4; font-weight: bold"
-            if v >= 60:
-                return "color: #FFA726"
-            return "color: #FF6B6B"
-
         tab_cons = df_cons.sort_values("Regularidade (%)", ascending=False).reset_index(drop=True)
         st.dataframe(
             tab_cons.style
-            .map(_cor_cons, subset=["Assiduidade (%)", "Regularidade (%)"])
+            .map(lambda v: _color_pct(v, t_green=80, t_yellow=60), subset=["Assiduidade (%)", "Regularidade (%)"])
             .format({
                 "Média/Dia":         "{:,.0f}",
                 "Melhor Dia":        "{:,.0f}",
