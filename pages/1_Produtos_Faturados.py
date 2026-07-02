@@ -39,13 +39,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 st.markdown(get_global_ui_css(), unsafe_allow_html=True)
+render_home_button()  # sempre visível, mesmo sem login
 
 # guarda de autenticação — somente admin pode acessar esta página
 if st.session_state.get("auth_nivel") != "admin":
     st.error("🔒 Acesso restrito. Esta página requer autenticação de **Administrador**.")
     st.info("Volte à página inicial e faça login com a senha de Admin.")
-    if st.button("← Voltar à página inicial"):
-        st.switch_page("app.py")
     st.stop()
 
 def inject_styles() -> None:
@@ -1274,7 +1273,6 @@ def render_presentation_mode(
 
 def main() -> None:
     inject_styles()
-    render_home_button()
 
     st.markdown(
         """

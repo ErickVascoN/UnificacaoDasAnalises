@@ -66,6 +66,7 @@ TABELAS_INFO = {
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 init_session_state()
+render_home_button()  # sempre visível, mesmo sem login
 if st.session_state.get("auth_nivel") != "admin":
     st.warning("🔒 Esta página é restrita ao Administrador.")
     st.stop()
@@ -108,8 +109,6 @@ tabelas_disponiveis = [t for t in TABELAS_INFO if t in status_df["Tabela"].value
 if not tabelas_disponiveis:
     st.info("Nenhuma tabela com dados ainda.")
     st.stop()
-
-render_home_button()
 
 with st.sidebar:
     st.markdown("### 🗄️ Histórico")

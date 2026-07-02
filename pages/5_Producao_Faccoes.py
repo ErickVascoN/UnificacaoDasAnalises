@@ -158,6 +158,7 @@ def _carregar() -> pd.DataFrame:
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 init_session_state()
+render_home_button()  # sempre visível, mesmo sem login
 if not st.session_state.get("auth_nivel"):
     st.warning("Faça login na página principal para acessar este dashboard.")
     st.stop()
@@ -186,9 +187,6 @@ goals_df = _build_goals()
 _goals_tem_dia = not goals_df.empty and (goals_df["META_DIA"] > 0).any()
 
 today = date.today()
-
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-render_home_button()
 
 with st.sidebar:
     st.markdown("### 🗓 Período")
@@ -431,36 +429,37 @@ _df_periodo = df[
 ]
 _total_geral = int(_df_periodo["QUANTIDADE"].sum()) if not _df_periodo.empty else 1
 
-# Produção total por facção (todos produtos e clientes somados)
+# Produção total por facção — agrupa só por FACCAO_N para evitar duplicatas
+# quando a planilha tem grafias ligeiramente diferentes do mesmo prestador.
 if not _df_periodo.empty:
-    _fac_grp = _df_periodo.groupby(["FACCAO_N", "FACCAO"])["QUANTIDADE"].sum().reset_index()
+    _fac_qty = _df_periodo.groupby("FACCAO_N")["QUANTIDADE"].sum().reset_index()
+    # Nome de exibição: primeira ocorrência do FACCAO canônico (após replace de alias)
+    _fac_label_prod = (
+        _df_periodo.groupby("FACCAO_N")["FACCAO"].first().reset_index()
+    )
+    _fac_grp = _fac_qty.merge(_fac_label_prod, on="FACCAO_N", how="left")
 else:
     _fac_grp = pd.DataFrame(columns=["FACCAO_N", "FACCAO", "QUANTIDADE"])
 
-# Meta por facção vem de meta_fac_df (META_DIA × du_mes já calculado)
+# Meta por facção vem de meta_fac_df (META_DIA × dias_com_producao já calculado)
 rank_df = _fac_grp.merge(
-    meta_fac_df[["FACCAO_N", "META_DIA_FAC", "META_MES_FAC", "META_SEM_FAC"]].rename(
-        columns={"META_DIA_FAC": "META_DIA", "META_MES_FAC": "META_MES", "META_SEM_FAC": "META_SEMANA"}
+    meta_fac_df[["FACCAO_N", "FACCAO", "META_DIA_FAC", "META_MES_FAC", "META_SEM_FAC"]].rename(
+        columns={"META_DIA_FAC": "META_DIA", "META_MES_FAC": "META_MES", "META_SEM_FAC": "META_SEMANA",
+                 "FACCAO": "FACCAO_META"}
     ),
     on="FACCAO_N", how="outer",
 )
-rank_df["FACCAO"]     = rank_df["FACCAO"].fillna(rank_df.get("FACCAO", ""))
 rank_df["QUANTIDADE"] = rank_df["QUANTIDADE"].fillna(0).astype(int)
 rank_df["META_DIA"]   = rank_df["META_DIA"].fillna(0).astype(int)
 rank_df["META_MES"]   = rank_df["META_MES"].fillna(0).astype(int)
 rank_df["META_SEMANA"]= rank_df["META_SEMANA"].fillna(0).astype(int)
 
-# Preenche FACCAO label quando veio só da meta (sem produção)
-if "FACCAO_x" in rank_df.columns:
-    rank_df["FACCAO"] = rank_df["FACCAO_x"].fillna(rank_df.get("FACCAO_y", ""))
-    rank_df.drop(columns=["FACCAO_x", "FACCAO_y"], inplace=True, errors="ignore")
-if rank_df["FACCAO"].isna().any() or (rank_df["FACCAO"] == "").any():
-    # Preenche a partir do meta_fac_df
-    _fac_label = meta_fac_df.set_index("FACCAO_N")["FACCAO"].to_dict()
-    rank_df["FACCAO"] = rank_df.apply(
-        lambda r: _fac_label.get(r["FACCAO_N"], r["FACCAO"]) if not r["FACCAO"] else r["FACCAO"],
-        axis=1,
-    )
+# Nome de exibição: produção tem prioridade; quando só vem da meta, usa nome da meta
+rank_df["FACCAO"] = rank_df["FACCAO"].where(
+    rank_df["FACCAO"].notna() & (rank_df["FACCAO"] != ""),
+    rank_df["FACCAO_META"],
+)
+rank_df.drop(columns=["FACCAO_META"], inplace=True, errors="ignore")
 
 rank_df["PCT"] = rank_df.apply(
     lambda r: round(r["QUANTIDADE"] / r["META_MES"] * 100, 1) if r["META_MES"] > 0 else None, axis=1

@@ -144,12 +144,10 @@ section[data-testid="stSidebar"] *{color:#E0E0E0!important;}
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
 init_session_state()
+render_home_button()  # sempre visível, mesmo sem login
 if not st.session_state.get("auth_nivel"):
     st.warning("🔒 Acesso restrito. Faça login na página inicial para continuar.")
     st.stop()
-
-# ── Sidebar ────────────────────────────────────────────────────────────────────
-render_home_button()
 
 with st.sidebar:
     st.markdown("### 📄 Central de Relatórios")

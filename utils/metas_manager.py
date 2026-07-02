@@ -117,11 +117,12 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
     if df is None:
         return None
 
+    cols_list  = list(df.columns)
+
     c_faccao   = _col(df, "FACCAO") or _col(df, "RESPONSAVEL") or _col(df, "PRESTADOR")
     c_produto  = _col(df, "PRODUTO")
     # Detecta coluna de meta: aceita "META MÊS", "META MES", "METAS", "META"
     c_meta_mes = _col(df, "META", "MES") or _col(df, "METAS") or _col(df, "META")
-    c_cliente  = _col(df, "CLIENTE")  # opcional
 
     if not all([c_faccao, c_produto, c_meta_mes]):
         logger.warning(
@@ -130,11 +131,20 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
         )
         return None
 
-    # Quando não há CLIENTE, cria coluna vazia (sentinel "__ALL__")
-    if not c_cliente:
-        df["__CLIENTE__"] = "__ALL__"
-        c_cliente = "__CLIENTE__"
-        logger.info("faccoes_metas: sem coluna CLIENTE — metas valem para todos os clientes.")
+    # ── Tabela secundária (ex: ZANATTA) ────────────────────────────────────────
+    # Detecta a segunda ocorrência de FACÇÃO (ex: "FACÇÃO "), que marca o início
+    # da tabela lateral. Colunas a partir daí pertencem à tabela secundária e NÃO
+    # devem ser usadas para a tabela principal (evita ler CLIENTE do ZANATTA como
+    # cliente de CAROL MENDES ou outra facção da tabela principal).
+    c_fac2  = next((c for c in cols_list if normalize_text(c).startswith("FACCAO") and c != c_faccao), None)
+    _sec_start = cols_list.index(c_fac2) if c_fac2 else len(cols_list)
+    _primary_cols = set(cols_list[:_sec_start])
+
+    # CLIENTE da tabela principal: só aceita se a coluna vier ANTES da tabela secundária
+    c_cliente = next(
+        (c for c in cols_list[:_sec_start] if normalize_text(c).startswith("CLIENTE")),
+        None,
+    )
 
     # Alias de facção
     try:
@@ -158,12 +168,12 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
 
     # ── Colunas extras da tabela principal ────────────────────────────────────
     # Suporta tanto "Unnamed: N" (cabeçalho vazio) quanto "METAS 2", "METAS 3"
-    # (cabeçalhos nomeados). Nesses campos, o valor vem no formato "CLIENTE VALOR"
-    # (ex: "BURDAYS 500") — uma entrada por cliente.
+    # (cabeçalhos nomeados). Restringe às colunas primárias para não confundir
+    # com colunas da tabela secundária.
     _extra_cols = [
-        c for c in df.columns
-        if c.startswith("Unnamed:")
-        or re.match(r"METAS?\s*[2-9]", normalize_text(c))
+        c for c in cols_list[:_sec_start]
+        if (c.startswith("Unnamed:") or re.match(r"METAS?\s*[2-9]", normalize_text(c)))
+        and c != c_meta_mes
     ]
 
     df["_meta_mes"] = df[c_meta_mes].apply(_to_int)
@@ -180,13 +190,10 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
             return False
         df["_tem_extras"] = df.apply(_tem_extras_fn, axis=1)
 
-    # ── Tabela secundária (ex: ZANATTA) ────────────────────────────────────────
-    # Estrutura: colunas duplicadas FACÇÃO.1 | PRODUTO.1 | METAS.1 | CLIENTE.1
-    # ou qualquer coluna cujo nome normalizado começa por FACCAO e não é o c_faccao principal.
-    c_fac2  = next((c for c in df.columns if normalize_text(c).startswith("FACCAO") and c != c_faccao), None)
-    c_prod2 = next((c for c in df.columns if normalize_text(c).startswith("PRODUTO") and c != c_produto), None)
-    c_meta2 = next((c for c in df.columns if normalize_text(c).startswith("META") and c not in [c_meta_mes] + _extra_cols and c != c_faccao and c != c_produto), None)
-    c_cli2  = next((c for c in df.columns if normalize_text(c).startswith("CLIENTE") and c != c_cliente), None) or c_cliente
+    # Colunas da tabela secundária
+    c_prod2 = next((c for c in cols_list[_sec_start:] if normalize_text(c).startswith("PRODUTO")), None)
+    c_meta2 = next((c for c in cols_list[_sec_start:] if normalize_text(c).startswith("META")), None)
+    c_cli2  = next((c for c in cols_list[_sec_start:] if normalize_text(c).startswith("CLIENTE")), None)
 
     rows: list[dict] = []
 
@@ -195,7 +202,8 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
     for _, row in df_main.iterrows():
         faccao_raw  = str(row[c_faccao]).strip().upper()
         produto_raw = str(row[c_produto]).strip().upper()
-        cliente_raw = str(row[c_cliente]).strip().upper()
+        # c_cliente pode ser None quando a tabela principal não tem coluna CLIENTE
+        cliente_raw = str(row[c_cliente]).strip().upper() if c_cliente else "__ALL__"
         if is_blank(faccao_raw) or is_blank(produto_raw):
             continue
 
@@ -212,7 +220,7 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
                     rows.append(_make_entry(faccao_raw, produto_raw, cli_extra, meta_dia))
         else:
             meta_dia = int(row["_meta_mes"])
-            cliente  = "" if cliente_raw == "__ALL__" else cliente_raw
+            cliente  = "" if (cliente_raw == "__ALL__" or is_blank(cliente_raw)) else cliente_raw
             rows.append(_make_entry(faccao_raw, produto_raw, cliente, meta_dia))
 
     # ── Parseia tabela secundária (ZANATTA-style: facção+produto+meta+cliente) ─

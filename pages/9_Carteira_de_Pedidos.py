@@ -29,6 +29,7 @@ st.set_page_config(
 )
 
 st.markdown(get_global_ui_css(), unsafe_allow_html=True)
+render_home_button()  # sempre visível, mesmo sem dados
 
 SHEET_ID  = "1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7"
 SHEET_GID = "611396912"
@@ -287,10 +288,6 @@ with st.spinner("⏳ Carregando carteira de pedidos…"):
 if df_raw.empty:
     st.error("❌ Nenhum dado disponível. Verifique o acesso à planilha.")
     st.stop()
-
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-render_home_button()
 
 with st.sidebar:
     st.markdown("## 📦 Filtros")

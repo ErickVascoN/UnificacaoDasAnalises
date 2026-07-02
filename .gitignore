@@ -18,6 +18,12 @@ venv/
 # Cache de planilhas Google Sheets (gerado automaticamente)
 cache/sheets/*.csv
 
+# Banco local / artefatos gerados
+data/*.db
+.claude/
+Resultados_*.pptx
+slide*-temp.jpg
+
 # Gerados pelo relatório
 scripts/*.pdf
 scripts/*.html

@@ -28,6 +28,7 @@ st.set_page_config(
 )
 
 st.markdown(get_global_ui_css(), unsafe_allow_html=True)
+render_home_button()  # sempre visível, mesmo sem dados
 
 CARGAS_SHEET_ID = "1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk"
 CARGAS_CACHE_TTL = 300  # segundos
@@ -634,9 +635,6 @@ with st.spinner("⏳ Carregando dados de cargas…"):
 if df_raw.empty:
     st.error("❌ Nenhum dado disponível. Verifique o acesso à planilha.")
     st.stop()
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-render_home_button()
 
 with st.sidebar:
     st.markdown("## 🚛 Filtros")

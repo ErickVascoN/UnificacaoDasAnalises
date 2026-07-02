@@ -120,14 +120,10 @@ div[data-testid="stMetric"]{
 
 # auth
 init_session_state()
+render_home_button()  # sempre visível, mesmo sem login
 if not st.session_state.get("auth_nivel"):
     st.warning("🔒 Acesso restrito. Faça login na página inicial.")
-    if st.button("← Voltar ao Início"):
-        safe_switch("app.py")
     st.stop()
-
-# sidebar nav
-render_home_button()
 
 with st.sidebar:
     st.markdown("### 📊 Controle de Programação")

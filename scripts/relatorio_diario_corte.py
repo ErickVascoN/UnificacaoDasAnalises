@@ -83,7 +83,7 @@ def _baixar_csv(sheet_id: str, gid: str | None = None) -> pd.DataFrame | None:
             logging.warning(f"Falha {url[:60]}: {e}")
     return None
 
-def _parse_datas(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
+def _parse_datas(df: pd.DataFrame, col: str = "DATA", dayfirst: bool = True) -> pd.DataFrame:
     # Localiza coluna de data de forma case-insensitive (ex.: "Data" → "DATA")
     col_real = col
     for c in df.columns:
@@ -97,10 +97,10 @@ def _parse_datas(df: pd.DataFrame, col: str = "DATA") -> pd.DataFrame:
     raw = df[col_real].astype(str).str.split(" ").str[0].str.strip()
     try:
         # format="mixed" requer pandas >= 2.0
-        parsed = pd.to_datetime(raw, format="mixed", dayfirst=True, errors="coerce")
+        parsed = pd.to_datetime(raw, format="mixed", dayfirst=dayfirst, errors="coerce")
     except TypeError:
         # pandas < 2.0: fallback sem format="mixed"
-        parsed = pd.to_datetime(raw, dayfirst=True, errors="coerce")
+        parsed = pd.to_datetime(raw, dayfirst=dayfirst, errors="coerce")
 
     df = df.copy()
     df["DATA"] = parsed
@@ -124,7 +124,8 @@ def _raw_manta_arealva() -> pd.DataFrame:
         _raw["are"] = pd.DataFrame()
         return _raw["are"]
     df.columns = df.columns.str.strip().str.upper()
-    df = _parse_datas(df)
+    # Planilha Manta Arealva usa formato americano M/D/AAAA (ex.: "1/7/2026" = 7 de janeiro)
+    df = _parse_datas(df, dayfirst=False)
     if not df.empty:
         quant_col   = _find_col(df, "QUANTIDADE")
         estacao_col = _find_col(df, "ESTA", "CORTE")
@@ -232,7 +233,8 @@ def _raw_lencol_arealva() -> pd.DataFrame:
     df = df.iloc[:, :11].copy()
     df.columns = ["DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
                   "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS"]
-    df = _parse_datas(df)
+    # Planilha Lençol Arealva usa formato americano M/D/AAAA (ex.: "1/7/2026" = 7 de janeiro)
+    df = _parse_datas(df, dayfirst=False)
 
     def _parse_brl(s):
         try:

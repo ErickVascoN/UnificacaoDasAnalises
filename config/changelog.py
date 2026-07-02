@@ -6,6 +6,19 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "02/07/2026",
+        "tag": "correção",
+        "title": "Corrigido bug de data no relatório diário de corte (Manta Arealva e Lençol Arealva)",
+        "description": (
+            "scripts/relatorio_diario_corte.py: as planilhas Manta Arealva e Lençol Arealva usam formato "
+            "americano M/D/AAAA, mas eram parseadas com dayfirst=True (formato brasileiro), invertendo dia/mês "
+            "em datas ambíguas (ex.: '1/7/2026' = 7 de janeiro era lido como 1º de julho). Isso fazia o relatório "
+            "puxar cortes de um dia errado (ex.: EDILSON/ERICK aparecendo em 01/07/2026 quando na verdade cortou "
+            "em 07/01/2026). _parse_datas agora recebe dayfirst=False para essas duas planilhas; Manta Iacanga "
+            "permanece dayfirst=True (formato brasileiro DD/MM/AA confirmado)."
+        ),
+    },
+    {
         "date": "01/07/2026",
         "tag": "melhoria",
         "title": "Meta ponderada por produto+cliente para ZANATTA e suporte a colunas METAS 2/3 nomeadas",

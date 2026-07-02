@@ -52,11 +52,10 @@ st.set_page_config(
 )
 
 st.markdown(get_global_ui_css(), unsafe_allow_html=True)
+render_home_button()  # sempre visível, mesmo sem login
 
 if st.session_state.get("auth_nivel") not in ("usuario", "admin"):
     st.error("🔒 Acesso restrito. Faça login na página inicial.")
-    if st.button("← Voltar"):
-        st.switch_page("app.py")
     st.stop()
 
 IS_ADMIN = st.session_state.get("auth_nivel") == "admin"
@@ -880,7 +879,6 @@ def main():
     )
     meses_labels = {d: f"{_MESES_PT_LABEL.get(d.month, d.month)}/{d.year}" for d in meses_disponiveis}
 
-    render_home_button()
     with st.sidebar:
         st.markdown("### Filtros")
         mes_sel = st.selectbox(
