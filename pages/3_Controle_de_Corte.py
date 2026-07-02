@@ -853,16 +853,21 @@ def load_corte_lencol() -> pd.DataFrame:
             st.error("❌ Não foi possível baixar dados da planilha de lençol: DataFrame vazio")
             raise ConnectionError("Lençol loader retornou DataFrame vazio")
         
-        # Garante colunas esperadas
-        expected_cols = [
+        # Garante colunas obrigatórias. RETALHO_KG e OBS são opcionais — a planilha
+        # pode ficar sem essas colunas por período (ex.: removidas/renomeadas) sem
+        # que isso deva derrubar a página inteira.
+        obrigatorias = [
             "DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
-            "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS",
+            "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER",
         ]
-        missing = [c for c in expected_cols if c not in df.columns]
+        missing = [c for c in obrigatorias if c not in df.columns]
         if missing:
             st.error(f"❌ Colunas faltando: {missing}")
             raise ValueError(f"Colunas esperadas faltando: {missing}")
-        
+        for opcional in ("RETALHO_KG", "OBS"):
+            if opcional not in df.columns:
+                df[opcional] = "" if opcional == "OBS" else 0.0
+
         # DATA já vem como datetime do loader, mas normaliza para ter certeza
         df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
         before_count = len(df)

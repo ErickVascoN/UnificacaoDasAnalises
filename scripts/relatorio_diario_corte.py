@@ -229,16 +229,45 @@ def _raw_lencol_arealva() -> pd.DataFrame:
             header_row = i
             break
 
-    df = pd.read_csv(io.StringIO(texto), skiprows=header_row, header=0, dtype=str)
-    df = df.iloc[:, :11].copy()
-    df.columns = ["DATA", "PRESTADOR", "OP", "CATEGORIA", "EMPRESA",
-                  "TECIDO", "VALOR_PECA", "QUANT", "VALOR_RECEBER", "RETALHO_KG", "OBS"]
+    df_raw = pd.read_csv(io.StringIO(texto), skiprows=header_row, header=0, dtype=str)
+
+    # Mapeia colunas pelo NOME do cabeçalho (não por posição fixa). A planilha já
+    # mudou de estrutura no passado (ex.: coluna "RETALHO" removida), o que
+    # desalinhava tudo quando o código assumia índices fixos.
+    data_col     = _find_col(df_raw, "DATA")
+    prest_col    = _find_col(df_raw, "PRESTADOR")
+    op_col       = _find_col_exact(df_raw, "OP")
+    cat_col      = _find_col(df_raw, "CATEGORIA")
+    emp_col      = _find_col(df_raw, "EMPRESA") or _find_col(df_raw, "EMPESA")
+    tecido_col   = _find_col(df_raw, "TECIDO")
+    valor_pc_col = _find_col(df_raw, "R$", "PE")
+    quant_col    = _find_col_exact(df_raw, "QUANT")
+    valor_rc_col = _find_col(df_raw, "RECEBER")
+    retalho_col  = _find_col(df_raw, "RETALHO")
+    obs_col      = _find_col(df_raw, "OBSERVA")
+
+    df = pd.DataFrame({
+        "DATA":          _str_col(df_raw, data_col),
+        "PRESTADOR":     _str_col(df_raw, prest_col),
+        "OP":            _str_col(df_raw, op_col),
+        "CATEGORIA":     _str_col(df_raw, cat_col),
+        "EMPRESA":       _str_col(df_raw, emp_col),
+        "TECIDO":        _str_col(df_raw, tecido_col),
+        "VALOR_PECA":    _str_col(df_raw, valor_pc_col),
+        "QUANT":         _str_col(df_raw, quant_col),
+        "VALOR_RECEBER": _str_col(df_raw, valor_rc_col),
+        "RETALHO_KG":    _str_col(df_raw, retalho_col),
+        "OBS":           _str_col(df_raw, obs_col),
+    })
     # Planilha Lençol Arealva usa formato americano M/D/AAAA (ex.: "1/7/2026" = 7 de janeiro)
     df = _parse_datas(df, dayfirst=False)
 
     def _parse_brl(s):
+        s = str(s).strip()
+        if not s or s.lower() in ("nan", "none"):
+            return 0.0
         try:
-            return float(str(s).strip().replace("R$", "").replace(".", "").replace(",", "."))
+            return float(s.replace("R$", "").replace(".", "").replace(",", "."))
         except Exception:
             return 0.0
 
@@ -249,7 +278,7 @@ def _raw_lencol_arealva() -> pd.DataFrame:
         df["RETALHO_KG"]    = df["RETALHO_KG"].apply(_parse_brl)
         invalidos = {"", "NAN", "NONE", "N/A", "NAO", "NAO INFORMADO"}
         df = df[~df["PRESTADOR"].str.strip().str.upper().isin(invalidos)]
-        df["OP"]        = df["OP"].fillna("SEM OP").astype(str).str.strip()
+        df["OP"]        = df["OP"].replace("", "SEM OP").astype(str).str.strip()
         df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip()
         df["EMPRESA"]   = df["EMPRESA"].astype(str).str.strip().str.upper()
         df["TECIDO"]    = df["TECIDO"].astype(str).str.strip()
