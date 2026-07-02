@@ -8,6 +8,18 @@ CHANGELOG = [
     {
         "date": "02/07/2026",
         "tag": "correção",
+        "title": "Corrigido travamento do Controle de Corte (Lençol) e desalinhamento de colunas no relatório de email",
+        "description": (
+            "A planilha Lençol Arealva removeu a coluna RETALHO, o que travava a página "
+            "3_Controle_de_Corte.py (exigia essa coluna) e desalinhava scripts/relatorio_diario_corte.py, "
+            "que lia colunas por posição fixa — OBSERVAÇÕES virava 'Retalho' e a coluna OBS real ficava "
+            "sempre vazia. RETALHO_KG/OBS agora são opcionais na página; o script de relatório passou a "
+            "mapear colunas pelo nome do cabeçalho, resistindo a mudanças de estrutura na planilha."
+        ),
+    },
+    {
+        "date": "02/07/2026",
+        "tag": "correção",
         "title": "Corrigido bug de data no relatório diário de corte (Manta Arealva e Lençol Arealva)",
         "description": (
             "scripts/relatorio_diario_corte.py: as planilhas Manta Arealva e Lençol Arealva usam formato "
