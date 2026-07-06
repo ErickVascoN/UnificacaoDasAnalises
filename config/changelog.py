@@ -6,6 +6,243 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "05/07/2026",
+        "tag": "correção",
+        "title": "Análises da Previsão de Cargas ficavam zeradas ao filtrar poucos meses",
+        "description": (
+            "pages/8_Previsao_Cargas.py: os gráficos por cliente, por local de carregamento, por tipo de "
+            "veículo, timeline, ocorrências (cancel./adiadas) e o mapa de calor por dia da semana somavam "
+            "a coluna PREVISAO — que é zerada linha a linha nos meses em que a planilha já tem um total "
+            "previsto oficial (pra não contar em dobro no total mensal). Com todos os meses selecionados, "
+            "algum mês em andamento sem total oficial ainda tinha PREVISAO preenchida e mascarava o "
+            "problema; ao filtrar só meses já concluídos (todos com total oficial), as quebras ficavam "
+            "totalmente vazias. Trocado para VALOR_FRETE (frete individual, nunca zerado) nessas quebras — "
+            "mesmo padrão que a Evolução Semanal já usava. O gráfico de % Aderência por Mês tinha um bug "
+            "à parte: excluía o registro CARGO_REAL (onde mora o previsto oficial) do cálculo, zerando a "
+            "previsão de qualquer mês oficial — corrigido para usar o mesmo total já validado no gráfico "
+            "mensal acima."
+        ),
+    },
+    {
+        "date": "05/07/2026",
+        "tag": "melhoria",
+        "title": "Filtro de Produto na Carteira de Pedidos agora agrupa por subcategoria",
+        "description": (
+            "pages/9_Carteira_de_Pedidos.py: o filtro de Produto (adicionado antes nesta mesma sessão) "
+            "listava as 862 descrições exatas da planilha, uma por tamanho/cor (ex.: 'COB. DAY BY DAY "
+            "ROLINHO SORT. CASAL 1,80MX2,20M' e '...QUEEN 2,20MX2,40M' apareciam como 2 produtos "
+            "diferentes). Adicionada _subcategoria() em pages/9_Carteira_de_Pedidos.py, que remove "
+            "tamanho/dimensão/cor/qualificadores (SORTIDO, LISO etc.) do texto pra agrupar variações do "
+            "mesmo produto-base — a lista caiu de 862 para 495 opções (~43%). O filtro agora seleciona "
+            "pela subcategoria; as tabelas e gráficos de detalhe continuam quebrando por produto "
+            "específico (DESCRICAO) dentro do que foi selecionado. É uma heurística de texto — typos e "
+            "cores não catalogadas podem deixar algum resíduo (ex.: 'CORTEX' vs 'CORTTEX')."
+        ),
+    },
+    {
+        "date": "04/07/2026",
+        "tag": "correção",
+        "title": "Meta digitada na coluna principal (METAS) era ignorada quando a linha já usava colunas extras",
+        "description": (
+            "utils/metas_manager.py (load_metas_from_faccoes_sheet): quando uma facção tem metas por "
+            "cliente em colunas extras (ex.: GGTTEX CORTINA com 'BURDAYS 500' na METAS 2, 'SULTAN 150' na "
+            "METAS 3), o parser só varria essas colunas extras em busca do padrão 'NOME NÚMERO' — nunca a "
+            "coluna METAS principal. Ao adicionar 'DECOR 700' direto na coluna METAS (em vez de abrir mais "
+            "uma coluna extra), o valor era descartado silenciosamente. Corrigido: a coluna METAS principal "
+            "agora também entra na varredura desse padrão. Também correção da ponderação de meta por "
+            "cliente (utils/faccoes_metas_calc.py) — um cliente sem meta cadastrada dividia a meta "
+            "ponderada da facção pela metade sem contribuir nada de volta; agora só pondera pelos clientes "
+            "que têm meta. O relatório também passou a apontar o cliente exato quando falta meta "
+            "('Meta possivelmente incompleta: X — falta meta de CLIENTE'), em vez de um aviso genérico."
+        ),
+    },
+    {
+        "date": "04/07/2026",
+        "tag": "melhoria",
+        "title": "Gráficos do relatório de Facções nunca cortam mais facções de fora",
+        "description": (
+            "utils/pdf_report.py: os gráficos 'Produzido vs Meta Mês por Facção' e 'Mix de Produtos por "
+            "Facção' limitavam a top 20 e top 10 facções por volume, respectivamente — as menores ficavam "
+            "de fora sem aviso. A diretoria pediu para nunca cortar facções das análises; os dois gráficos "
+            "agora incluem todas (o parâmetro top_n virou opcional, None = todas)."
+        ),
+    },
+    {
+        "date": "04/07/2026",
+        "tag": "correção",
+        "title": "Produção da MEGA (CARLINE) estava sendo contada como 'MEGA PREVEN FILIAL' (aba renomeada)",
+        "description": (
+            "config/settings.py (FACCOES_ABAS): a aba de gid 524251509 foi renomeada na planilha de "
+            "'MEGA PREVEN FILIAL' para 'MEGA (CARLINE)' — mas o mapeamento gid→facção continuava com o "
+            "rótulo antigo, que não corresponde a nenhuma facção real nem meta configurada. A produção "
+            "real da Carline (15.100 peças em junho) aparecia como 'MEGA PREVEN FILIAL / sem meta'. "
+            "Corrigido o rótulo para 'MEGA (CARLINE)', que já tem meta configurada na planilha (700 pç/dia "
+            "= 15.400/mês) — agora bate 98,1%. Conferido também o mapeamento de todas as outras abas da "
+            "planilha de facções contra os nomes atuais (via metadata htmlview da planilha); as únicas "
+            "outras divergências (ZANATTA→GIATTEX, PREVITTEX FILIAL→MEGA PREVEN MATRIZ) já haviam sido "
+            "corrigidas via alias nesta mesma sessão. A aba 'LITEX' dentro dessa planilha (gid 354291436) "
+            "está vazia — não é usada, e não representa um gap de dados."
+        ),
+    },
+    {
+        "date": "04/07/2026",
+        "tag": "correção",
+        "title": "ZANATTA/PREVITTEX FILIAL apareciam 'sem meta' — facções foram renomeadas e faltava o alias",
+        "description": (
+            "config/settings.py (FACCOES_FACCAO_ALIAS): confirmado com o usuário que ZANATTA virou "
+            "GIATTEX e PREVITTEX FILIAL virou MEGA PREVEN MATRIZ — a planilha de metas já usa os nomes "
+            "novos, mas a planilha de produção ainda lança pelos nomes antigos. Sem o alias, a produção "
+            "real (ZANATTA: 342.861 peças em junho, maior produtor do mês) ficava 'sem meta configurada' "
+            "e o nome novo (GIATTEX) aparecia com 0 produzido — as duas linhas do relatório estavam "
+            "descrevendo a mesma facção sem se conectar. Adicionados 'ZANATTA'→'GIATTEX' e "
+            "'PREVITTEX FILIAL'→'MEGA PREVEN MATRIZ'; agora batem 134,2% e 101,4% da meta, respectivamente."
+        ),
+    },
+    {
+        "date": "04/07/2026",
+        "tag": "correção",
+        "title": "Aliases de facção desatualizados faziam a tabela Facção x Meta mostrar nomes errados",
+        "description": (
+            "config/settings.py (FACCOES_FACCAO_ALIAS): removidos 2 aliases obsoletos — "
+            "'RUTE TALITA E TAMARA' → 'RUTE E TALITA' reescrevia o nome atual e correto da guia de "
+            "metas para um nome antigo que não existe em nenhum mês de produção (fazia uma facção "
+            "'fantasma' aparecer, e a real ficar sem meta vinculada); 'LUIZ CARLOS (ZARO)' → "
+            "'LUIS CARLOS' estava morto dos dois lados. utils/metas_manager.py: a tabela secundária "
+            "(estilo ZANATTA/GIATTEX) tinha uma linha duplicada na planilha (GIATTEX/KIT COLCHA/BURDAYS "
+            "repetida duas vezes com o mesmo valor), contando a meta em dobro — adicionada deduplicação "
+            "por (facção, produto, cliente, meta). utils/cache_manager.py: adicionados headers "
+            "Cache-Control/Pragma no download para reduzir o CDN do Google servir uma resposta em cache "
+            "logo após uma edição recente na planilha."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Facções mostra até quando cada facção tem dado lançado",
+        "description": (
+            "utils/faccoes_metas_calc.py (calcular_meta_faccoes) e utils/pdf_report.py "
+            "(gerar_pdf_faccoes): a tabela Facção x Meta ganhou a coluna 'Dados até' (último dia com "
+            "produção lançada por facção) e um aviso listando quem está atrasado em relação às demais "
+            "(ex.: SUZANA/FRANCIANE/RONILDA sem lançamento desde 17/06, 13 dias). A referência de atraso "
+            "é a facção mais atualizada do grupo, não o fim do período — evita acusar atraso por causa de "
+            "fim de semana/feriado em que ninguém produz. Sem isso, uma facção que simplesmente não mandou "
+            "a planilha ainda aparecia como se tivesse produzido pouco, confundindo dado ausente com "
+            "desempenho fraco."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório PDF de Facções ganhou seção 'Facção x Meta' logo no início, com destaques",
+        "description": (
+            "utils/pdf_report.py (gerar_pdf_faccoes): o PDF não tinha uma tabela resumo Facção x Meta — "
+            "só uma tabela granular por Produto/Empresa/Facção e um gráfico sem contexto de meta. "
+            "Adicionada, logo após o Resumo Executivo, a tabela 'Facção x Meta' (Produzido, % do Total, "
+            "Meta Mês, % Meta, Restante) com cores por status, gráfico comparativo Produzido vs Meta por "
+            "facção, bloco de Destaques (melhor/pior desempenho) e um novo gráfico de Mix de Produtos por "
+            "Facção. A lógica de cálculo de meta ponderada por facção (produto+cliente, dias reais de "
+            "produção) foi extraída de pages/5_Producao_Faccoes.py para utils/faccoes_metas_calc.py, "
+            "reutilizada também no relatório de pages/10_Relatorios.py — antes o relatório usava uma conta "
+            "mais simples (e com o bug de meta_mes=0 corrigido nesta mesma sessão), então divergia do "
+            "dashboard ao vivo. Corrigidos 3 aliases de facção faltantes em FACCOES_FACCAO_ALIAS "
+            "(GGTTEX (RUTE)/GGTTEX (CORTINA)/MEGA (BOCA) não batiam com a grafia da produção, fazendo a "
+            "meta aparecer 'zerada' numa linha fantasma enquanto a produção real ficava sem meta "
+            "vinculada). Destaques agora ignora facções com % da meta > 200% (sinal de meta mal "
+            "calibrada) e as lista à parte como 'meta possivelmente desatualizada'."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "Meta mensal de facções vinha sempre zerada (afetava todo o dashboard e relatórios)",
+        "description": (
+            "utils/metas_manager.py (_make_entry, usada por load_metas_from_faccoes_sheet — fonte "
+            "primária de metas): a coluna 'METAS' da planilha de metas é uma meta diária, mas o código "
+            "zerava meta_mes incondicionalmente (meta_mes: 0) em vez de calculá-la a partir da meta "
+            "diária. Como essa é a fonte de maior prioridade em load_metas(), isso zerava a meta mensal "
+            "de TODAS as 35 facções cadastradas, não só uma. Corrigido para meta_mes = meta_dia × 22 "
+            "dias úteis (consistente com os valores hardcoded de config/settings.py, onde meta_mes/22 = "
+            "meta_semana/5 para as facções antigas)."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "PDF de Corte de Lençol ignorava o período selecionado e zerava Jogos/Fundos",
+        "description": (
+            "10_Relatorios.py: o botão 'Gerar Lençol' passava _dados_lencol() inteiro (histórico "
+            "completo desde 29/12/2025) para o PDF sem filtrar pela data inicial/final escolhida — o "
+            "cabeçalho mostrava o período certo, mas os números (peças, dias trabalhados, prestadores) "
+            "eram do acumulado geral, não do mês selecionado. Além disso, caseamento_df e totais_jf eram "
+            "passados vazios/None de forma fixa, então os KPIs 'Jogos Duplos' e 'Fundos de Jogo' do PDF "
+            "sempre apareciam zerados. Corrigido o filtro de data e adicionado o cálculo real de "
+            "caseamento. A lógica de classificação jogo×fundo foi extraída para utils/lencol_caseamento.py "
+            "e agora é compartilhada com 3_Controle_de_Corte.py, para as duas telas não divergirem."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "Realizado por semana da Previsão de Cargas agora bate exatamente com o total oficial do mês",
+        "description": (
+            "8_Previsao_Cargas.py e 10_Relatorios.py: quando 2+ cargas do mesmo cliente caíam no mesmo "
+            "dia, cada uma herdava o valor cheio do Realizado daquele dia/cliente (a planilha só registra "
+            "1 valor por dia/cliente, não por carga) — isso contava o mesmo Realizado em dobro/triplo e "
+            "inflava a Aderência para mais de 150% em várias semanas. Agora o valor do dia é dividido "
+            "entre as cargas que compartilham a mesma chave. Além disso, nem todo lançamento do painel "
+            "diário casa por nome com uma carga (grafias diferentes, células com vários clientes somados), "
+            "então a soma ficava até 19% abaixo do Realizado oficial da planilha — foi adicionada uma "
+            "recalibração proporcional para que a soma de cada mês bata exatamente (diferença R$ 0,00 "
+            "testada nos 6 meses) com o Realizado oficial já usado no gráfico mensal e nos KPIs da página. "
+            "Adicionado aviso na tela deixando claro que a distribuição semanal é uma estimativa, mas o "
+            "total mensal é exato."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "Corrigido Realizado zerado em Jan/Fev/Mar/Abr/Maio na Previsão de Cargas",
+        "description": (
+            "8_Previsao_Cargas.py e 10_Relatorios.py: _extract_day_realized assumia que o painel "
+            "diário de realizado sempre começava na coluna 8, mas essa posição muda por mês na planilha "
+            "(col 8 em Junho, col 11 em Abril, col 9 em Maio) — nos outros meses o cabeçalho 'DD-mmm.' "
+            "nunca era encontrado nessa coluna fixa e o Realizado ficava sempre zerado. Janeiro nem usa "
+            "blocos de cabeçalho de dia — cada linha de cliente já carrega sua própria data na linha de "
+            "carga. Adicionada detecção dinâmica da coluna (_find_painel_col) e um fallback para o "
+            "formato de Janeiro (_find_painel_col_rotulo). Agora os 6 meses retornam Realizado real."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "Corrigido Realizado fantasma por dia/cliente na Previsão de Cargas",
+        "description": (
+            "8_Previsao_Cargas.py: _extract_day_realized lia a coluna 'diferença' (row[11]) do "
+            "painel-resumo diário em vez da coluna 'realizado' (row[10]) — e o parser de número remove "
+            "o sinal de '-', então uma diferença negativa (dia sem realizado ainda, ex.: 29/06 e 30/06) "
+            "virava um 'realizado' fictício igual ao previsto. Isso inflava REALIZADO_DIA em dias/clientes "
+            "sem lançamento e distorcia a coluna Diferença da tabela 'Detalhe de Itens' e o novo gráfico/"
+            "tabela semanal. Corrigido para ler row[10] (realizado de verdade). Havia uma cópia idêntica "
+            "dessa função em 10_Relatorios.py (_extract_day_realized_cg, usada pelo PDF de Previsão de "
+            "Cargas) com o mesmo bug — corrigida também."
+        ),
+    },
+    {
+        "date": "03/07/2026",
+        "tag": "correção",
+        "title": "Corrigido buraco em Janeiro/Maio/Junho na quebra semanal da Previsão de Cargas",
+        "description": (
+            "8_Previsao_Cargas.py: o gráfico e a nova tabela 'Detalhamento por Semana' agrupavam por "
+            "PREVISAO, que é zerada por carga individual nos meses em que a planilha já tem um previsto "
+            "oficial no painel-resumo (Janeiro, Maio, Junho) — para evitar dobrar o total mensal. Isso "
+            "apagava esses meses inteiros da visão semanal, sobrando só Fevereiro-Abril. A agregação semanal "
+            "agora usa VALOR_FRETE (valor do frete por carga, nunca zerado), cobrindo todos os meses. O "
+            "rótulo de cada semana também deixou de usar número de semana ISO (que corta no meio do mês, "
+            "gerando uma '5ª semana' artificial) e passou a usar o intervalo de datas do cabeçalho 'SEMANA "
+            "DD/MM A DD/MM' da própria planilha."
+        ),
+    },
+    {
         "date": "02/07/2026",
         "tag": "correção",
         "title": "Corrigido travamento do Controle de Corte (Lençol) e desalinhamento de colunas no relatório de email",

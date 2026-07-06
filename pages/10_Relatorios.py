@@ -11,6 +11,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 from calendar import monthrange
+from collections import Counter
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -37,11 +38,13 @@ from config.settings import (
     FACCOES_FACCAO_ALIAS,
 )
 
+from utils.lencol_caseamento import lencol_tipos_tams as _lencol_tipos_tams, lencol_caseamento
 from utils.pdf_report import (
     gerar_pdf_corte_consolidado,
     gerar_pdf_arealva_manta,
     gerar_pdf_iacanga_manta,
     gerar_pdf_lencol,
+    gerar_pdf_itaju,
     gerar_pdf_producao_geral,
     gerar_pdf_faccoes,
     gerar_pdf_previsao_cargas,
@@ -553,23 +556,64 @@ def _find_resumo_cg(rows: list[list[str]]) -> tuple[float, float]:
             if av > best: best = av
     return (0.0, best)
 
-def _extract_day_realized_cg(rows: list[list[str]], mes_num: int, ano: int) -> dict:
-    day_real = {}
-    current_date = None
+def _find_painel_col_cg(rows: list[list[str]]) -> int | None:
+    """Coluna do painel diário de realizado ("DD-mmm.") — varia por mês na planilha."""
+    contagem: Counter = Counter()
     for row in rows:
-        if len(row) <= 8: continue
-        cell8 = str(row[8]).strip()
-        m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell8.lower())
-        if m:
-            try: current_date = date(ano, mes_num, int(m.group(1)))
-            except ValueError: current_date = None
-            continue
-        if not cell8 or 'R$' in cell8: continue
-        if current_date is None or len(row) <= 11: continue
-        cliente_raw = cell8.strip().upper()
-        v = _parse_num_cg(str(row[11]).strip())
-        if v and v > 0 and cliente_raw:
-            key = (current_date, _norm_text(cliente_raw))
+        for j, cell in enumerate(row):
+            if re.match(r'^\s*\d{1,2}\s*[-\.]\s*[a-z]{3}', str(cell).strip().lower()):
+                contagem[j] += 1
+    if not contagem:
+        return None
+    return contagem.most_common(1)[0][0]
+
+
+def _find_painel_col_rotulo_cg(rows: list[list[str]]) -> int | None:
+    """Fallback para meses sem cabeçalho 'DD-mmm.' repetido (ex.: Janeiro) — usa o
+    rótulo "REALIZADO" na primeira linha; o nome do cliente fica 2 colunas antes."""
+    if not rows:
+        return None
+    for j, cell in enumerate(rows[0]):
+        if _norm_text(cell) == "REALIZADO" and j >= 2:
+            return j - 2
+    return None
+
+
+def _extract_day_realized_cg(rows: list[list[str]], mes_num: int, ano: int) -> dict:
+    day_real: dict = {}
+    col = _find_painel_col_cg(rows)
+
+    if col is not None:
+        current_date = None
+        for row in rows:
+            if len(row) <= col: continue
+            cell_base = str(row[col]).strip()
+            m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell_base.lower())
+            if m:
+                try: current_date = date(ano, mes_num, int(m.group(1)))
+                except ValueError: current_date = None
+                continue
+            if not cell_base or 'R$' in cell_base: continue
+            if current_date is None or len(row) <= col + 2: continue
+            cliente_raw = cell_base.strip().upper()
+            v = _parse_num_cg(str(row[col + 2]).strip())
+            if v and v > 0 and cliente_raw:
+                key = (current_date, _norm_text(cliente_raw))
+                day_real[key] = day_real.get(key, 0.0) + v
+        return day_real
+
+    col = _find_painel_col_rotulo_cg(rows)
+    if col is None:
+        return {}
+    for row in rows:
+        if len(row) <= col + 2: continue
+        cliente_raw = str(row[col]).strip().upper()
+        if not cliente_raw or 'R$' in cliente_raw: continue
+        row_date = _parse_date_cg(row[1]) if len(row) > 1 else None
+        if row_date is None: continue
+        v = _parse_num_cg(str(row[col + 2]).strip())
+        if v and v > 0:
+            key = (row_date, _norm_text(cliente_raw))
             day_real[key] = day_real.get(key, 0.0) + v
     return day_real
 
@@ -657,14 +701,34 @@ def _parse_month_cargas(rows: list[list[str]], mes_nome: str, mes_num: int, ano:
             "CLIENTE":      cliente,
             "PREVISAO":     0.0 if previsto_mensal > 0 else valor_frete,
             "REALIZADO":    0.0,
-            "REALIZADO_DIA": (
-                day_realized.get((data_carga, _norm_text(destino)), 0.0)
-                or day_realized.get((data_carga, _norm_text(cliente)), 0.0)
+            # Painel direito registra 1 realizado por (data, cliente) — não por carga
+            # individual; guarda a chave e divide o valor logo abaixo entre todas as
+            # cargas do mesmo cliente/dia para não contar em dobro no total.
+            "_REAL_KEY": (
+                (data_carga, _norm_text(destino)) if (data_carga, _norm_text(destino)) in day_realized
+                else (data_carga, _norm_text(cliente)) if (data_carga, _norm_text(cliente)) in day_realized
+                else None
             ),
+            "REALIZADO_DIA": 0.0,
             "DIFERENCA":    0.0,
             "OBS":          obs_raw,
             "STATUS":       status,
         })
+
+    _contagem_chave = Counter(r["_REAL_KEY"] for r in records if r["_REAL_KEY"] is not None)
+    for r in records:
+        _chave = r.pop("_REAL_KEY", None)
+        if _chave is not None:
+            r["REALIZADO_DIA"] = day_realized[_chave] / _contagem_chave[_chave]
+
+    # Reconcilia proporcionalmente com o Realizado oficial da linha-resumo (nem todo
+    # lançamento do painel diário casa por nome com uma carga) — mesma lógica de
+    # 8_Previsao_Cargas.py, para o relatório não divergir do dashboard.
+    _soma_batida = sum(r["REALIZADO_DIA"] for r in records)
+    if _soma_batida > 0 and realizado_mensal > 0:
+        _fator = realizado_mensal / _soma_batida
+        for r in records:
+            r["REALIZADO_DIA"] *= _fator
 
     if realizado_mensal > 0 or previsto_mensal > 0:
         proxy = _last_cargo_date or date(ano, mes_num, 28)
@@ -1042,14 +1106,31 @@ with tab_corte:
         if st.button("📄 Gerar Lençol", key="btn_ln", use_container_width=True):
             with st.spinner("Gerando PDF…"):
                 try:
-                    _df_ln = _dados_lencol()
+                    _df_ln_full = _dados_lencol()
+                    _df_ln = _df_ln_full[
+                        (_df_ln_full["DATA"].dt.date >= _ini_corte) &
+                        (_df_ln_full["DATA"].dt.date <= _fim_corte)
+                    ].copy()
+                    # Caseamento Jogo Duplo × Fundo (mesma lógica do dashboard, via
+                    # utils/lencol_caseamento) — sem isso os KPIs de Jogos/Fundos
+                    # do PDF ficam sempre zerados.
+                    _tipos_jf_ln, _ = _lencol_tipos_tams(_df_ln)
+                    _df_ln_jf = _df_ln.assign(_TIPO_JF=_tipos_jf_ln)
+                    _total_pecas_ln = int(_df_ln["QUANT"].sum())
+                    _total_fundos_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "FUNDO", "QUANT"].sum())
+                    _total_jogos_duplo_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "JOGO_DUPLO", "QUANT"].sum())
+                    _casea_ln = lencol_caseamento(_df_ln)
                     _bytes_ln = gerar_pdf_lencol(
                         df=_df_ln,
                         ini=_ini_corte,
                         fim=_fim_corte,
                         filtros_texto="",
-                        caseamento_df=pd.DataFrame(),
-                        totais_jf=None,
+                        caseamento_df=_casea_ln,
+                        totais_jf={
+                            "total_fundos": _total_fundos_ln,
+                            "total_sem_fundo": _total_pecas_ln - _total_fundos_ln,
+                            "total_jogos_duplo": _total_jogos_duplo_ln,
+                        },
                     )
                     st.session_state["pdf_ln_bytes"] = _bytes_ln
                     st.session_state["pdf_ln_nome"] = nome_arquivo_pdf("lencol", _ini_corte, _fim_corte)
@@ -1060,6 +1141,40 @@ with tab_corte:
             st.download_button("⬇️ Baixar Lençol PDF", data=st.session_state["pdf_ln_bytes"],
                 file_name=st.session_state.get("pdf_ln_nome", "lencol.pdf"),
                 mime="application/pdf", key="dl_ln", use_container_width=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 📄 Itaju (Ponto Palito)")
+        st.caption("Relatório detalhado do corte Itaju")
+        _obs_it = st.text_area(
+            "OBS (opcional, aparece em destaque no topo do PDF)",
+            value="",
+            placeholder="Ex.: Estão sem OS liberada para corte — no momento a equipe está apenas "
+                         "fazendo aproveitamento de sobras, aguardando a liberação dos próximos lotes.",
+            key="obs_itaju",
+        )
+        if st.button("📄 Gerar Itaju", key="btn_it", use_container_width=True):
+            with st.spinner("Gerando PDF…"):
+                try:
+                    _df_it_full = _dados_itaju()
+                    _df_it = _df_it_full[
+                        (_df_it_full["DATA"].dt.date >= _ini_corte) & (_df_it_full["DATA"].dt.date <= _fim_corte)
+                    ] if not _df_it_full.empty else _df_it_full
+                    _bytes_it = gerar_pdf_itaju(
+                        df=_df_it,
+                        ini=_ini_corte,
+                        fim=_fim_corte,
+                        filtros_texto="",
+                        obs_texto=_obs_it.strip(),
+                    )
+                    st.session_state["pdf_it_bytes"] = _bytes_it
+                    st.session_state["pdf_it_nome"] = nome_arquivo_pdf("itaju", _ini_corte, _fim_corte)
+                    st.success("PDF gerado!")
+                except Exception as _e:
+                    st.error(f"Erro: {_e}")
+        if st.session_state.get("pdf_it_bytes"):
+            st.download_button("⬇️ Baixar Itaju PDF", data=st.session_state["pdf_it_bytes"],
+                file_name=st.session_state.get("pdf_it_nome", "itaju.pdf"),
+                mime="application/pdf", key="dl_it", use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1136,8 +1251,15 @@ with tab_fac:
                         _mes_sel = _ini_fac.month
                         _ano_sel = _ini_fac.year
                         _du = _dias_uteis(_ano_sel, _mes_sel)
-                        _meta_mes_total = int(_goals_fac["META_MES"].sum()) if not _goals_fac.empty else 0
-                        _meta_dia_total = _meta_mes_total / _du if _du > 0 else 0
+
+                        # Meta por facção (ponderada por produto/cliente + dias reais de
+                        # produção) — mesma conta do dashboard ao vivo (pages/5_Producao_Faccoes.py),
+                        # via utils/faccoes_metas_calc, para o relatório nunca divergir da tela.
+                        from utils.faccoes_metas_calc import calcular_meta_faccoes
+                        _calc_fac = calcular_meta_faccoes(_df_mes_fac, _ano_sel, _mes_sel)
+                        _rank_df_fac = _calc_fac["rank_df"]
+                        _meta_mes_total = _calc_fac["meta_mes_total"]
+                        _meta_dia_total = _calc_fac["meta_dia_total"]
                         _total_mes = int(_df_mes_fac["QUANTIDADE"].sum())
 
                         _fim_ref = min(_today, _fim_fac)
@@ -1187,6 +1309,7 @@ with tab_fac:
                             data_ini=_ini_fac,
                             data_fim=_fim_fac,
                             filtros_texto="",
+                            rank_df=_rank_df_fac,
                         )
                         st.session_state["pdf_fac_bytes"] = _bytes_fac
                         st.session_state["pdf_fac_nome"] = f"relatorio_faccoes_{_ini_fac.strftime('%Y%m%d')}_{_fim_fac.strftime('%Y%m%d')}.pdf"

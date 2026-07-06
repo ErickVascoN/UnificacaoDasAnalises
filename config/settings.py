@@ -141,7 +141,11 @@ FACCOES_ABAS: dict[str, dict] = {
     "PREVITTEX FILIAL":  {"gid": "1921426222", "faccao": "PREVITTEX FILIAL"},
     "MEGA BARIRI":         {"gid": "1219460477", "faccao": "MEGA BARIRI"},
     "MEGA PREVEN (BOCA)":  {"gid": "431490653",  "faccao": "MEGA PREVEN (BOCA)"},
-    "MEGA PREVEN FILIAL":  {"gid": "524251509",  "faccao": "MEGA PREVEN FILIAL"},
+    # gid 524251509: aba renomeada na planilha de "MEGA PREVEN FILIAL" para
+    # "MEGA (CARLINE)" (confirmado com o usuário em 04/07/2026, via htmlview da
+    # planilha) — o rótulo antigo fazia a produção real da Carline ser contada
+    # como "MEGA PREVEN FILIAL" (que já nem existe mais como aba/facção).
+    "MEGA (CARLINE)":      {"gid": "524251509",  "faccao": "MEGA (CARLINE)"},
     # Litex — planilha separada; colunas com nomes diferentes (EMPRESA, TOTAL DE PEÇAS)
     "LITEX (ENFARDAMENTO)": {
         "sheet_id": "1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p",
@@ -205,11 +209,25 @@ FACCOES_FACCAO_ALIAS: dict[str, str] = {
     "RUTE ZANATTEX":          "GGTTEX RUTE",      # variante do mesmo nome
     "MEGA FILIAL":            "MEGA PREVEN FILIAL",   # nome na guia de metas → faccao da produção
     "BOCA":                   "MEGA PREVEN (BOCA)",   # variante curta
+    "MEGA (BOCA)":            "MEGA PREVEN (BOCA)",   # variante com prefixo MEGA na guia de metas
     "PREVITTEX":              "PREVITTEX MATRIZ",
+    "GGTTEX (RUTE)":          "GGTTEX RUTE",          # guia de metas usa parênteses; produção não
+    "GGTTEX (CORTINA)":       "GGTTEX CORTINA",       # idem
     # Quarterizadas — nome na guia de metas → nome na aba QUARTERIZADAS
-    "LUIZ CARLOS (ZARO)":     "LUIS CARLOS",
-    "RUTE TALITA E TAMARA":   "RUTE E TALITA",
+    # "LUIZ CARLOS (ZARO)": "LUIS CARLOS" removido em 04/07/2026 — nem origem nem
+    # destino aparecem em nenhum mês de produção; alias morto (ZARO (LUIS) é o
+    # nome real usado tanto na produção quanto na guia de metas atual).
+    # "RUTE TALITA E TAMARA": "RUTE E TALITA" removido em 04/07/2026 — reescrevia
+    # o nome atual e correto da guia de metas ("RUTE TALITA E TAMARA") para um
+    # nome antigo que não existe em nenhum mês de produção, fazendo a facção
+    # aparecer com o nome errado no relatório e a meta não bater com ninguém.
     "LETICIA (GIATTEX)":      "LETICIA",
+    # Facções renomeadas — a planilha de produção ainda lança pelo nome antigo,
+    # mas a guia de metas já foi atualizada para o nome novo (confirmado com o
+    # usuário em 04/07/2026). Sem isso, a produção real ficava "sem meta" e o
+    # nome novo aparecia com 0 produzido.
+    "ZANATTA":                "GIATTEX",          # Zanatta virou Giattex
+    "PREVITTEX FILIAL":       "MEGA PREVEN MATRIZ",  # Previttex Filial virou Mega Preven Matriz
 }
 
 # Metas de facções — guia dentro da planilha de facções (fonte primária)

@@ -321,6 +321,120 @@ def _chart_barras_h(
     return buf
 
 
+def _chart_faccao_vs_meta(rank_df: pd.DataFrame, top_n: int | None = None) -> io.BytesIO:
+    """Barras horizontais pareadas: Produzido vs Meta Mês, por facção.
+
+    Facções sem meta configurada (META_MES == 0) entram só com a barra de
+    produzido — não têm barra de meta para não sugerir uma meta inexistente.
+    top_n=None (padrão) inclui TODAS as facções — nunca cortar facções de fora.
+    """
+    df_top = rank_df.nlargest(top_n or len(rank_df), "QUANTIDADE")[["FACCAO", "QUANTIDADE", "META_MES"]]
+    df_top = df_top.sort_values("QUANTIDADE")
+    n = len(df_top)
+    fig, ax = plt.subplots(figsize=(8, max(3.5, n * 0.5)))
+    fig.patch.set_facecolor(MP_BG)
+    ax.set_facecolor(MP_BG)
+
+    y = list(range(n))
+    h = 0.36
+    bars_prod = ax.barh([i + h/2 for i in y], df_top["QUANTIDADE"], height=h,
+                        color=MP_BAR_OK, alpha=0.9, label="Produzido")
+    bars_meta = ax.barh([i - h/2 for i in y], df_top["META_MES"], height=h,
+                        color=MP_META, alpha=0.55, label="Meta Mês")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(df_top["FACCAO"].tolist(), fontsize=7.5, color=MP_TEXT)
+
+    max_v = max(df_top["QUANTIDADE"].max(), df_top["META_MES"].max(), 1)
+    for bar, v in zip(bars_prod, df_top["QUANTIDADE"]):
+        if v > 0:
+            ax.text(v + max_v * 0.01, bar.get_y() + bar.get_height() / 2., _fmt(v),
+                    va='center', fontsize=6.5, color=MP_TEXT, fontweight='bold')
+    for bar, v in zip(bars_meta, df_top["META_MES"]):
+        if v > 0:
+            ax.text(v + max_v * 0.01, bar.get_y() + bar.get_height() / 2., _fmt(v),
+                    va='center', fontsize=6.5, color=MP_TEXT)
+
+    ax.set_title("Produzido vs Meta Mês por Facção", fontsize=11, fontweight='bold', color=MP_TEXT, pad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt(x)))
+    ax.tick_params(colors=MP_TEXT, labelsize=7.5)
+    ax.grid(axis='x', color=MP_GRID, linewidth=0.7, alpha=0.8)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(MP_GRID)
+    ax.spines['bottom'].set_color(MP_GRID)
+    ax.set_xlim(right=max_v * 1.16)
+    leg = ax.legend(fontsize=8, framealpha=0.9, edgecolor=MP_GRID, loc='lower right')
+    for t in leg.get_texts():
+        t.set_color(MP_TEXT)
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def _chart_mix_produtos_faccao(
+    df_mes: pd.DataFrame, top_n_faccoes: int | None = None, top_n_produtos: int = 6,
+) -> io.BytesIO:
+    """Barras horizontais empilhadas: mix de produtos por facção.
+
+    top_n_faccoes=None (padrão) inclui TODAS as facções do período — a diretoria
+    pediu para nunca cortar facções de fora das análises.
+    """
+    paleta = ['#2AA89A', '#D4860A', '#1E8449', '#CB4335', '#5D6D7E',
+              '#AED6F1', '#7FB3D3', '#F0B27A']
+
+    fac_total = df_mes.groupby('FACCAO')['QUANTIDADE'].sum().sort_values(ascending=False)
+    faccoes_top = fac_total.head(top_n_faccoes or len(fac_total)).index.tolist()
+
+    prod_total = df_mes.groupby('PRODUTO')['QUANTIDADE'].sum().sort_values(ascending=False)
+    produtos_top = prod_total.head(top_n_produtos).index.tolist()
+
+    piv = (
+        df_mes[df_mes['FACCAO'].isin(faccoes_top)]
+        .assign(_PROD=lambda d: d['PRODUTO'].where(d['PRODUTO'].isin(produtos_top), 'OUTROS'))
+        .groupby(['FACCAO', '_PROD'])['QUANTIDADE'].sum()
+        .unstack(fill_value=0)
+    )
+    piv = piv.reindex(faccoes_top[::-1])
+    cols = [c for c in produtos_top if c in piv.columns] + (['OUTROS'] if 'OUTROS' in piv.columns else [])
+    piv = piv[cols]
+
+    n = len(piv)
+    fig, ax = plt.subplots(figsize=(9, max(3.5, n * 0.5)))
+    fig.patch.set_facecolor(MP_BG)
+    ax.set_facecolor(MP_BG)
+
+    left = pd.Series(0, index=piv.index, dtype=float)
+    for i, col in enumerate(piv.columns):
+        cor = paleta[i % len(paleta)]
+        ax.barh(piv.index, piv[col], left=left, height=0.6, color=cor, label=str(col)[:22])
+        left = left + piv[col]
+
+    ax.set_title("Mix de Produtos por Facção", fontsize=11, fontweight='bold', color=MP_TEXT, pad=10)
+    ax.tick_params(colors=MP_TEXT, labelsize=7.5)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: _fmt(x)))
+    ax.grid(axis='x', color=MP_GRID, linewidth=0.7, alpha=0.8)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(MP_GRID)
+    ax.spines['bottom'].set_color(MP_GRID)
+    leg = ax.legend(fontsize=7, framealpha=0.9, edgecolor=MP_GRID, loc='upper center',
+                    bbox_to_anchor=(0.5, -0.08), ncol=min(4, len(piv.columns)))
+    for t in leg.get_texts():
+        t.set_color(MP_TEXT)
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
 def _chart_lencol_prestador_valor(df_prest: pd.DataFrame) -> io.BytesIO:
     """Gráfico duplo: peças + valor por prestador."""
     df_s = df_prest.sort_values('Peças', ascending=True)
@@ -1244,6 +1358,156 @@ def gerar_pdf_iacanga_manta(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
         f'Iacanga · Mantas Giattex  ·  {gerado_em}',
         ParagraphStyle('ass_i', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — ITAJU (PONTO PALITO)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_itaju(
+    df: pd.DataFrame,
+    ini: date,
+    fim: date,
+    filtros_texto: str = '',
+    obs_texto: str = '',
+) -> bytes:
+    """
+    Gera o relatório PDF de fechamento do Corte Itaju (Ponto Palito).
+
+    Parameters
+    ----------
+    df            : DataFrame filtrado (DATA, OP, ESTACAO, COR, QUANTIDADE, TAMANHO, PRODUTO)
+    ini / fim     : período selecionado
+    filtros_texto : descrição textual dos filtros ativos
+    obs_texto     : observação livre exibida em destaque no topo do relatório
+                    (ex.: parada por falta de OS liberada para corte).
+    """
+    e = _estilos()
+    periodo_str = f"{ini.strftime('%d/%m/%Y')}  até  {fim.strftime('%d/%m/%Y')}"
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel='✂  Relatório de Corte · Itaju',
+        subtitulo_rel='Controle de Produção — Ponto Palito',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = [PageBreak()]  # capa
+
+    if obs_texto:
+        _obs_tab = Table(
+            [[Paragraph(f'<b>⚠ OBS:</b> {obs_texto}', ParagraphStyle(
+                '_obs_it', parent=e['corpo'], textColor=colors.HexColor('#7A4A00'),
+                fontSize=9.5, leading=13,
+            ))]],
+            colWidths=[PAGE_W - 2 * MARGIN],
+        )
+        _obs_tab.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), C_AMBER_LT),
+            ('BOX', (0, 0), (-1, -1), 0.8, C_AMBER),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(_obs_tab)
+        story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    if df is None or df.empty:
+        story.append(Paragraph('Sem cortes registrados no período selecionado.', e['nota']))
+        doc.build(story)
+        return buf.getvalue()
+
+    total_pecas = int(df['QUANTIDADE'].sum())
+    dias_trab = df['DATA'].dt.date.nunique()
+    total_ops = df['OP'].nunique()
+    total_cores = df['COR'].nunique() if 'COR' in df.columns else 0
+    media_dia = total_pecas / max(dias_trab, 1)
+    ultima_data = df['DATA'].max()
+    dias_sem_corte = (pd.Timestamp(fim) - ultima_data).days if pd.notna(ultima_data) else None
+
+    kpis = [
+        {'label': '✂ Total de Peças', 'valor': _fmt(total_pecas), 'cor': C_TEAL_LT},
+        {'label': '📆 Dias Trabalhados', 'valor': str(dias_trab), 'cor': C_GRAY_BG},
+        {'label': '⚡ Média Peças/Dia', 'valor': _fmt(media_dia), 'cor': C_GRAY_BG},
+        {'label': '📋 Total de OPs', 'valor': str(total_ops), 'cor': C_GRAY_BG},
+        {'label': '🎨 Cores', 'valor': str(total_cores), 'cor': C_GRAY_BG},
+        {'label': '📏 Tamanhos', 'valor': str(df['TAMANHO'].nunique()) if 'TAMANHO' in df.columns else '–',
+         'cor': C_GRAY_BG},
+        {'label': '📅 Último Corte', 'valor': ultima_data.strftime('%d/%m/%Y') if pd.notna(ultima_data) else '–',
+         'cor': C_GRAY_BG},
+        {'label': '⏱ Dias sem Corte', 'valor': str(dias_sem_corte) if dias_sem_corte is not None else '–',
+         'cor': _pct_bg(0) if (dias_sem_corte or 0) > 3 else C_GREEN_LT},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+    story.append(Spacer(1, 0.5 * cm))
+
+    # Gráfico diário (sem meta configurada para Itaju — só evolução)
+    try:
+        prod_dia = df.groupby('DATA')['QUANTIDADE'].sum().reset_index().sort_values('DATA')
+        buf_c = _chart_producao_diaria(prod_dia, 0, titulo='Produção Diária — Itaju',
+                                       largura=16.0, altura=4.5)
+        story.append(_imagem_de_buf(buf_c, largura_cm=16.5))
+        story.append(Spacer(1, 0.4 * cm))
+    except Exception as _ex:
+        logger.warning('gerar_pdf_itaju: chart diario: %s', _ex)
+
+    # Tabela por Produto
+    story.append(Paragraph('Produção por Produto', e['subtitulo_secao']))
+    _df_norm = df.copy()
+    _df_norm['PRODUTO'] = _df_norm['PRODUTO'].astype(str).str.strip().str.upper()
+    prod_tab = (_df_norm.groupby('PRODUTO')['QUANTIDADE'].sum()
+                .reset_index().sort_values('QUANTIDADE', ascending=False))
+    prod_tab['%'] = (prod_tab['QUANTIDADE'] / total_pecas * 100).round(1)
+    cab_p = ['Produto', 'Peças', '% Total']
+    lin_p = [[str(r['PRODUTO']), _fmt(r['QUANTIDADE']), f"{r['%']:.1f}%"] for _, r in prod_tab.iterrows()]
+    story.append(_tabela_generica(cab_p, lin_p, e, [8.0*cm, 3.5*cm, 2.5*cm]))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Tabela por Tamanho
+    if 'TAMANHO' in df.columns:
+        story.append(Paragraph('Produção por Tamanho', e['subtitulo_secao']))
+        _df_norm['TAMANHO'] = _df_norm['TAMANHO'].astype(str).str.strip().str.upper()
+        tam_tab = (_df_norm.groupby('TAMANHO')['QUANTIDADE'].sum()
+                   .reset_index().sort_values('QUANTIDADE', ascending=False))
+        tam_tab['%'] = (tam_tab['QUANTIDADE'] / total_pecas * 100).round(1)
+        cab_t = ['Tamanho', 'Peças', '% Total']
+        lin_t = [[str(r['TAMANHO']), _fmt(r['QUANTIDADE']), f"{r['%']:.1f}%"] for _, r in tam_tab.iterrows()]
+        story.append(_tabela_generica(cab_t, lin_t, e, [8.0*cm, 3.5*cm, 2.5*cm]))
+        story.append(Spacer(1, 0.4 * cm))
+
+    story.append(PageBreak())
+
+    # Detalhe por OP
+    story.append(Paragraph('Detalhe por OP', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    cab_det = ['Data', 'OP', 'Produto', 'Tamanho', 'Cor', 'Qtd']
+    cw_det = [2.2*cm, 2.0*cm, 3.5*cm, 2.5*cm, 2.5*cm, 2.0*cm]
+    det = (_df_norm.groupby(['DATA', 'OP', 'PRODUTO', 'TAMANHO', 'COR'])['QUANTIDADE']
+           .sum().reset_index().sort_values(['DATA', 'OP']))
+    lin_det = [
+        [r['DATA'].strftime('%d/%m/%Y'), str(r['OP']), str(r['PRODUTO']),
+         str(r['TAMANHO']), str(r['COR']), _fmt(r['QUANTIDADE'])]
+        for _, r in det.iterrows()
+    ]
+    story.append(_tabela_generica(cab_det, lin_det, e, cw_det))
+
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
+        f'Corte Itaju · Ponto Palito  ·  {gerado_em}',
+        ParagraphStyle('ass_it2', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
     doc.build(story)
@@ -2722,6 +2986,7 @@ def gerar_pdf_faccoes(
     data_ini: date,
     data_fim: date,
     filtros_texto: str = '',
+    rank_df: Optional[pd.DataFrame] = None,
 ) -> bytes:
     """
     Relatório PDF de Produção por Facção.
@@ -2737,6 +3002,11 @@ def gerar_pdf_faccoes(
     meta_dia_total: meta diária calculada
     data_ini/fim  : período selecionado
     filtros_texto : string descritiva dos filtros ativos
+    rank_df       : DataFrame opcional (uma linha por facção) de
+                    utils.faccoes_metas_calc.calcular_meta_faccoes — colunas
+                    FACCAO, QUANTIDADE, META_MES, PCT, PCT_TOTAL, RESTANTE.
+                    Quando informado, adiciona a seção "Facção x Meta" logo
+                    após o resumo executivo — é o que a diretoria olha primeiro.
     """
     e = _estilos()
     periodo_str = (
@@ -2774,6 +3044,146 @@ def gerar_pdf_faccoes(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
+    # ── Facção x Meta — logo de cara, é o que a diretoria olha primeiro ──────
+    if rank_df is not None and not rank_df.empty:
+        rk = rank_df.sort_values('QUANTIDADE', ascending=False).reset_index(drop=True)
+
+        nota_fac = ParagraphStyle(
+            'nota_fac', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10,
+        )
+
+        story.append(Paragraph('Facção x Meta', e['titulo_secao']))
+        story.append(_linha_divisoria())
+        story.append(Paragraph(
+            'Meta mensal de cada facção = meta diária × dias em que a facção realmente '
+            'produziu no período (ou dias úteis do mês, para facções sem produção no período). '
+            '"Dados até" mostra o último dia com produção lançada — quando uma facção está '
+            'atrasada em relação às demais, é sinal de que ela ainda não enviou os dados mais '
+            'recentes, não necessariamente que produziu menos.',
+            nota_fac,
+        ))
+        story.append(Spacer(1, 0.2 * cm))
+
+        tem_data_col = 'ULTIMA_DATA' in rk.columns
+        cab_fm = ['Facção', 'Produzido', '% do Total', 'Meta Mês', '% Meta', 'Restante']
+        cw_fm = [4.2*cm, 2.3*cm, 2.0*cm, 2.3*cm, 2.0*cm, 2.2*cm]
+        if tem_data_col:
+            cab_fm.append('Dados até')
+            cw_fm.append(1.8*cm)
+
+        linhas_fm = []
+        atrasadas = []
+        for _, r in rk.iterrows():
+            tem_meta = r['META_MES'] > 0
+            pct_s = f"{r['PCT']:.1f}%" if tem_meta else 'sem meta'
+            meta_s = _fmt(r['META_MES']) if tem_meta else '-'
+            rest_s = _fmt(r['RESTANTE']) if tem_meta else '-'
+            linha = [
+                str(r['FACCAO']), _fmt(r['QUANTIDADE']), f"{r['PCT_TOTAL']:.1f}%",
+                meta_s, pct_s, rest_s,
+            ]
+            if tem_data_col:
+                ult = r.get('ULTIMA_DATA')
+                atraso = r.get('DIAS_ATRASO')
+                if pd.notna(ult):
+                    ult_s = pd.Timestamp(ult).strftime('%d/%m')
+                    if pd.notna(atraso) and atraso and atraso > 0:
+                        ult_s += ' *'
+                        atrasadas.append((str(r['FACCAO']), ult, int(atraso)))
+                else:
+                    ult_s = 'sem dado'
+                linha.append(ult_s)
+            linhas_fm.append(linha)
+
+        t_fm = _tabela_generica(cab_fm, linhas_fm, e, cw_fm, cor_header=C_NAVY)
+        for ri, r in enumerate(rk.itertuples(), start=1):
+            if r.META_MES > 0:
+                cor_s = C_GREEN if r.PCT >= 100 else (C_AMBER if r.PCT >= 75 else C_RED)
+                t_fm.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), cor_s),
+                                          ('FONTNAME', (4, ri), (4, ri), 'Helvetica-Bold')]))
+            else:
+                t_fm.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), C_GRAY_TEXT)]))
+        story.append(t_fm)
+        story.append(Spacer(1, 0.3 * cm))
+
+        # ── Facções com dado incompleto (ainda não enviaram os últimos dias) ─
+        if atrasadas:
+            atrasadas.sort(key=lambda x: x[2], reverse=True)
+            nomes_atraso = ', '.join(
+                f"{nome} (até {pd.Timestamp(ult).strftime('%d/%m')}, {dias}d)"
+                for nome, ult, dias in atrasadas[:8]
+            )
+            story.append(Paragraph(
+                f"<b>📅 Ainda não alinharam o envio diário das produções:</b> "
+                f"{nomes_atraso}.",
+                nota_fac,
+            ))
+            story.append(Spacer(1, 0.3 * cm))
+
+        # ── Destaques: melhor / pior desempenho (só entre quem tem meta) ─────
+        # PCT > 200% quase sempre indica meta mal calibrada na planilha (ex.: meta
+        # diária ponderada caindo a um valor residual), não desempenho real — isso
+        # entraria como "meta suspeita" abaixo em vez de "melhor desempenho".
+        rk_com_meta = rk[rk['META_MES'] > 0]
+        rk_confiavel = rk_com_meta[rk_com_meta['PCT'] <= 200]
+        if not rk_confiavel.empty:
+            melhor = rk_confiavel.loc[rk_confiavel['PCT'].idxmax()]
+            pior = rk_confiavel.loc[rk_confiavel['PCT'].idxmin()]
+            destaques_html = (
+                f"<b>Melhor desempenho:</b> {melhor['FACCAO']} — {melhor['PCT']:.1f}% da meta "
+                f"({_fmt(melhor['QUANTIDADE'])} de {_fmt(melhor['META_MES'])})<br/>"
+                f"<b>Maior atenção:</b> {pior['FACCAO']} — {pior['PCT']:.1f}% da meta "
+                f"({_fmt(pior['QUANTIDADE'])} de {_fmt(pior['META_MES'])})"
+            )
+            story.append(Paragraph(destaques_html, nota_fac))
+            story.append(Spacer(1, 0.3 * cm))
+
+        # ── Facções sem meta configurada (flag de qualidade de dado) ─────────
+        sem_meta = rk[(rk['META_MES'] == 0) & (rk['QUANTIDADE'] > 0)].sort_values(
+            'QUANTIDADE', ascending=False
+        )
+        if not sem_meta.empty:
+            nomes = ', '.join(
+                f"{r['FACCAO']} ({_fmt(r['QUANTIDADE'])})" for _, r in sem_meta.head(5).iterrows()
+            )
+            story.append(Paragraph(
+                f"<b>⚠ Sem meta configurada na planilha</b> (produziram, mas não entram no % da "
+                f"meta acima): {nomes}.",
+                nota_fac,
+            ))
+            story.append(Spacer(1, 0.3 * cm))
+
+        # ── Metas suspeitas (% > 200%) ────────────────────────────────────────
+        # Quando dá pra apontar a causa exata (cliente sem meta cadastrada
+        # diluindo a meta ponderada — ver META_GAPS em faccoes_metas_calc.py),
+        # cita o cliente em vez de um "revisar a planilha" genérico.
+        meta_suspeita = rk_com_meta[rk_com_meta['PCT'] > 200].sort_values('PCT', ascending=False)
+        if not meta_suspeita.empty:
+            partes_sus = []
+            for _, r in meta_suspeita.head(5).iterrows():
+                gaps = r.get('META_GAPS') if 'META_GAPS' in r.index else None
+                if gaps:
+                    partes_sus.append(
+                        f"{r['FACCAO']} ({r['PCT']:.0f}% — falta meta de {gaps})"
+                    )
+                else:
+                    partes_sus.append(
+                        f"{r['FACCAO']} ({r['PCT']:.0f}% — meta {_fmt(r['META_MES'])}, revisar planilha)"
+                    )
+            story.append(Paragraph(
+                f"<b>⚠ Meta possivelmente incompleta:</b> {', '.join(partes_sus)}.",
+                nota_fac,
+            ))
+            story.append(Spacer(1, 0.3 * cm))
+
+        try:
+            buf_fm = _chart_faccao_vs_meta(rk)
+            story.append(_imagem_de_buf(buf_fm, largura_cm=16.5))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_faccoes: chart faccao x meta: %s', _ex)
+
+        story.append(PageBreak())
+
     # ── Gráfico produção diária ──────────────────────────────────────────────
     if not df_mes.empty:
         prod_diaria = (
@@ -2791,48 +3201,33 @@ def gerar_pdf_faccoes(
         except Exception as _ex:
             logger.warning('gerar_pdf_faccoes: chart diario: %s', _ex)
 
+    # ── Mix de produtos por facção ────────────────────────────────────────────
+    if not df_mes.empty:
+        try:
+            buf_mix = _chart_mix_produtos_faccao(df_mes, top_n_produtos=6)
+            story.append(_imagem_de_buf(buf_mix, largura_cm=16.5))
+            story.append(Spacer(1, 0.4 * cm))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_faccoes: chart mix produtos: %s', _ex)
+
     story.append(PageBreak())
 
     # ── Tabela de progresso ──────────────────────────────────────────────────
-    story.append(Paragraph('Progresso por Produto / Empresa / Faccao', e['titulo_secao']))
+    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    cabec = ['Produto', 'Empresa', 'Faccao', 'Produzido', 'Meta Mes', '% Meta', 'Restante']
-    cw = [3.0*cm, 2.5*cm, 3.5*cm, 2.0*cm, 2.0*cm, 1.8*cm, 2.0*cm]
+    cabec = ['Produto', 'Empresa', 'Faccao', 'Produzido']
+    cw = [5.5*cm, 4.0*cm, 5.0*cm, 3.0*cm]
 
     linhas_tab = []
     for _, r in tabela.iterrows():
-        pct_v = r.get('% Meta')
-        pct_s = f"{pct_v:.1f}%" if pct_v is not None and not (isinstance(pct_v, float) and pd.isna(pct_v)) else '-'
-        meta_s = _fmt(r['Meta Mes']) if r.get('Meta Mes') is not None and not (isinstance(r['Meta Mes'], float) and pd.isna(r['Meta Mes'])) else '-'
-        rest_s = _fmt(r['Restante']) if r.get('Restante') is not None and not (isinstance(r['Restante'], float) and pd.isna(r['Restante'])) else '-'
         linhas_tab.append([
-            str(r['Produto']), str(r['Empresa']), str(r['Faccao']),
-            _fmt(r['Produzido']), meta_s, pct_s, rest_s,
+            str(r['Produto']), str(r['Empresa']), str(r['Faccao']), _fmt(r['Produzido']),
         ])
 
     t_prog = _tabela_generica(cabec, linhas_tab, e, cw, cor_header=colors.HexColor('#065F46'))
-    for ri, row in enumerate(linhas_tab, start=1):
-        try:
-            pct_val = float(row[5].replace('%', ''))
-            cor_s = C_GREEN if pct_val >= 100 else (C_AMBER if pct_val >= 75 else C_RED)
-            t_prog.setStyle(TableStyle([('TEXTCOLOR', (5, ri), (5, ri), cor_s),
-                                        ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold')]))
-        except Exception:
-            pass
     story.append(t_prog)
     story.append(Spacer(1, 0.4 * cm))
-
-    # ── Gráfico top facções ──────────────────────────────────────────────────
-    if not df_mes.empty:
-        fac_total = df_mes.groupby('FACCAO')['QUANTIDADE'].sum().reset_index()
-        try:
-            buf_fac = _chart_barras_h(fac_total, 'FACCAO', 'QUANTIDADE',
-                                      'Producao Total por Faccao no Periodo', top_n=20)
-            story.append(_imagem_de_buf(buf_fac, largura_cm=16.5))
-            story.append(Spacer(1, 0.4 * cm))
-        except Exception as _ex:
-            logger.warning('gerar_pdf_faccoes: chart faccoes: %s', _ex)
 
     story.append(PageBreak())
 

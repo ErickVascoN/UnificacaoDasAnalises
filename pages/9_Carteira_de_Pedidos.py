@@ -171,6 +171,52 @@ def _categorizar(desc: str) -> str:
     return "OUTROS"
 
 
+_SUBCAT_TAMANHOS = [
+    "CASAL", "QUEEN", "KING SIZE", "KING", "SOLTEIRO", "SOLT", "BABY", "BERCO",
+    "DUPLO", "SIMPLES", "GRANDE", "MEDIO", "PEQUENO",
+]
+_SUBCAT_QUALIFICADORES = [
+    "SORTIDOS", "SORTIDO", "UNICO", "2A QUALIDADE", "1A QUALIDADE", "TAM",
+    "ESTAMPADO", "ESTAMPADA", "LISO", "LISA",
+]
+_SUBCAT_CORES = [
+    "AZUL MARINHO", "AZUL PETROLEO", "AZUL CLARO", "AZUL ESCURO", "AZUL",
+    "VERDE MUSGO", "VERDE", "MARINHO", "ESCURO", "CLARO",
+    "CINZA CLARO", "CINZA ESCURO", "CINZA CHUMBO", "CINZA", "CHUMBO",
+    "OFF WHITE", "BRANCO", "PRETO", "BEGE", "CASTOR", "CHOCOLATE", "CREME", "DOVE",
+    "FENDI", "GRAFITE", "LILAS", "MALBEC", "MARROM", "MAUVE", "MOSTARDA", "NATURAL",
+    "NUDE", "PEACH", "PETROLEO", "PRATA", "ROSA", "ROSE", "TABACO", "TERRACOTA",
+    "VINHO", "BORDO", "AMARELO", "LARANJA", "ROXO", "KAKI", "FERRUGEM", "QUEIMADO",
+    "PINK", "TAUPE", "AREIA", "GELO", "PALHA", "OCRE", "COBRE", "JEANS",
+]
+
+
+def _subcategoria(desc: str) -> str:
+    """Agrupa variações de tamanho/cor/acabamento do mesmo produto (ex.: "COB. DAY BY
+    DAY ROLINHO SORT. CASAL 1,80MX2,20M" e "...QUEEN 2,20MX2,40M" → mesma subcategoria).
+
+    Heurística por texto — nunca fica 100% limpa (typos, códigos numéricos e cores não
+    listadas deixam algum resíduo), mas reduz bastante a lista de produtos do filtro.
+    """
+    d = str(desc).upper()
+    # Dimensão com unidade antes OU depois do "X" (2,60MX1,70 / 90X110 / 2,60MX1,70M)
+    d = re.sub(r"\d+[.,]?\d*\s*(M|CM|MM)?\s*X\s*\d+[.,]?\d*\s*(M|CM|MM)?", " ", d)
+    d = re.sub(r"\b\d+([.,]\d+)?\s*(M|CM|MM)\b", " ", d)
+    d = re.sub(r"\b\d+\s*P[EÇC]S?\b", " ", d)
+    d = re.sub(r"\b\d+\s*%", " ", d)
+    for w in _SUBCAT_CORES:
+        d = re.sub(rf"\b{re.escape(w)}\b", " ", d)
+    for w in _SUBCAT_TAMANHOS:
+        d = re.sub(rf"\b{re.escape(w)}\b", " ", d)
+    for w in _SUBCAT_QUALIFICADORES:
+        d = re.sub(rf"\b{re.escape(w)}\b", " ", d)
+    d = re.sub(r"\bX\b", " ", d)  # "X" solto residual de dimensão parcial
+    d = re.sub(r"\s+(III|II|IV|V|I)\s*$", " ", d)  # numeral romano no fim
+    d = re.sub(r"[^\w\s]", " ", d)
+    d = re.sub(r"\s+", " ", d).strip()
+    return d or str(desc).upper().strip()
+
+
 def _tamanho(desc: str) -> str:
     d = _norm(desc)
     for t in ["KING", "QUEEN", "CASAL", "SOLTEIRO", "BABY", "BERCO"]:
@@ -245,6 +291,7 @@ def load_carteira() -> pd.DataFrame:
             "DESCRICAO":   desc,
             "CATEGORIA":   _categorizar(desc),
             "TAMANHO":     _tamanho(desc),
+            "SUBCATEGORIA": _subcategoria(desc),
         })
 
     df = pd.DataFrame(records)
@@ -314,6 +361,15 @@ with st.sidebar:
     cats_disp = sorted(df_raw["CATEGORIA"].unique())
     cats_sel  = st.multiselect("Categoria", cats_disp, placeholder="Todas", key="sel_cat_cart")
 
+    st.markdown("**🏷 Produto**")
+    _df_prod_disp = df_raw[df_raw["CATEGORIA"].isin(cats_sel)] if cats_sel else df_raw
+    produtos_disp = sorted(_df_prod_disp["SUBCATEGORIA"].dropna().unique())
+    produtos_sel = st.multiselect(
+        "Produto", produtos_disp, placeholder="Todos", key="sel_prod_cart",
+        help="Agrupado por produto-base — variações de tamanho e cor entram juntas "
+             "(ex.: 'COB DAY BY DAY ROLINHO SORT' inclui casal, queen, king etc.).",
+    )
+
     st.markdown("**📐 Tamanho**")
     tam_disp = sorted(t for t in df_raw["TAMANHO"].unique() if t != "N/I")
     tam_sel  = st.multiselect("Tamanho", tam_disp, placeholder="Todos", key="sel_tam_cart")
@@ -330,6 +386,8 @@ if clientes_sel:
     df = df[df["CLIENTE_CURTO"].isin(clientes_sel)]
 if cats_sel:
     df = df[df["CATEGORIA"].isin(cats_sel)]
+if produtos_sel:
+    df = df[df["SUBCATEGORIA"].isin(produtos_sel)]
 if tam_sel:
     df = df[df["TAMANHO"].isin(tam_sel)]
 if estados_sel:

@@ -156,13 +156,19 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
     def _apply_alias(name: str) -> str:
         return fac_alias.get(normalize_text(name), name)
 
+    # Baseline de dias úteis/mês usada para converter a meta diária da planilha
+    # em meta mensal. Consistente com os valores hardcoded de config/settings.py
+    # (ex.: CAROL MENDES: meta_mes 88.000 / meta_semana 20.000 → 4.000/dia em
+    # ambos os casos, ou seja, 88.000 / 4.000 = 22 dias úteis).
+    _DIAS_UTEIS_MES = 22
+
     def _make_entry(faccao: str, produto: str, cliente: str, meta_dia: int) -> dict:
         return {
             "produto":     produto,
             "cliente":     cliente,
             "faccao":      _apply_alias(faccao.strip().upper()),
             "meta_dia":    meta_dia,
-            "meta_mes":    0,
+            "meta_mes":    int(meta_dia * _DIAS_UTEIS_MES),
             "meta_semana": int(meta_dia * 5),
         }
 
@@ -176,6 +182,13 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
         and c != c_meta_mes
     ]
 
+    # Colunas varridas em busca do padrão "NOME NÚMERO" (ex.: "DECOR 700") quando
+    # a meta não é um valor único para a facção toda. Inclui a própria coluna
+    # c_meta_mes — o usuário pode digitar o primeiro cliente ali mesmo (ex.:
+    # GGTTEX CORTINA tinha "BURDAYS 500"/"SULTAN 150" nas extras e o cliente
+    # DECOR foi adicionado depois direto na coluna METAS principal).
+    _cols_extras_scan = _extra_cols + [c_meta_mes]
+
     df["_meta_mes"] = df[c_meta_mes].apply(_to_int)
     df = df.copy()
     df["_tem_extras"] = False
@@ -183,7 +196,7 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
         def _tem_extras_fn(row):
             if row["_meta_mes"] > 0:
                 return False
-            for c in _extra_cols:
+            for c in _cols_extras_scan:
                 v = str(row[c]).strip() if pd.notna(row[c]) else ""
                 if re.search(r"\d", v):
                     return True
@@ -208,8 +221,9 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
             continue
 
         if row["_tem_extras"]:
-            # Linha com metas por cliente em colunas extras (ex: CORTINA)
-            for ec in _extra_cols:
+            # Linha com metas por cliente em colunas extras (ex: CORTINA) — inclui
+            # a coluna principal (c_meta_mes), que também pode ter "NOME NÚMERO".
+            for ec in _cols_extras_scan:
                 v = str(row[ec]).strip() if pd.notna(row[ec]) else ""
                 m = re.match(r"^(.+?)\s+(\d[\d.,]*)$", v.strip())
                 if not m:
@@ -228,6 +242,16 @@ def load_metas_from_faccoes_sheet(ttl: int = 3600) -> list[dict] | None:
         df_sec = df[df[c_fac2].notna() & (df[c_fac2].str.strip() != "")].copy()
         df_sec["_meta2"] = df_sec[c_meta2].apply(_to_int)
         df_sec = df_sec[df_sec["_meta2"] > 0]
+        # Linhas idênticas (mesma facção+produto+cliente+meta) são quase sempre
+        # erro de digitação/cópia na planilha, não duas metas de fato — sem isso
+        # a meta da facção conta essa linha em dobro.
+        _antes = len(df_sec)
+        df_sec = df_sec.drop_duplicates(subset=[c_fac2, c_prod2, c_cli2, "_meta2"])
+        if len(df_sec) < _antes:
+            logger.warning(
+                "faccoes_metas_sheet: %d linha(s) duplicada(s) na tabela secundária ignoradas.",
+                _antes - len(df_sec),
+            )
         for _, row in df_sec.iterrows():
             fac2  = str(row[c_fac2]).strip().upper()
             prod2 = str(row[c_prod2]).strip().upper() if pd.notna(row[c_prod2]) else ""

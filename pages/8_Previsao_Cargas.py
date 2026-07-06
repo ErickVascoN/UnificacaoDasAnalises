@@ -7,6 +7,7 @@ import re
 import unicodedata
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -320,46 +321,104 @@ def _find_realizado_mensal(rows: list[list[str]]) -> float:
     return real
 
 
+def _find_painel_col(rows: list[list[str]]) -> int | None:
+    """Detecta a coluna do painel diário de realizado ("DD-mmm.") — a posição
+
+    muda de mês para mês na planilha (ex.: col 8 em Junho, col 11 em Abril,
+    col 9 em Maio), então não pode ser hard-coded. Usa a coluna mais frequente
+    entre todas as células que casam com o padrão de cabeçalho de dia.
+    """
+    contagem: Counter = Counter()
+    for row in rows:
+        for j, cell in enumerate(row):
+            if re.match(r'^\s*\d{1,2}\s*[-\.]\s*[a-z]{3}', str(cell).strip().lower()):
+                contagem[j] += 1
+    if not contagem:
+        return None
+    return contagem.most_common(1)[0][0]
+
+
+def _find_painel_col_rotulo(rows: list[list[str]]) -> int | None:
+    """Fallback para meses sem cabeçalho 'DD-mmm.' repetido (ex.: Janeiro), onde
+
+    o painel não tem blocos por dia — cada linha de cliente já carrega sua data
+    na própria linha de carga (col[1]). Localiza a coluna pelo rótulo de
+    cabeçalho "REALIZADO" na primeira linha da planilha; o nome do cliente fica
+    2 colunas antes.
+    """
+    if not rows:
+        return None
+    for j, cell in enumerate(rows[0]):
+        if _norm(cell) == "REALIZADO" and j >= 2:
+            return j - 2
+    return None
+
+
 def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict:
     """
-    Lê o painel direito do CSV (cols 8-13) e retorna {(data, cliente_norm): realizado}.
+    Lê o painel direito do CSV e retorna {(data, cliente_norm): realizado}.
 
-    Estrutura real do CSV por bloco de dia:
-      col[8] = "DD-jun." (cabeçalho do dia, com col[9]="previsto" col[11]="diferença")
-      linhas de cliente: col[8]=NOME, col[9]='R$', col[10]=previsto_val,
-                         col[11]=realizado_val (número direto, sem prefixo separado)
-      linha de total/separador: col[8]='' ou contém 'R$' — ignorada
+    Estrutura real do CSV por bloco de dia (coluna-base detectada por
+    _find_painel_col, pois sua posição varia por mês):
+      col[base]   = "DD-jun." (cabeçalho do dia) ou NOME do cliente
+      linhas de cliente: col[base]=NOME, col[base+1]=previsto_val,
+                         col[base+2]=realizado_val, col[base+3]=diferença_val
+      linha de total/separador: col[base] vazio ou contém 'R$' — ignorada
+
+    Alguns meses (ex.: Janeiro) não repetem o cabeçalho de dia — nesse caso cada
+    linha de cliente usa a data da própria linha de carga (col[1]).
     """
     day_real: dict = {}
-    current_date = None
+    col = _find_painel_col(rows)
+
+    if col is not None:
+        current_date = None
+        for row in rows:
+            if len(row) <= col:
+                continue
+            cell_base = str(row[col]).strip()
+
+            # Cabeçalho de dia: "1-jun.", "19-abr.", etc.
+            m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell_base.lower())
+            if m:
+                try:
+                    current_date = date(ano, mes_num, int(m.group(1)))
+                except ValueError:
+                    current_date = None
+                continue
+
+            # Separador / total: col[base] vazio ou contém 'R$' — ignora
+            if not cell_base or 'R$' in cell_base:
+                continue
+
+            if current_date is None or len(row) <= col + 2:
+                continue
+
+            # Linha de cliente: col[base]=nome, col[base+2]=realizado por cliente
+            cliente_raw = cell_base.strip().upper()
+            v = _parse_num(str(row[col + 2]).strip())
+            if v and v > 0 and cliente_raw:
+                key = (current_date, _norm(cliente_raw))
+                # Acumula caso haja mais de uma linha para o mesmo cliente no dia
+                day_real[key] = day_real.get(key, 0.0) + v
+        return day_real
+
+    col = _find_painel_col_rotulo(rows)
+    if col is None:
+        return {}
 
     for row in rows:
-        if len(row) <= 8:
+        if len(row) <= col + 2:
             continue
-        cell8 = str(row[8]).strip()
-
-        # Cabeçalho de dia: "1-jun.", "19-jun.", etc.
-        m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell8.lower())
-        if m:
-            try:
-                current_date = date(ano, mes_num, int(m.group(1)))
-            except ValueError:
-                current_date = None
+        cliente_raw = str(row[col]).strip().upper()
+        if not cliente_raw or 'R$' in cliente_raw:
             continue
-
-        # Separador / total: col[8] vazio ou contém 'R$' — ignora
-        if not cell8 or 'R$' in cell8:
+        row_date = _parse_date_pt(row[1]) if len(row) > 1 else None
+        if row_date is None:
             continue
-
-        if current_date is None or len(row) <= 11:
-            continue
-
-        # Linha de cliente: col[8]=nome, col[11]=realizado por cliente
-        cliente_raw = cell8.strip().upper()
-        v = _parse_num(str(row[11]).strip())
-        if v and v > 0 and cliente_raw:
-            key = (current_date, _norm(cliente_raw))
-            # Acumula caso haja mais de uma linha para o mesmo cliente no dia
+        v = _parse_num(str(row[col + 2]).strip())
+        if v and v > 0:
+            key = (row_date, _norm(cliente_raw))
             day_real[key] = day_real.get(key, 0.0) + v
 
     return day_real
@@ -542,16 +601,42 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
             # para evitar dupla contagem (previsto total vai no CARGO_REAL).
             "PREVISAO":       0.0 if previsto_mensal > 0 else valor_frete,
             "REALIZADO":      0.0,
-            # Painel direito usa nome da empresa (= DESTINO). Tenta também CLIENTE
-            # como fallback para meses onde ambos coincidem.
-            "REALIZADO_DIA":  (
-                day_realized.get((data_carga, _norm(destino)), 0.0)
-                or day_realized.get((data_carga, _norm(cliente)), 0.0)
+            # Painel direito registra 1 realizado por (data, cliente) — não por carga
+            # individual. Guarda a chave aqui; o valor é dividido logo abaixo entre
+            # todas as cargas do mesmo cliente/dia para não contar em dobro no total.
+            "_REAL_KEY": (
+                (data_carga, _norm(destino)) if (data_carga, _norm(destino)) in day_realized
+                else (data_carga, _norm(cliente)) if (data_carga, _norm(cliente)) in day_realized
+                else None
             ),
+            "REALIZADO_DIA":  0.0,
             "DIFERENCA":      0.0,
             "OBS":            obs_raw,
             "STATUS":         status,
         })
+
+    # Painel direito só tem 1 realizado por (data, cliente); quando 2+ cargas do
+    # mesmo cliente caem no mesmo dia, divide o valor entre elas — do contrário
+    # cada carga herdaria o valor cheio do dia e o total semanal/mensal ficaria
+    # contado em dobro (ou triplo).
+    _contagem_chave = Counter(r["_REAL_KEY"] for r in records if r["_REAL_KEY"] is not None)
+    for r in records:
+        _chave = r.pop("_REAL_KEY", None)
+        if _chave is not None:
+            r["REALIZADO_DIA"] = day_realized[_chave] / _contagem_chave[_chave]
+
+    # Nem todo lançamento do painel diário casa por nome com uma carga (ex.: entradas
+    # que somam vários clientes numa única célula, ou grafia diferente da planilha de
+    # cargas). Reconcilia proporcionalmente para que a soma do mês bata exatamente com
+    # o Realizado oficial da linha-resumo — o mesmo número já usado no gráfico mensal e
+    # nos KPIs da página. Sem isso, a quebra semanal ficaria sistematicamente abaixo do
+    # total oficial e o dashboard mostraria dois valores de Realizado diferentes para
+    # o mesmo mês.
+    _soma_batida = sum(r["REALIZADO_DIA"] for r in records)
+    if _soma_batida > 0 and realizado_mensal > 0:
+        _fator = realizado_mensal / _soma_batida
+        for r in records:
+            r["REALIZADO_DIA"] *= _fator
 
     # Registro único de REALIZADO e PREVISTO mensal (da linha de resumo da planilha)
     if realizado_mensal > 0 or previsto_mensal > 0:
@@ -836,10 +921,13 @@ st.markdown("<div class='sec-title'>🏢 Análise por Destino e Origem</div>", u
 col_g1, col_g2 = st.columns(2)
 
 with col_g1:
+    # Usa VALOR_FRETE (nunca zerado) em vez de PREVISAO: em meses com previsto
+    # oficial no painel-resumo, PREVISAO de cada carga é zerada (o total já vem
+    # do registro CARGO_REAL), o que deixaria esta quebra por cliente vazia.
     df_dest = (
-        df[df["TEM_REALIZADO"] & (df["PREVISAO"] > 0)]
+        df[df["TEM_REALIZADO"] & (df["VALOR_FRETE"] > 0)]
         .groupby("DESTINO_NORM")
-        .agg(PREVISAO=("PREVISAO", "sum"), N_CARGAS=("DATA", "count"))
+        .agg(PREVISAO=("VALOR_FRETE", "sum"), N_CARGAS=("DATA", "count"))
         .reset_index()
         .sort_values("PREVISAO", ascending=True)
         .tail(12)
@@ -861,10 +949,11 @@ with col_g1:
     st.plotly_chart(fig_dest, use_container_width=True)
 
 with col_g2:
+    # Mesmo motivo do df_dest acima: VALOR_FRETE nunca é zerado por mês.
     df_local = (
-        df[df["PREVISAO"] > 0]
+        df[df["VALOR_FRETE"] > 0]
         .groupby("LOCAL")
-        .agg(PREVISAO=("PREVISAO", "sum"), N=("DATA", "count"))
+        .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DATA", "count"))
         .reset_index()
         .sort_values("PREVISAO", ascending=False)
     )
@@ -889,9 +978,12 @@ st.markdown("<div class='sec-title'>🎯 Aderência da Previsão por Cliente</di
 col_g3, col_g4 = st.columns(2)
 
 with col_g3:
-    # Aderência calculada pelo total mensal (REALIZADO mensal / PREVISTO mensal por fretes)
+    # Aderência calculada pelo total mensal (REALIZADO mensal / PREVISTO mensal).
+    # Não filtra por STATUS != CARGO_REAL: em meses com previsto oficial, o total
+    # mora no registro CARGO_REAL (fretes individuais ficam zerados), então excluí-lo
+    # zerava a previsão do mês inteiro assim que só meses "oficiais" ficavam selecionados.
     _prev_adh = (
-        df[df["STATUS"].isin(["Normal", "Cancelada", "Adiada", "Armazenagem"]) & (df["PREVISAO"] > 0)]
+        df[df["PREVISAO"] > 0]
         .groupby("MES")["PREVISAO"].sum()
     )
     _real_adh = (
@@ -928,31 +1020,82 @@ with col_g3:
     st.plotly_chart(fig_adh, use_container_width=True)
 
 with col_g4:
+    # Usa VALOR_FRETE (nunca zerado) em vez de PREVISAO: para meses com previsto
+    # oficial no painel-resumo (ex.: Janeiro, Maio, Junho), PREVISAO de cada carga
+    # é zerada para não contar em dobro no total mensal — isso apagaria o mês
+    # inteiro da quebra semanal, que não tem um "oficial" equivalente por semana.
+    # Agrupa pela SEMANA da própria planilha (cabeçalho "SEMANA DD/MM A DD/MM"),
+    # não por semana ISO — evita datas de corte que não batem com o que está na planilha.
     df_week = (
-        df[df["TEM_REALIZADO"] & (df["PREVISAO"] > 0)]
-        .groupby(["MES", "MES_NUM", "SEMANA_ISO"])
-        .agg(PREVISAO=("PREVISAO", "sum"), N=("DATA", "count"))
+        df[df["TEM_REALIZADO"] & (df["VALOR_FRETE"] > 0)]
+        .groupby(["MES", "MES_NUM", "SEMANA"])
+        .agg(
+            PREVISAO=("VALOR_FRETE", "sum"),
+            REALIZADO=("REALIZADO_DIA", "sum"),
+            N=("DATA", "count"),
+            INICIO=("DATA", "min"),
+            FIM=("DATA", "max"),
+        )
         .reset_index()
-        .sort_values(["MES_NUM", "SEMANA_ISO"])
+        .sort_values("INICIO")
     )
-    df_week["LABEL"] = df_week["MES"].str[:3] + " S" + df_week["SEMANA_ISO"].astype(str)
+
+    def _semana_label(row) -> str:
+        m = re.search(r"(\d{2}/\d{2})\s*A\s*(\d{2}/\d{2})", _norm(row["SEMANA"]))
+        if m:
+            return f"{m.group(1)} a {m.group(2)}"
+        # Sem cabeçalho de semana no início do mês (continuação da semana anterior)
+        return f"{row['INICIO'].strftime('%d/%m')} a {row['FIM'].strftime('%d/%m')}"
+
+    df_week["LABEL"] = df_week.apply(_semana_label, axis=1)
 
     fig_week = go.Figure()
     fig_week.add_scatter(
         x=df_week["LABEL"], y=df_week["PREVISAO"],
-        name="Previsão (faturamento/semana)", mode="lines+markers",
+        name="Previsão", mode="lines+markers+text",
         line=dict(color=CORES["previsao"], width=2.5),
         marker=dict(size=7),
+        text=[_fmt(v) for v in df_week["PREVISAO"]],
+        textposition="top center", textfont=dict(size=9, color=CORES["previsao"]),
+    )
+    fig_week.add_scatter(
+        x=df_week["LABEL"], y=df_week["REALIZADO"],
+        name="Realizado", mode="lines+markers",
+        line=dict(color=CORES["realizado"], width=2, dash="dot"),
+        marker=dict(size=6),
     )
     fig_week.update_layout(
         **_layout(
             height=360,
-            title="Evolução Semanal — Previsão de Faturamento",
+            title="Evolução Semanal — Previsão vs. Realizado",
             legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center"),
             yaxis=dict(tickprefix="R$ "),
         )
     )
     st.plotly_chart(fig_week, use_container_width=True)
+
+st.markdown("<div class='sec-title'>📆 Detalhamento por Semana</div>", unsafe_allow_html=True)
+st.caption(
+    "O Realizado por semana é estimado casando cliente + data com o painel diário da planilha "
+    "e recalibrado para que a soma do mês bata exatamente com o Realizado oficial da planilha "
+    "(nem todo lançamento diário casa por nome com uma carga específica). O total mensal é exato; "
+    "a distribuição entre semanas é uma aproximação."
+)
+
+df_week_tab = df_week.copy()
+df_week_tab["DIFERENCA"] = df_week_tab["REALIZADO"] - df_week_tab["PREVISAO"]
+df_week_tab["ADERENCIA"] = df_week_tab.apply(
+    lambda r: r["REALIZADO"] / r["PREVISAO"] * 100 if r["PREVISAO"] > 0 else 0, axis=1
+)
+
+df_week_show = df_week_tab[
+    ["MES", "LABEL", "N", "PREVISAO", "REALIZADO", "DIFERENCA", "ADERENCIA"]
+].copy()
+for _col in ["PREVISAO", "REALIZADO", "DIFERENCA"]:
+    df_week_show[_col] = df_week_show[_col].apply(_fmt)
+df_week_show["ADERENCIA"] = df_week_show["ADERENCIA"].apply(lambda v: f"{v:.1f}%".replace(".", ","))
+df_week_show.columns = ["Mês", "Semana", "Cargas", "Previsão", "Realizado", "Diferença", "Aderência"]
+st.dataframe(df_week_show, use_container_width=True, hide_index=True)
 
 # ── Linha 4: Tipo de veículo + Timeline ──────────────────────────────────────
 st.markdown("<div class='sec-title'>🚚 Frota e Timeline de Cargas</div>", unsafe_allow_html=True)
@@ -960,9 +1103,9 @@ col_g5, col_g6 = st.columns(2)
 
 with col_g5:
     df_veic = (
-        df[df["TIPO_VEICULO"] != "Outro"]
+        df[(df["STATUS"] != "CARGO_REAL") & (df["TIPO_VEICULO"] != "Outro")]
         .groupby("TIPO_VEICULO")
-        .agg(N=("DATA", "count"), PREVISAO=("PREVISAO", "sum"))
+        .agg(N=("DATA", "count"), PREVISAO=("VALOR_FRETE", "sum"))
         .reset_index()
         .sort_values("N", ascending=False)
     )
@@ -993,8 +1136,9 @@ with col_g5:
 
 with col_g6:
     df_tl = (
-        df.groupby(["DATA", "STATUS"])
-        .agg(PREVISAO=("PREVISAO", "sum"), N=("DESTINO", "count"))
+        df[df["STATUS"] != "CARGO_REAL"]
+        .groupby(["DATA", "STATUS"])
+        .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DESTINO", "count"))
         .reset_index()
     )
     cores_status = {"Normal": CORES["previsao"], "Cancelada": CORES["diferenca_neg"],
@@ -1037,7 +1181,7 @@ if df_ocorr.empty:
     st.markdown("<div class='ok-box'>✅ Nenhuma cancelamento ou adiamento nos filtros selecionados.</div>",
                 unsafe_allow_html=True)
 else:
-    valor_impacto = df_ocorr["PREVISAO"].sum()
+    valor_impacto = df_ocorr["VALOR_FRETE"].sum()
     n_cancel = (df_ocorr["STATUS"] == "Cancelada").sum()
     n_adiad  = (df_ocorr["STATUS"] == "Adiada").sum()
 
@@ -1063,7 +1207,7 @@ else:
     with col_oc2:
         df_oc_dest = (
             df_ocorr.groupby("DESTINO_NORM")
-            .agg(N=("DATA", "count"), PREVISAO=("PREVISAO", "sum"))
+            .agg(N=("DATA", "count"), PREVISAO=("VALOR_FRETE", "sum"))
             .reset_index()
             .sort_values("N", ascending=True)
         )
@@ -1090,9 +1234,9 @@ dias_pt    = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta",
               "Thursday": "Quinta", "Friday": "Sexta", "Saturday": "Sábado", "Sunday": "Domingo"}
 
 df_heat = (
-    df[df["TEM_REALIZADO"] & (df["PREVISAO"] > 0)]
+    df[df["TEM_REALIZADO"] & (df["VALOR_FRETE"] > 0)]
     .groupby(["MES", "DIA_SEMANA"])
-    .agg(PREVISAO=("PREVISAO", "sum"), N=("DATA", "count"))
+    .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DATA", "count"))
     .reset_index()
 )
 df_heat["DIA_PT"] = df_heat["DIA_SEMANA"].map(dias_pt)

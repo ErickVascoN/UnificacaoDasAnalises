@@ -32,7 +32,13 @@ _HEADERS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
-    )
+    ),
+    # Evita que o CDN do Google (ou um proxy no meio do caminho) sirva uma
+    # resposta em cache logo após uma edição recente na planilha — sem isso,
+    # nosso próprio cache local pode ser invalidado corretamente e ainda assim
+    # receber um CSV desatualizado do lado do Google.
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
 }
 _DEFAULT_TTL = 120  # segundos
 
