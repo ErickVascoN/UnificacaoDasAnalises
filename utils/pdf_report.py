@@ -3216,8 +3216,8 @@ def gerar_pdf_faccoes(
     story.append(Paragraph('Resumo por Facção', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    cab_rs = ['Facção', 'Tipo de Produto', 'Meta Diária', 'Meta Período', '% Meta']
-    cw_rs = [3.4*cm, 6.6*cm, 2.4*cm, 2.6*cm, 2.0*cm]
+    cab_rs = ['Facção', 'Tipo de Produto', 'Produzido', 'Meta Diária', 'Meta Período', '% Meta']
+    cw_rs = [3.2*cm, 5.8*cm, 2.4*cm, 2.2*cm, 2.4*cm, 2.0*cm]
 
     linhas_rs = []
     if rank_df is not None and not rank_df.empty:
@@ -3234,6 +3234,7 @@ def gerar_pdf_faccoes(
             linhas_rs.append([
                 faccao,
                 ', '.join(produtos_fac) if produtos_fac else '-',
+                _fmt(r['QUANTIDADE']),
                 _fmt(r['META_DIA']) if tem_meta else '-',
                 _fmt(r['META_MES']) if tem_meta else '-',
                 f"{r['PCT']:.1f}%" if tem_meta else 'sem meta',
@@ -3241,12 +3242,12 @@ def gerar_pdf_faccoes(
 
     t_rs = _tabela_generica(cab_rs, linhas_rs, e, cw_rs, cor_header=C_NAVY)
     for ri, linha in enumerate(linhas_rs, start=1):
-        pct_txt = linha[4]
+        pct_txt = linha[5]
         if pct_txt != 'sem meta':
             pct_v = float(pct_txt.rstrip('%'))
             cor_s = C_GREEN if pct_v >= 100 else (C_AMBER if pct_v >= 75 else C_RED)
-            t_rs.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), cor_s),
-                                      ('FONTNAME', (4, ri), (4, ri), 'Helvetica-Bold')]))
+            t_rs.setStyle(TableStyle([('TEXTCOLOR', (5, ri), (5, ri), cor_s),
+                                      ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold')]))
     story.append(t_rs)
     story.append(Spacer(1, 0.4 * cm))
     story.append(PageBreak())
