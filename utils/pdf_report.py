@@ -3046,7 +3046,9 @@ def gerar_pdf_faccoes(
 
     # ── Facção x Meta — logo de cara, é o que a diretoria olha primeiro ──────
     if rank_df is not None and not rank_df.empty:
-        rk = rank_df.sort_values('QUANTIDADE', ascending=False).reset_index(drop=True)
+        rk = rank_df.sort_values(
+            ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
+        ).reset_index(drop=True)
 
         nota_fac = ParagraphStyle(
             'nota_fac', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10,
@@ -3073,6 +3075,7 @@ def gerar_pdf_faccoes(
 
         linhas_fm = []
         atrasadas = []
+        sem_dado_periodo = []
         for _, r in rk.iterrows():
             tem_meta = r['META_MES'] > 0
             pct_s = f"{r['PCT']:.1f}%" if tem_meta else 'sem meta'
@@ -3092,6 +3095,7 @@ def gerar_pdf_faccoes(
                         atrasadas.append((str(r['FACCAO']), ult, int(atraso)))
                 else:
                     ult_s = 'sem dado'
+                    sem_dado_periodo.append(str(r['FACCAO']))
                 linha.append(ult_s)
             linhas_fm.append(linha)
 
@@ -3114,8 +3118,18 @@ def gerar_pdf_faccoes(
                 for nome, ult, dias in atrasadas[:8]
             )
             story.append(Paragraph(
-                f"<b>📅 Ainda não alinharam o envio diário das produções:</b> "
+                f"<b>📅 Desatualizadas — enviaram dado, mas não dos últimos dias:</b> "
                 f"{nomes_atraso}.",
+                nota_fac,
+            ))
+            story.append(Spacer(1, 0.3 * cm))
+
+        # ── Facções com meta mas nenhum dado lançado no período inteiro ──────
+        if sem_dado_periodo:
+            nomes_sem_dado = ', '.join(sem_dado_periodo[:8])
+            story.append(Paragraph(
+                f"<b>🚫 Sem nenhum dado lançado neste período:</b> "
+                f"{nomes_sem_dado}.",
                 nota_fac,
             ))
             story.append(Spacer(1, 0.3 * cm))

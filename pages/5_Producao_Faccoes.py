@@ -22,7 +22,7 @@ from utils.anotacoes_manager import add_anotacao, remove_anotacao, load_anotacoe
 from utils.normalize import normalize_text
 from components.filtros_btn import render_filtros_btn
 from components.sidebar import render_home_button
-from config.settings import FACCOES_FACCAO_ALIAS
+from config.settings import FACCOES_FACCAO_ALIAS, CORES_FACCAO
 from styles.global_ui import get_global_ui_css
 
 st.set_page_config(
@@ -85,19 +85,6 @@ DARK_LAYOUT = dict(
     legend=dict(bgcolor="rgba(0,0,0,0)"),
     separators=",.",
 )
-
-# Cores fixas para as facções "fixas". Os prestadores quarterizados (facções
-# dinâmicas) recebem cores automáticas do Plotly — color_discrete_map só mapeia
-# as categorias que casam e auto-atribui o restante.
-CORES_FACCAO = {
-    "ZANATTA":          "#4ECDC4",
-    "GGTTEX RUTE":      "#45B7D1",
-    "GGTTEX CORTINA":   "#5DA9E9",
-    "PREVITTEX MATRIZ": "#FFA726",
-    "MEGA BARIRI":      "#FF6B6B",
-    "MEGA PREVEN":      "#AB47BC",
-    "LITEX":            "#34D399",
-}
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -178,6 +165,11 @@ if df_all.empty:
 # Normaliza variações de grafia nos nomes de facção (typos na aba QUARTERIZADAS).
 if FACCOES_FACCAO_ALIAS:
     df_all["FACCAO"] = df_all["FACCAO"].replace(FACCOES_FACCAO_ALIAS)
+    # FACCAO_N (usada pra casar com a guia de metas) precisa ser recalculada
+    # depois do replace acima — senão fica com o nome antigo (ex.: "zanatta"
+    # em vez de "giattex"), o que faz a facção aparecer duplicada na tabela
+    # (uma linha com produção e sem meta, outra com meta e sem produção).
+    df_all["FACCAO_N"] = df_all["FACCAO"].apply(normalize_text)
 
 goals_df = _build_goals()
 

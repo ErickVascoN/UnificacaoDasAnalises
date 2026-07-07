@@ -6,6 +6,279 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "07/07/2026",
+        "tag": "novo",
+        "title": "Relatório 'Corte Consolidado' agora é idêntico ao PDF do e-mail diário",
+        "description": (
+            "pages/10_Relatorios.py (aba ✂️ Corte, botão 'Gerar Corte Consolidado'): antes gerava "
+            "um PDF próprio (utils.pdf_report.gerar_pdf_corte_consolidado, com Itaju e sem "
+            "detalhamento por dia/mês). Agora chama diretamente "
+            "scripts.relatorio_diario_corte.gerar_pdf_consolidado — a mesma função que gera o "
+            "anexo do e-mail automático diário — com um novo campo 'Dia de referência' (padrão: "
+            "ontem, igual ao e-mail). Produz o mesmo PDF de 3 seções (Dia / Mês Atual / Últimos 2 "
+            "Meses) com Manta Arealva + Manta Iacanga + Lençol Arealva. Os outros 4 relatórios da "
+            "aba (Arealva Manta, Iacanga Manta, Lençol, Itaju) continuam com seus layouts "
+            "próprios, com comparação de meta. Testado ao vivo: PDF gerado com sucesso."
+        ),
+    },
+    {
+        "date": "07/07/2026",
+        "tag": "novo",
+        "title": "Relatório de Produção (aba Produção Geral) usa dataset unificado",
+        "description": (
+            "pages/10_Relatorios.py (aba 🏭 Produção Geral): o relatório agora gera exatamente o "
+            "mesmo formato da aba Facções (Resumo Executivo + Facção x Meta + gráficos + "
+            "detalhamento por produto/facção + detalhe diário), só que a partir do dataset "
+            "unificado (utils.producao_unificada.load_producao_unificada) — histórico completo "
+            "(planilha antiga + facções) com todas as correções já aplicadas ao dashboard ao vivo "
+            "(GIATTEX, Felipe→Litex, quarterizadas inativas removidas). O relatório antigo por "
+            "empresa/cliente (gerar_pdf_producao_geral) deixou de ser usado nessa aba. Corrigido "
+            "de quebra um bug em utils/producao_unificada.py: quando um dos dois lados (legado ou "
+            "facções) vinha vazio, pd.concat trocava a coluna DATA pra dtype 'object', quebrando "
+            "qualquer .dt.date usado depois — forçado pd.to_datetime no resultado final. "
+            "Testado ao vivo: PDF gerado com sucesso e a tabela Facção x Meta bate com a tela."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "melhoria",
+        "title": "Prestadores quarterizados inativos removidos do dashboard",
+        "description": (
+            "utils/producao_unificada.py (PRESTADORES_INATIVOS): Angela Bandeirantes, Anjos "
+            "Texteis, Daiane, Mara, Marcia Gonçalves, Maria Gessi e Maria Helena não produzem "
+            "mais e só poluíam a lista de QUARTERIZADAS. Removidos do dataset unificado inteiro "
+            "(pedido do usuário). Testado ao vivo: nenhuma das sete aparece mais na lista, e o "
+            "total de QUARTERIZADAS caiu de 3.584.069 para 3.145.360 un. — exatamente a soma da "
+            "produção histórica delas (438.709 un.)."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "correção",
+        "title": "Prestador Felipe unificado com a facção fixa LITEX",
+        "description": (
+            "utils/producao_unificada.py: o prestador FELIPE (quarterizada na planilha de "
+            "facções) é a mesma pessoa/produção da facção fixa LITEX — 'LITTEX', na planilha "
+            "antiga, já era o nome usado pra essa mesma produção. Adicionado 'FELIPE' → 'LITEX' "
+            "em FACCAO_RENOMEADA (mantido 'LITTEX' → 'LITEX' em FACCAO_ALIAS_LEGADO). FELIPE "
+            "deixou de aparecer separado em QUARTERIZADAS. Testado ao vivo: LITEX passou de "
+            "56.952 para 490.184 un. (56.952 + 433.232 do Felipe) e QUARTERIZADAS caiu na mesma "
+            "proporção, de 4.017.301 para 3.584.069 un."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "correção",
+        "title": "Botão 'Início' duplicado na sidebar de Produção por Facção",
+        "description": (
+            "pages/2_Producao_Geral.py (_faccao_sidebar_filtros): a sidebar das telas de "
+            "facção (home, quarterizadas e drill-down) chamava render_home_button() por cima "
+            "do botão 'Início' que _sidebar_nav_producao já desenha, duplicando o botão. "
+            "Removida a chamada redundante. Também removido o botão 'Ver comparação completa "
+            "entre facções', que levava para a página antiga de comparação (5_Producao_Faccoes.py), "
+            "já substituída pela aba 'Comparação — Facção e Produto' dentro da própria tela."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "melhoria",
+        "title": "QUARTERIZADAS sempre primeiro na lista de seleção",
+        "description": (
+            "pages/2_Producao_Geral.py (_faccao_grade_selecao): o item 'QUARTERIZADAS' na home de "
+            "facções ficava perdido no meio/fim da lista (ordem alfabética colocava ele por "
+            "último). Agora ele sempre aparece primeiro, com o resto das facções em ordem "
+            "alfabética logo depois."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "novo",
+        "title": "Aba 'Comparação — Facção e Produto' dentro da Produção Diária",
+        "description": (
+            "pages/2_Producao_Geral.py: a home de facções ('Dashboard de Produção — Todas as "
+            "Facções') ganhou uma segunda aba, ao lado de 'Visão Geral', com a comparação "
+            "completa entre facções e entre produtos — portada de pages/5_Producao_Faccoes.py "
+            "(abas '🏭 Por Facção' e '📦 Por Produto'), sem trazer as visões Mensal/Semanal/Diária "
+            "daquela página (já cobertas pela 'Evolução Mensal' existente). Sub-aba 'Por Facção': "
+            "KPIs, % por facção, produção diária empilhada, ranking Produzido vs Meta (usa "
+            "utils/faccoes_metas_calc.calcular_meta_faccoes — a versão sem o bug de duplicação "
+            "corrigido acima), regularidade/assiduidade (reaproveita utils/faccoes_viz.py, criado "
+            "antes mas ainda sem uso), mapa de calor Facção × Dia, evolução acumulada/diária, mix "
+            "de produtos por facção e tabela de detalhe. Sub-aba 'Por Produto': ranking, mix "
+            "(donut), treemap Produto→Empresa, heatmap Produto×Empresa, evolução dos top 6 "
+            "produtos. Diferença de escopo: aqui a comparação é sempre por FACCAO individual (sem "
+            "agrupar quarterizadas), igual ao comportamento original da página portada."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "correção",
+        "title": "Facção duplicada e sem meta na comparação entre facções (GIATTEX / MEGA PREVEN MATRIZ)",
+        "description": (
+            "pages/5_Producao_Faccoes.py: a tabela 'Ranking detalhado Facção × Meta' mostrava "
+            "GIATTEX duas vezes (uma com produção e sem meta, outra com meta e produção zerada) e "
+            "MEGA PREVEN MATRIZ sempre sem meta. Causa: o alias FACCOES_FACCAO_ALIAS (ZANATTA→"
+            "GIATTEX, PREVITTEX FILIAL→MEGA PREVEN MATRIZ) renomeava a coluna de exibição FACCAO, "
+            "mas a coluna FACCAO_N (usada pra casar produção com a guia de metas) tinha sido "
+            "calculada ANTES do rename e ficava com o nome antigo — produção com chave 'zanatta', "
+            "meta com chave 'giattex', nunca combinavam. Corrigido recalculando FACCAO_N depois de "
+            "aplicar o alias. Confirmado com dados reais: antes, produção usava a chave 'ZANATTA'/"
+            "'PREVITTEX FILIAL' e meta usava 'GIATTEX'/'MEGA PREVEN MATRIZ' (chaves diferentes); "
+            "depois da correção, as duas batem exatamente. Bug pré-existente, independente da "
+            "unificação com a planilha antiga — afetava só esta página (utils/producao_unificada."
+            "py, usado pelo novo drill-down, já fazia esse recálculo corretamente)."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "melhoria",
+        "title": "Nota de 'última data com dado' em cada facção/prestador",
+        "description": (
+            "pages/2_Producao_Geral.py (_faccao_grade_selecao): cada botão de seleção (facção "
+            "fixa ou prestador individual dentro de Quarterizadas) ganhou uma notinha discreta "
+            "('· até DD/MM') com a última data com produção lançada no período filtrado, embutida "
+            "na mesma linha do botão (não como elemento separado, pra não ficar solta do card). "
+            "O card agregado 'QUARTERIZADAS' na home NÃO mostra essa data — misturar a última "
+            "data de todos os prestadores não diz muito; quem quiser saber a data de cada um "
+            "entra no card e vê lá dentro. Serve pra identificar rapidamente quem está com "
+            "lançamento em dia e quem está atrasado — algumas quarterizadas já apareceram bem "
+            "discrepantes entre si (uma até "
+            "03/07, outra só até 06/02). Investigação à parte: verificamos se o parser de data "
+            "estava invertendo dia/mês (suspeita do usuário) cruzando duas datas específicas "
+            "direto contra as células brutas do Excel (Angela Bandeirantes → 06/02, Felipe → "
+            "07/04) — ambas batem exatamente com o dado real (células datetime nativas do Excel, "
+            "sem ambiguidade). Também vasculhamos todas as abas por cabeçalhos de data gravados "
+            "como texto (esses sim arriscam inversão) — só existem em 'Niazittex' (não usada "
+            "nessa via, vem da LITEX_GERAL) e 'Decor', e ambas seguem DD/MM/AAAA corretamente. "
+            "Nenhum caso de inversão dia/mês encontrado nos pontos verificados."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "melhoria",
+        "title": "KPIs removidos das telas de seleção de facção/quarterizadas",
+        "description": (
+            "pages/2_Producao_Geral.py: removida a linha de KPIs (Grupos/Prestadores Ativos, "
+            "Produção Total, Média por Item, Dias com Registros) do topo das telas de seleção "
+            "(home de facções e tela de Quarterizadas) — a pedido do usuário. As duas telas "
+            "compartilham a mesma função (_faccao_grade_selecao), então a mudança vale pras duas "
+            "de uma vez. O drill-down individual de cada facção/prestador continua com seus "
+            "próprios KPIs (Total Produzido, Meta, Saldo, Atingimento etc.), sem alteração."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "novo",
+        "title": "Produção por Cliente descontinuada — só a Produção Diária (facções) fica",
+        "description": (
+            "pages/2_Producao_Geral.py: removido o dashboard antigo 'Produção por Cliente' "
+            "(render_home/render_company e a tela intermediária 'Produção por Cliente ou "
+            "Facções') — o time passa a usar só a nova visão unificada de facções (KPIs + Visão "
+            "Geral / Por Cliente / Ranking & Alertas / Dados), que já cobre a análise por cliente "
+            "dentro de cada facção. Clicar em 'Por Cliente' na tela 'Tipo de Análise' agora vai "
+            "direto pra tela de facções, sem a etapa intermediária de escolher entre os dois "
+            "dashboards (que não fazia mais sentido com só uma opção restando). Removidas ~1.000 "
+            "linhas de código morto: render_home(), render_company(), render_por_cliente(), "
+            "_screen_por_cliente_type(), _calc_meta(), _calc_meta_por_produto(), "
+            "_all_data_from_unificado(), _on_home_ano_change/_on_home_mes_change() e "
+            "CORES_EMPRESAS — nenhuma dessas funções tinha mais chamador depois da migração. "
+            "load_all_data() e as funções de suporte da planilha antiga (_load_niazitex_"
+            "suplementar, _load_metas_lookup_pg etc.) continuam — são a fonte da fatia legada "
+            "(pré-01/06/2026) da linha do tempo unificada em utils/producao_unificada.py, ainda "
+            "em uso pela nova tela."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "correção",
+        "title": "Produto 'JOGOS'/'JOGO' da planilha antiga desambiguado por contexto",
+        "description": (
+            "utils/producao_unificada.py: a planilha antiga registra 'JOGOS' ou 'JOGO' como "
+            "abreviação genérica, mas o produto real varia por quem produziu — aparecia solto na "
+            "tabela 'Resumo por Cliente / Produto' ao lado do nome já correto (ex.: cliente "
+            "Marcelino com 'JOGO DE CAMA PP' de um lado e 'JOGOS' de outro, sem unificar). Nova "
+            "função _normalizar_produto_legado(): quando a facção é a Carline (MEGA (CARLINE)), "
+            "'JOGOS'/'JOGO' viram 'JOGO DE CAMA'; quando o cliente é Marcelino (via outra facção), "
+            "viram 'JOGO DE CAMA PP'. Fora desses dois contextos o produto não é alterado. "
+            "Confirmado com o usuário e validado direto no CSV exportado da tela ao vivo — 100% das "
+            "linhas de Marcelino/Carline já saem como 'JOGO DE CAMA', nenhuma 'JOGOS' solta."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "melhoria",
+        "title": "Quarterizadas agrupadas na tela de facções + remoção de heatmap poluído",
+        "description": (
+            "pages/2_Producao_Geral.py: a tela 'Análise de Facções' listava cada prestador "
+            "quarterizado (SUZANA, CAROL MENDES, FELIPE, ZARO (LUIS)...) solto ao lado das facções "
+            "fixas, ficando confusa. Agora os prestadores individuais entram sob um único item "
+            "'QUARTERIZADAS' na tela inicial; clicar nele abre uma nova tela (render_faccao_"
+            "quarterizadas) só com os prestadores, no mesmo padrão visual (KPIs, gráfico, lista de "
+            "seleção, evolução mensal, resumo). Critério de agrupamento (utils/producao_unificada."
+            "py: faccoes_fixas()/is_quarterizada()/grupo_de()): é quarterizada tudo que NÃO é uma "
+            "das facções fixas configuradas em FACCOES_ABAS — inclui ZARO (LUIS), que apesar do "
+            "nome com parênteses é prestador individual; exclui MEGA (BOCA)/MEGA (CARLINE), que são "
+            "facções fixas apesar do nome parecido. O botão 'Voltar' do drill-down individual agora "
+            "sabe voltar pra tela de Quarterizadas (não pra Visão Geral) quando a facção clicada era "
+            "uma quarterizada. Removido também o mapa de calor Cliente × Dia da aba 'Por Cliente' do "
+            "drill-down — ficava ilegível pra prestadores com muitos dias de produção (cada dia "
+            "virava uma faixa fina na única linha do heatmap)."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "correção",
+        "title": "Reconciliação de nomes de facção na linha do tempo unificada",
+        "description": (
+            "utils/producao_unificada.py: correção dos alias de facção da planilha antiga, que "
+            "estavam na direção errada e deixavam nomes desatualizados/duplicados na tela de "
+            "facções. Agora o sistema sempre exibe o nome ATUAL: 'GIATTEX' (não mais 'Zanatta') e "
+            "'MEGA PREVEN MATRIZ' (não mais 'Previttex Filial') — são abas só renomeadas no Sheets, "
+            "mesmo GID. Duplicatas por digitação unificadas: 'NATHIELLY'→'NATCHIELLY', "
+            "'PREVITEX MATRIZ'→'PREVITTEX MATRIZ', 'ELIZANGELA'→'ELISANGELA', e 'GGTTEX' solto → "
+            "'GGTTEX CORTINA' (todos confirmados com o usuário). A tela de facções (home e resumo) "
+            "passou a esconder facções com 0 peças no período — antes poluíam a lista com nomes "
+            "sem produção. Corrigido também um bug de estado no drill-down: as chaves dos filtros "
+            "de Ano/Mês/Cliente/Produto agora incluem o nome da facção, então trocar de facção na "
+            "mesma sessão não faz o filtro de uma 'vazar' pra outra. Obs.: quando um nome aparece "
+            "sem correspondente atual, é facção que parou ou começou a produzir — não é erro."
+        ),
+    },
+    {
+        "date": "06/07/2026",
+        "tag": "novo",
+        "title": "Drill-down por Facção + linha do tempo unificada em Produção por Cliente",
+        "description": (
+            "pages/2_Producao_Geral.py: 'Análise de Facções' (dentro de Análise de Produção → "
+            "Por Cliente) deixou de abrir direto pages/5_Producao_Faccoes.py e passou a ter uma "
+            "tela própria no mesmo padrão visual de 'Produção por Cliente' (KPIs + abas Visão "
+            "Geral / Por Cliente / Ranking & Alertas / Dados) — selecionando uma facção específica "
+            "dá pra ver o total dela somando todos os clientes que atende, algo que antes só dava "
+            "pra ver fatiado dentro da tela de cada cliente. Um link 'Ver comparação completa "
+            "entre facções →' preserva o acesso à página antiga de comparação lado a lado. "
+            "utils/producao_unificada.py (novo): costura a planilha antiga de Produção Geral "
+            "(histórico desde out/2025) com a planilha de Facções (mais atualizada, mas só com "
+            "dados consistentes a partir de ~jun/2026) numa única linha do tempo — cutover em "
+            "01/06/2026, antes disso vem da planilha antiga, depois da planilha de facções. Os "
+            "nomes de facção da planilha antiga foram reconciliados manualmente com o usuário "
+            "contra os nomes atuais (ex.: 'ZANATTEX' → 'GGTTEX RUTE', 'GIATTEX' → 'ZANATTA' e "
+            "'MEGA PREVEN MATRIZ' → 'PREVITTEX FILIAL', que são a mesma aba só renomeada no "
+            "Sheets — confirmado que o código busca por GID, não por nome, então isso não quebra). "
+            "'Produção por Cliente' (render_home/render_company) passou a usar essa mesma linha "
+            "do tempo unificada — os gráficos de Evolução Mensal e Produção Mensal por Ano agora "
+            "têm o histórico completo (antes ficariam vazios pra qualquer período usando só a "
+            "planilha de facções). A Meta do Período de cada cliente passou a somar a fatia "
+            "legada (cálculo antigo, por linha) com a fatia nova (sistema ponderado por "
+            "cliente/produto da planilha de facções), sem duplicar. utils/faccoes_viz.py (novo): "
+            "heatmap e cálculo de regularidade/assiduidade extraídos de "
+            "pages/5_Producao_Faccoes.py como funções genéricas, reaproveitadas no novo "
+            "drill-down. CORES_FACCAO movido de pages/5_Producao_Faccoes.py para "
+            "config/settings.py. Corrigido de brinde um bug pré-existente e não relacionado: "
+            "dois print() de debug com seta unicode que quebravam load_all_data() inteiro em "
+            "consoles Windows (cp1252) sempre que o cache estava frio."
+        ),
+    },
+    {
         "date": "05/07/2026",
         "tag": "correção",
         "title": "Análises da Previsão de Cargas ficavam zeradas ao filtrar poucos meses",

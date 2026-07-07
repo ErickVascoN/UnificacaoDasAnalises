@@ -230,6 +230,20 @@ FACCOES_FACCAO_ALIAS: dict[str, str] = {
     "PREVITTEX FILIAL":       "MEGA PREVEN MATRIZ",  # Previttex Filial virou Mega Preven Matriz
 }
 
+# Cores fixas para as facções "fixas" nos gráficos (Produção por Facção e
+# drill-down por facção do Produção Geral). Prestadores quarterizados (facções
+# dinâmicas) recebem cores automáticas do Plotly — color_discrete_map só mapeia
+# as categorias que casam e auto-atribui o restante.
+CORES_FACCAO: dict[str, str] = {
+    "GIATTEX":          "#4ECDC4",   # nome atual (Zanatta virou Giattex — ver FACCOES_FACCAO_ALIAS)
+    "GGTTEX RUTE":      "#45B7D1",
+    "GGTTEX CORTINA":   "#5DA9E9",
+    "PREVITTEX MATRIZ": "#FFA726",
+    "MEGA BARIRI":      "#FF6B6B",
+    "MEGA PREVEN":      "#AB47BC",
+    "LITEX":            "#34D399",
+}
+
 # Metas de facções — guia dentro da planilha de facções (fonte primária)
 # Colunas: FACÇÃO, PRODUTO, CLIENTE, META MÊS
 FACCOES_GID_METAS = "1797767576"

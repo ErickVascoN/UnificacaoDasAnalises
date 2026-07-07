@@ -276,6 +276,7 @@ def load_carteira() -> pd.DataFrame:
         desc = row[14].strip() if len(row) > 14 else ""
         dest = row[4].strip()
         mun  = row[5].strip() if len(row) > 5 else ""
+        cc   = row[15].strip() if len(row) > 15 else ""
         records.append({
             "DATA":        dt,
             "PEDIDO":      row[2].strip(),
@@ -292,6 +293,7 @@ def load_carteira() -> pd.DataFrame:
             "CATEGORIA":   _categorizar(desc),
             "TAMANHO":     _tamanho(desc),
             "SUBCATEGORIA": _subcategoria(desc),
+            "CENTRO_CUSTO": cc if cc else "N/I",
         })
 
     df = pd.DataFrame(records)
@@ -378,6 +380,10 @@ with st.sidebar:
     estados_disp = sorted(e for e in df_raw["ESTADO"].unique() if e != "N/I")
     estados_sel  = st.multiselect("Estado", estados_disp, placeholder="Todos", key="sel_est_cart")
 
+    st.markdown("**🏭 Centro de Custo**")
+    cc_disp = sorted(c for c in df_raw["CENTRO_CUSTO"].unique() if c != "N/I")
+    cc_sel  = st.multiselect("Centro de Custo", cc_disp, placeholder="Todos", key="sel_cc_cart")
+
 # ── Aplicar filtros ───────────────────────────────────────────────────────────
 df = df_raw[df_raw["ANO"].isin(anos_sel)].copy()
 if meses_sel:
@@ -392,6 +398,8 @@ if tam_sel:
     df = df[df["TAMANHO"].isin(tam_sel)]
 if estados_sel:
     df = df[df["ESTADO"].isin(estados_sel)]
+if cc_sel:
+    df = df[df["CENTRO_CUSTO"].isin(cc_sel)]
 
 if df.empty:
     st.warning("⚠️ Nenhum registro com os filtros selecionados.")
@@ -599,6 +607,38 @@ with col_g4:
     )
     st.plotly_chart(fig_est, use_container_width=True)
 
+# ── Linha 2b: Centro de Custo ────────────────────────────────────────────────
+st.markdown("<div class='sec-title'>🏭 Carteira por Centro de Custo</div>", unsafe_allow_html=True)
+
+df_cc_kpi = (
+    df[df["CENTRO_CUSTO"] != "N/I"]
+    .groupby("CENTRO_CUSTO")
+    .agg(VALOR=("VALOR_TOTAL", "sum"), PECAS=("QUANTIDADE", "sum"),
+         PEDIDOS=("PEDIDO", "nunique"))
+    .reset_index()
+    .sort_values("VALOR", ascending=True)
+)
+fig_cc_kpi = go.Figure()
+fig_cc_kpi.add_bar(
+    y=df_cc_kpi["CENTRO_CUSTO"], x=df_cc_kpi["VALOR"],
+    orientation="h", marker_color="#A78BFA",
+    text=[_fmt_r(v) for v in df_cc_kpi["VALOR"]],
+    textposition="outside", textfont=dict(size=9),
+    customdata=df_cc_kpi[["PECAS", "PEDIDOS"]].values,
+    hovertemplate=(
+        "<b>%{y}</b><br>Valor: R$ %{x:,.0f}<br>"
+        "Peças: %{customdata[0]:,.0f}<br>Pedidos: %{customdata[1]}<extra></extra>"
+    ),
+)
+fig_cc_kpi.update_layout(
+    **_layout(
+        height=max(320, 40 * len(df_cc_kpi)),
+        title="Valor Total por Centro de Custo",
+        xaxis=dict(tickprefix="R$ ", separatethousands=True),
+    )
+)
+st.plotly_chart(fig_cc_kpi, use_container_width=True)
+
 # ── Linha 3: Categorias por cliente (stacked) + Top produtos ─────────────────
 st.markdown("<div class='sec-title'>📦 Mix de Produtos</div>", unsafe_allow_html=True)
 col_g5, col_g6 = st.columns(2)
@@ -797,19 +837,20 @@ df_det = df.copy()
 if busca.strip():
     mask = (
         df_det["DESCRICAO"].str.upper().str.contains(busca.upper(), na=False) |
-        df_det["CLIENTE_CURTO"].str.upper().str.contains(busca.upper(), na=False)
+        df_det["CLIENTE_CURTO"].str.upper().str.contains(busca.upper(), na=False) |
+        df_det["CENTRO_CUSTO"].str.upper().str.contains(busca.upper(), na=False)
     )
     df_det = df_det[mask]
 
 df_table = df_det[[
-    "DATA", "PEDIDO", "CLIENTE_CURTO", "MUNICIPIO", "CATEGORIA",
+    "DATA", "PEDIDO", "CLIENTE_CURTO", "MUNICIPIO", "CENTRO_CUSTO", "CATEGORIA",
     "DESCRICAO", "TAMANHO", "QUANTIDADE", "VALOR_UNIT", "VALOR_TOTAL",
 ]].copy()
 df_table["DATA"]        = df_table["DATA"].dt.strftime("%d/%m/%Y")
 df_table["QUANTIDADE"]  = df_table["QUANTIDADE"].apply(_fmt_n)
 df_table["VALOR_UNIT"]  = df_table["VALOR_UNIT"].apply(lambda v: f"R$ {v:,.2f}".replace(",","X").replace(".",",").replace("X","."))
 df_table["VALOR_TOTAL"] = df_table["VALOR_TOTAL"].apply(_fmt_r)
-df_table.columns = ["Data", "Pedido", "Cliente", "Município", "Categoria",
+df_table.columns = ["Data", "Pedido", "Cliente", "Município", "Centro de Custo", "Categoria",
                     "Descrição", "Tamanho", "Qtd", "Vl. Unit.", "Vl. Total"]
 
 st.dataframe(

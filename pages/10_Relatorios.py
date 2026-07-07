@@ -40,12 +40,10 @@ from config.settings import (
 
 from utils.lencol_caseamento import lencol_tipos_tams as _lencol_tipos_tams, lencol_caseamento
 from utils.pdf_report import (
-    gerar_pdf_corte_consolidado,
     gerar_pdf_arealva_manta,
     gerar_pdf_iacanga_manta,
     gerar_pdf_lencol,
     gerar_pdf_itaju,
-    gerar_pdf_producao_geral,
     gerar_pdf_faccoes,
     gerar_pdf_previsao_cargas,
     gerar_pdf_carteira_pedidos,
@@ -1023,22 +1021,21 @@ with tab_corte:
 
     with c1:
         st.markdown("#### 📄 Consolidado — Todos os Cortes")
-        st.caption("Arealva Manta + Lençol + Iacanga + Itaju")
+        st.caption(
+            "Idêntico ao PDF enviado automaticamente por e-mail: Manta Arealva + Manta Iacanga + "
+            "Lençol Arealva, em 3 seções (Dia / Mês Atual / Últimos 2 Meses)."
+        )
+        _dia_cc = st.date_input(
+            "Dia de referência", value=date.today() - timedelta(days=1),
+            format="DD/MM/YYYY", key="dia_cc",
+        )
         if st.button("📄 Gerar Corte Consolidado", key="btn_cc", use_container_width=True, type="primary"):
             with st.spinner("Carregando dados e gerando PDF…"):
                 try:
-                    _bytes_cc = gerar_pdf_corte_consolidado(
-                        df_manta=_dados_arealva(),
-                        df_lencol=_dados_lencol(),
-                        df_iacanga=_dados_iacanga(),
-                        df_itaju=_dados_itaju(),
-                        ini=_ini_corte,
-                        fim=_fim_corte,
-                        metas_arealva=_METAS_AREALVA,
-                        metas_iacanga=_METAS_IACANGA,
-                    )
+                    from scripts.relatorio_diario_corte import gerar_pdf_consolidado as _gerar_pdf_consolidado_email
+                    _bytes_cc = _gerar_pdf_consolidado_email(_dia_cc)
                     st.session_state["pdf_cc_bytes"] = _bytes_cc
-                    st.session_state["pdf_cc_nome"] = nome_arquivo_pdf("corte_consolidado", _ini_corte, _fim_corte)
+                    st.session_state["pdf_cc_nome"] = f"relatorio_consolidado_{_dia_cc.strftime('%d-%m-%Y')}.pdf"
                     st.success("PDF gerado! Clique em Baixar.")
                 except Exception as _e:
                     st.error(f"Erro ao gerar PDF: {_e}")
@@ -1181,8 +1178,11 @@ with tab_corte:
 # TAB — PRODUÇÃO GERAL
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_prod:
-    st.markdown("### 🏭 Relatório de Produção Geral")
-    st.markdown("Relatório completo de produção por empresa/cliente.")
+    st.markdown("### 🏭 Relatório de Produção")
+    st.markdown(
+        "Relatório de produção x meta x período — indicador principal é Facção x Meta, "
+        "com histórico unificado (planilha antiga + facções, mesmas correções do dashboard ao vivo)."
+    )
 
     _ci_pg, _cf_pg = st.columns(2)
     with _ci_pg:
@@ -1193,31 +1193,97 @@ with tab_prod:
     st.markdown("---")
     _col_l_pg, _col_c_pg, _col_r_pg = st.columns([2, 4, 2])
     with _col_c_pg:
-        if st.button("📄 Gerar Relatório de Produção Geral", key="btn_pg", use_container_width=True, type="primary"):
+        if st.button("📄 Gerar Relatório de Produção", key="btn_pg", use_container_width=True, type="primary"):
             with st.spinner("Carregando dados de produção… pode levar alguns segundos."):
                 try:
-                    _all_data_pg = _dados_producao()
-                    if not _all_data_pg:
+                    from utils.producao_unificada import load_producao_unificada
+                    from utils.faccoes_metas_calc import calcular_meta_faccoes
+
+                    _all_data_legado_pg = _dados_producao()
+                    _df_unif_pg = load_producao_unificada(_all_data_legado_pg)
+                    if _df_unif_pg.empty:
                         st.error("Nenhum dado de produção disponível. Verifique a conexão com a planilha.")
                     else:
-                        def _date_filter_pg(df):
-                            return df[(df["Data"].dt.date >= _ini_pg) & (df["Data"].dt.date <= _fim_pg)]
-                        _filtered_pg = {k: _date_filter_pg(v) for k, v in _all_data_pg.items()}
-                        _filtered_pg = {k: v for k, v in _filtered_pg.items() if not v.empty}
-                        if not _filtered_pg:
+                        _df_mes_pg = _df_unif_pg[
+                            (_df_unif_pg["DATA"].dt.date >= _ini_pg) & (_df_unif_pg["DATA"].dt.date <= _fim_pg)
+                        ].copy()
+                        if _df_mes_pg.empty:
                             st.warning("Nenhuma produção no período selecionado.")
                         else:
-                            _filtros_pg = f"Empresas: {', '.join(list(_filtered_pg.keys())[:5])}{'...' if len(_filtered_pg) > 5 else ''}"
-                            _bytes_pg = gerar_pdf_producao_geral(_filtered_pg, _ini_pg, _fim_pg, _filtros_pg)
+                            _mes_sel_pg = _ini_pg.month
+                            _ano_sel_pg = _ini_pg.year
+
+                            # Meta por facção (ponderada por produto/cliente + dias reais de
+                            # produção) — mesma conta do dashboard unificado (pages/2_Producao_Geral.py),
+                            # via utils/faccoes_metas_calc, para o relatório nunca divergir da tela.
+                            _calc_pg = calcular_meta_faccoes(
+                                _df_mes_pg[["DATA", "FACCAO", "PRODUTO", "CLIENTE", "QUANTIDADE"]],
+                                _ano_sel_pg, _mes_sel_pg,
+                            )
+                            _rank_df_pg = _calc_pg["rank_df"]
+                            _meta_mes_total_pg = _calc_pg["meta_mes_total"]
+                            _meta_dia_total_pg = _calc_pg["meta_dia_total"]
+                            _total_mes_pg = int(_df_mes_pg["QUANTIDADE"].sum())
+
+                            _fim_ref_pg = min(_today, _fim_pg)
+                            _du_passados_pg = sum(
+                                1 for i in range((_fim_ref_pg - _ini_pg).days + 1)
+                                if (_ini_pg + timedelta(days=i)).weekday() < 5
+                            ) if _fim_ref_pg >= _ini_pg else 0
+                            _esperado_pg = _du_passados_pg * _meta_dia_total_pg
+                            _pct_mes_pg   = _total_mes_pg / _meta_mes_total_pg * 100 if _meta_mes_total_pg > 0 else 0
+                            _pct_ritmo_pg = _total_mes_pg / _esperado_pg * 100 if _esperado_pg > 0 else 0
+
+                            # Monta tabela por (produto, empresa, facção)
+                            _df_mes_pg["PRODUTO_N"] = _df_mes_pg["PRODUTO"].apply(normalize_text)
+                            _df_mes_pg["CLIENTE_N"] = _df_mes_pg["CLIENTE"].apply(normalize_text)
+                            _df_mes_pg["FACCAO_N"]  = _df_mes_pg["FACCAO"].apply(normalize_text)
+                            _prod_pg = (
+                                _df_mes_pg.groupby(["PRODUTO_N","CLIENTE_N","FACCAO_N","PRODUTO","CLIENTE","FACCAO"])
+                                .agg(QUANTIDADE=("QUANTIDADE","sum")).reset_index()
+                            )
+
+                            _goals_pg = _metas_faccoes()
+                            if not _goals_pg.empty:
+                                _metas_pg_df = _goals_pg[["PRODUTO_N","CLIENTE_N","FACCAO_N","META_MES"]].copy()
+                                _merged_pg = _prod_pg.merge(_metas_pg_df, on=["PRODUTO_N","CLIENTE_N","FACCAO_N"], how="left")
+                                _merged_pg["META_MES"] = _merged_pg["META_MES"].fillna(0).astype(int)
+                            else:
+                                _merged_pg = _prod_pg.copy()
+                                _merged_pg["META_MES"] = 0
+
+                            _merged_pg["Pct_Meta"] = _merged_pg.apply(
+                                lambda r: round(r["QUANTIDADE"]/r["META_MES"]*100, 1) if r["META_MES"] > 0 else None, axis=1
+                            )
+                            _merged_pg["Restante"] = _merged_pg.apply(
+                                lambda r: max(0, r["META_MES"] - r["QUANTIDADE"]) if r["META_MES"] > 0 else None, axis=1
+                            )
+                            _tabela_pg = _merged_pg[["PRODUTO","CLIENTE","FACCAO","QUANTIDADE","META_MES","Pct_Meta","Restante"]].copy()
+                            _tabela_pg.columns = ["Produto","Empresa","Faccao","Produzido","Meta Mes","% Meta","Restante"]
+                            _tabela_pg["Meta Mes"] = _tabela_pg["Meta Mes"].replace(0, None)
+
+                            _bytes_pg = gerar_pdf_faccoes(
+                                tabela=_tabela_pg,
+                                df_mes=_df_mes_pg,
+                                total_mes=_total_mes_pg,
+                                meta_mes_total=_meta_mes_total_pg,
+                                pct_mes=_pct_mes_pg,
+                                pct_ritmo=_pct_ritmo_pg,
+                                meta_dia_total=_meta_dia_total_pg,
+                                data_ini=_ini_pg,
+                                data_fim=_fim_pg,
+                                filtros_texto="",
+                                rank_df=_rank_df_pg,
+                            )
                             st.session_state["pdf_pg_bytes"] = _bytes_pg
-                            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf("producao_geral", _ini_pg, _fim_pg)
+                            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf("producao", _ini_pg, _fim_pg)
                             st.success("PDF gerado!")
                 except Exception as _e:
                     st.error(f"Erro ao gerar PDF: {_e}")
 
         if st.session_state.get("pdf_pg_bytes"):
-            st.download_button("⬇️ Baixar Produção Geral PDF", data=st.session_state["pdf_pg_bytes"],
-                file_name=st.session_state.get("pdf_pg_nome", "producao_geral.pdf"),
+            st.download_button("⬇️ Baixar Produção PDF", data=st.session_state["pdf_pg_bytes"],
+                file_name=st.session_state.get("pdf_pg_nome", "producao.pdf"),
                 mime="application/pdf", key="dl_pg", use_container_width=True)
 
 
