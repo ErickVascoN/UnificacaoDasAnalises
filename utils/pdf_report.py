@@ -3044,7 +3044,37 @@ def gerar_pdf_faccoes(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
-    # ── Facção x Meta — logo de cara, é o que a diretoria olha primeiro ──────
+    # ── Detalhamento por Produto / Empresa / Facção — visão preferida pela
+    # diretoria, logo de cara, com meta e % da meta por linha (07/07/2026).
+    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    cabec_dp = ['Produto', 'Empresa', 'Faccao', 'Produzido', 'Meta Período', '% Meta']
+    cw_dp = [4.4*cm, 3.0*cm, 3.8*cm, 2.4*cm, 2.6*cm, 2.0*cm]
+
+    linhas_dp = []
+    for _, r in tabela.iterrows():
+        meta_v = r.get('Meta Mes')
+        pct_v = r.get('% Meta')
+        linhas_dp.append([
+            str(r['Produto']), str(r['Empresa']), str(r['Faccao']), _fmt(r['Produzido']),
+            _fmt(meta_v) if pd.notna(meta_v) else '-',
+            f"{pct_v:.1f}%" if pd.notna(pct_v) else 'sem meta',
+        ])
+
+    t_dp = _tabela_generica(cabec_dp, linhas_dp, e, cw_dp, cor_header=colors.HexColor('#065F46'))
+    for ri, (_, r) in enumerate(tabela.iterrows(), start=1):
+        pct_v = r.get('% Meta')
+        if pd.notna(pct_v):
+            cor_s = C_GREEN if pct_v >= 100 else (C_AMBER if pct_v >= 75 else C_RED)
+            t_dp.setStyle(TableStyle([('TEXTCOLOR', (5, ri), (5, ri), cor_s),
+                                      ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold')]))
+    story.append(t_dp)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(PageBreak())
+
+    # ── Facção x Meta — panorama e alertas (sem tabela própria; a tabela
+    # detalhada por produto acima é a visão preferida) ───────────────────────
     if rank_df is not None and not rank_df.empty:
         rk = rank_df.sort_values(
             ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
@@ -3054,61 +3084,27 @@ def gerar_pdf_faccoes(
             'nota_fac', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10,
         )
 
-        story.append(Paragraph('Facção x Meta', e['titulo_secao']))
+        story.append(Paragraph('Facção x Meta — Panorama e Alertas', e['titulo_secao']))
         story.append(_linha_divisoria())
         story.append(Paragraph(
             'Meta mensal de cada facção = meta diária × dias em que a facção realmente '
             'produziu no período (ou dias úteis do mês, para facções sem produção no período). '
-            '"Dados até" mostra o último dia com produção lançada — quando uma facção está '
-            'atrasada em relação às demais, é sinal de que ela ainda não enviou os dados mais '
-            'recentes, não necessariamente que produziu menos.',
+            'O último dado lançado de cada facção é usado para separar quem está atrasado no '
+            'envio de quem realmente produziu menos.',
             nota_fac,
         ))
         story.append(Spacer(1, 0.2 * cm))
 
-        tem_data_col = 'ULTIMA_DATA' in rk.columns
-        cab_fm = ['Facção', 'Produzido', '% do Total', 'Meta Mês', '% Meta', 'Restante']
-        cw_fm = [4.2*cm, 2.3*cm, 2.0*cm, 2.3*cm, 2.0*cm, 2.2*cm]
-        if tem_data_col:
-            cab_fm.append('Dados até')
-            cw_fm.append(1.8*cm)
-
-        linhas_fm = []
         atrasadas = []
         sem_dado_periodo = []
         for _, r in rk.iterrows():
-            tem_meta = r['META_MES'] > 0
-            pct_s = f"{r['PCT']:.1f}%" if tem_meta else 'sem meta'
-            meta_s = _fmt(r['META_MES']) if tem_meta else '-'
-            rest_s = _fmt(r['RESTANTE']) if tem_meta else '-'
-            linha = [
-                str(r['FACCAO']), _fmt(r['QUANTIDADE']), f"{r['PCT_TOTAL']:.1f}%",
-                meta_s, pct_s, rest_s,
-            ]
-            if tem_data_col:
-                ult = r.get('ULTIMA_DATA')
-                atraso = r.get('DIAS_ATRASO')
-                if pd.notna(ult):
-                    ult_s = pd.Timestamp(ult).strftime('%d/%m')
-                    if pd.notna(atraso) and atraso and atraso > 0:
-                        ult_s += ' *'
-                        atrasadas.append((str(r['FACCAO']), ult, int(atraso)))
-                else:
-                    ult_s = 'sem dado'
-                    sem_dado_periodo.append(str(r['FACCAO']))
-                linha.append(ult_s)
-            linhas_fm.append(linha)
-
-        t_fm = _tabela_generica(cab_fm, linhas_fm, e, cw_fm, cor_header=C_NAVY)
-        for ri, r in enumerate(rk.itertuples(), start=1):
-            if r.META_MES > 0:
-                cor_s = C_GREEN if r.PCT >= 100 else (C_AMBER if r.PCT >= 75 else C_RED)
-                t_fm.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), cor_s),
-                                          ('FONTNAME', (4, ri), (4, ri), 'Helvetica-Bold')]))
+            ult = r.get('ULTIMA_DATA')
+            atraso = r.get('DIAS_ATRASO')
+            if pd.notna(ult):
+                if pd.notna(atraso) and atraso and atraso > 0:
+                    atrasadas.append((str(r['FACCAO']), ult, int(atraso)))
             else:
-                t_fm.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), C_GRAY_TEXT)]))
-        story.append(t_fm)
-        story.append(Spacer(1, 0.3 * cm))
+                sem_dado_periodo.append(str(r['FACCAO']))
 
         # ── Facções com dado incompleto (ainda não enviaram os últimos dias) ─
         if atrasadas:
@@ -3223,25 +3219,6 @@ def gerar_pdf_faccoes(
             story.append(Spacer(1, 0.4 * cm))
         except Exception as _ex:
             logger.warning('gerar_pdf_faccoes: chart mix produtos: %s', _ex)
-
-    story.append(PageBreak())
-
-    # ── Tabela de progresso ──────────────────────────────────────────────────
-    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    cabec = ['Produto', 'Empresa', 'Faccao', 'Produzido']
-    cw = [5.5*cm, 4.0*cm, 5.0*cm, 3.0*cm]
-
-    linhas_tab = []
-    for _, r in tabela.iterrows():
-        linhas_tab.append([
-            str(r['Produto']), str(r['Empresa']), str(r['Faccao']), _fmt(r['Produzido']),
-        ])
-
-    t_prog = _tabela_generica(cabec, linhas_tab, e, cw, cor_header=colors.HexColor('#065F46'))
-    story.append(t_prog)
-    story.append(Spacer(1, 0.4 * cm))
 
     story.append(PageBreak())
 
