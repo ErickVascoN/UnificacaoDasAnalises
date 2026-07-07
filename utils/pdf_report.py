@@ -3044,96 +3044,19 @@ def gerar_pdf_faccoes(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
-    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção,
-    # com o detalhe diário já embutido (junção das duas tabelas que existiam
-    # antes — confirmado com o usuário 07/07/2026). A meta é da facção como
-    # um todo (soma ponderada de todos os produtos e clientes que ela
-    # atende) — não existe uma meta por produto isolado. Por isso ela
-    # aparece uma vez, no cabeçalho de cada facção, seguida do detalhe dia a
-    # dia do que ela produziu no período.
-    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    nota_dp = ParagraphStyle('nota_dp', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10)
-    story.append(Paragraph(
-        'A meta é da facção (soma ponderada de todos os produtos/clientes que ela atende), '
-        'não de cada produto isoladamente — por isso aparece uma vez no cabeçalho de cada '
-        'facção, seguida do detalhe diário do que ela produziu no período.',
-        nota_dp,
-    ))
-    story.append(Spacer(1, 0.2 * cm))
-
-    meta_fac_map = {}
-    if rank_df is not None and not rank_df.empty:
-        for _, rr in rank_df.iterrows():
-            meta_fac_map[str(rr['FACCAO'])] = rr
-
-    cab_dp = ['Data', 'Produto', 'Empresa', 'Produzido']
-    cw_dp = [2.4*cm, 5.6*cm, 5.0*cm, 3.0*cm]
-
-    if not df_mes.empty:
-        for faccao in sorted(df_mes['FACCAO'].unique()):
-            df_f = df_mes[df_mes['FACCAO'] == faccao]
-            total_fac = int(df_f['QUANTIDADE'].sum())
-            det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'])['QUANTIDADE']
-                   .sum().reset_index().sort_values('DATA'))
-
-            rr = meta_fac_map.get(faccao)
-            if rr is not None and rr['META_MES'] > 0:
-                header_txt = (
-                    f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
-                    f"Meta Diária: {_fmt(rr['META_DIA'])}  |  "
-                    f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
-                )
-            else:
-                header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
-
-            _t_hdr_dp = Table([[Paragraph(
-                header_txt,
-                ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
-                               textColor=C_WHITE, fontName='Helvetica-Bold',
-                               fontSize=9, spaceBefore=0, spaceAfter=0),
-            )]], colWidths=[PAGE_W - 2 * MARGIN])
-            _t_hdr_dp.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ]))
-            story.append(_t_hdr_dp)
-
-            linhas_dp = [
-                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), str(r['PRODUTO']),
-                 str(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
-                for _, r in det.iterrows()
-            ]
-            story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
-                                          cor_header=colors.HexColor('#2A6496')))
-            story.append(Spacer(1, 0.3 * cm))
-
-    story.append(PageBreak())
-
-    # ── Facção x Meta — panorama e alertas (sem tabela própria; a tabela
-    # detalhada por produto acima é a visão preferida) ───────────────────────
+    # ── Painel de Alertas — logo após os KPIs, é o que a diretoria olha
+    # primeiro (confirmado com o usuário 07/07/2026: substitui o texto
+    # explicativo sobre meta que ficava aqui, movido/resumido mais abaixo).
+    nota_fac = ParagraphStyle(
+        'nota_fac', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10,
+    )
     if rank_df is not None and not rank_df.empty:
         rk = rank_df.sort_values(
             ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
         ).reset_index(drop=True)
 
-        nota_fac = ParagraphStyle(
-            'nota_fac', parent=e['nota'], fontSize=10.5, leading=15, spaceAfter=10,
-        )
-
-        story.append(Paragraph('Facção x Meta — Panorama e Alertas', e['titulo_secao']))
+        story.append(Paragraph('Painel de Alertas — Facção x Meta', e['titulo_secao']))
         story.append(_linha_divisoria())
-        story.append(Paragraph(
-            'Meta mensal de cada facção = meta diária × dias em que a facção realmente '
-            'produziu no período (ou dias úteis do mês, para facções sem produção no período). '
-            'O último dado lançado de cada facção é usado para separar quem está atrasado no '
-            'envio de quem realmente produziu menos.',
-            nota_fac,
-        ))
-        story.append(Spacer(1, 0.2 * cm))
 
         atrasadas = []
         sem_dado_periodo = []
@@ -3225,6 +3148,125 @@ def gerar_pdf_faccoes(
                 nota_fac,
             ))
             story.append(Spacer(1, 0.3 * cm))
+
+        story.append(PageBreak())
+
+    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção,
+    # com o detalhe diário já embutido (junção das duas tabelas que existiam
+    # antes — confirmado com o usuário 07/07/2026). A meta é da facção como
+    # um todo (soma ponderada de todos os produtos e clientes que ela
+    # atende) — não existe uma meta por produto isolado. Por isso ela
+    # aparece uma vez, no cabeçalho de cada facção, seguida do detalhe dia a
+    # dia do que ela produziu no período.
+    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    meta_fac_map = {}
+    if rank_df is not None and not rank_df.empty:
+        for _, rr in rank_df.iterrows():
+            meta_fac_map[str(rr['FACCAO'])] = rr
+
+    cab_dp = ['Data', 'Produto', 'Empresa', 'Produzido']
+    cw_dp = [2.4*cm, 5.6*cm, 5.0*cm, 3.0*cm]
+
+    if not df_mes.empty:
+        for faccao in sorted(df_mes['FACCAO'].unique()):
+            df_f = df_mes[df_mes['FACCAO'] == faccao]
+            total_fac = int(df_f['QUANTIDADE'].sum())
+            det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'])['QUANTIDADE']
+                   .sum().reset_index().sort_values('DATA'))
+
+            rr = meta_fac_map.get(faccao)
+            if rr is not None and rr['META_MES'] > 0:
+                header_txt = (
+                    f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
+                    f"Meta Diária: {_fmt(rr['META_DIA'])}  |  "
+                    f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
+                )
+            else:
+                header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
+
+            _t_hdr_dp = Table([[Paragraph(
+                header_txt,
+                ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
+                               textColor=C_WHITE, fontName='Helvetica-Bold',
+                               fontSize=9, spaceBefore=0, spaceAfter=0),
+            )]], colWidths=[PAGE_W - 2 * MARGIN])
+            _t_hdr_dp.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(_t_hdr_dp)
+
+            linhas_dp = [
+                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), str(r['PRODUTO']),
+                 str(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
+                for _, r in det.iterrows()
+            ]
+            story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
+                                          cor_header=colors.HexColor('#2A6496')))
+            story.append(Spacer(1, 0.3 * cm))
+
+    story.append(PageBreak())
+
+    # ── Resumo por Facção — uma linha por facção, com os tipos de produto
+    # que ela faz e a meta (que é dela, não do produto — daí ficar 1 linha).
+    story.append(Paragraph('Resumo por Facção', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    cab_rs = ['Facção', 'Tipo de Produto', 'Meta Diária', 'Meta Período', '% Meta']
+    cw_rs = [3.4*cm, 6.6*cm, 2.4*cm, 2.6*cm, 2.0*cm]
+
+    linhas_rs = []
+    if rank_df is not None and not rank_df.empty:
+        rk_resumo = rank_df.sort_values(
+            ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
+        )
+        for _, r in rk_resumo.iterrows():
+            faccao = str(r['FACCAO'])
+            produtos_fac = (
+                sorted(df_mes[df_mes['FACCAO'] == faccao]['PRODUTO'].unique())
+                if not df_mes.empty else []
+            )
+            tem_meta = r['META_MES'] > 0
+            linhas_rs.append([
+                faccao,
+                ', '.join(produtos_fac) if produtos_fac else '-',
+                _fmt(r['META_DIA']) if tem_meta else '-',
+                _fmt(r['META_MES']) if tem_meta else '-',
+                f"{r['PCT']:.1f}%" if tem_meta else 'sem meta',
+            ])
+
+    t_rs = _tabela_generica(cab_rs, linhas_rs, e, cw_rs, cor_header=C_NAVY)
+    for ri, linha in enumerate(linhas_rs, start=1):
+        pct_txt = linha[4]
+        if pct_txt != 'sem meta':
+            pct_v = float(pct_txt.rstrip('%'))
+            cor_s = C_GREEN if pct_v >= 100 else (C_AMBER if pct_v >= 75 else C_RED)
+            t_rs.setStyle(TableStyle([('TEXTCOLOR', (4, ri), (4, ri), cor_s),
+                                      ('FONTNAME', (4, ri), (4, ri), 'Helvetica-Bold')]))
+    story.append(t_rs)
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(PageBreak())
+
+    # ── Facção x Meta — gráfico (alertas já exibidos logo após os KPIs) ──────
+    if rank_df is not None and not rank_df.empty:
+        rk = rank_df.sort_values(
+            ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
+        ).reset_index(drop=True)
+
+        story.append(Paragraph('Facção x Meta', e['titulo_secao']))
+        story.append(_linha_divisoria())
+        story.append(Paragraph(
+            'Meta mensal de cada facção = meta diária × dias em que a facção realmente '
+            'produziu no período (ou dias úteis do mês, para facções sem produção no período). '
+            'O último dado lançado de cada facção é usado para separar quem está atrasado no '
+            'envio de quem realmente produziu menos.',
+            nota_fac,
+        ))
+        story.append(Spacer(1, 0.2 * cm))
 
         try:
             buf_fm = _chart_faccao_vs_meta(rk)
