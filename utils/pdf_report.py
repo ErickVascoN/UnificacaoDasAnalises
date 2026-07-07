@@ -3044,13 +3044,13 @@ def gerar_pdf_faccoes(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
-    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção ────
-    # A meta é da facção como um todo (soma ponderada de todos os produtos e
-    # clientes que ela atende) — não existe uma meta por produto isolado. Por
-    # isso ela aparece uma vez, no cabeçalho de cada facção, seguida da lista
-    # de produtos que ela produziu no período (confirmado com o usuário
-    # 07/07/2026 — antes a meta ficava repetida/fragmentada linha a linha,
-    # dando a impressão errada de que só o primeiro produto "usava" a meta).
+    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção,
+    # com o detalhe diário já embutido (junção das duas tabelas que existiam
+    # antes — confirmado com o usuário 07/07/2026). A meta é da facção como
+    # um todo (soma ponderada de todos os produtos e clientes que ela
+    # atende) — não existe uma meta por produto isolado. Por isso ela
+    # aparece uma vez, no cabeçalho de cada facção, seguida do detalhe dia a
+    # dia do que ela produziu no período.
     story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -3058,7 +3058,7 @@ def gerar_pdf_faccoes(
     story.append(Paragraph(
         'A meta é da facção (soma ponderada de todos os produtos/clientes que ela atende), '
         'não de cada produto isoladamente — por isso aparece uma vez no cabeçalho de cada '
-        'facção, seguida da lista de produtos que ela produziu no período.',
+        'facção, seguida do detalhe diário do que ela produziu no período.',
         nota_dp,
     ))
     story.append(Spacer(1, 0.2 * cm))
@@ -3068,81 +3068,45 @@ def gerar_pdf_faccoes(
         for _, rr in rank_df.iterrows():
             meta_fac_map[str(rr['FACCAO'])] = rr
 
-    cab_dp = ['Produto', 'Empresa', 'Produzido']
-    cw_dp = [8.0*cm, 6.0*cm, 4.0*cm]
-
-    for faccao in sorted(tabela['Faccao'].unique()):
-        df_fac_tab = tabela[tabela['Faccao'] == faccao].sort_values('Produzido', ascending=False)
-        total_fac = int(df_fac_tab['Produzido'].sum())
-
-        rr = meta_fac_map.get(faccao)
-        if rr is not None and rr['META_MES'] > 0:
-            header_txt = (
-                f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
-                f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
-            )
-        else:
-            header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
-
-        _t_hdr_dp = Table([[Paragraph(
-            header_txt,
-            ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
-                           textColor=C_WHITE, fontName='Helvetica-Bold',
-                           fontSize=9, spaceBefore=0, spaceAfter=0),
-        )]], colWidths=[PAGE_W - 2 * MARGIN])
-        _t_hdr_dp.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#065F46')),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ]))
-        story.append(_t_hdr_dp)
-
-        linhas_dp = [
-            [str(r['Produto']), str(r['Empresa']), _fmt(r['Produzido'])]
-            for _, r in df_fac_tab.iterrows()
-        ]
-        story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
-                                      cor_header=colors.HexColor('#2A6496')))
-        story.append(Spacer(1, 0.3 * cm))
-
-    story.append(PageBreak())
-
-    # ── Detalhe diário por facção — logo após a tabela por produto ───────────
-    story.append(Paragraph('Detalhe Diario por Faccao', e['titulo_secao']))
-    story.append(_linha_divisoria())
+    cab_dp = ['Data', 'Produto', 'Empresa', 'Produzido']
+    cw_dp = [2.4*cm, 5.6*cm, 5.0*cm, 3.0*cm]
 
     if not df_mes.empty:
-        cab_det = ['Data', 'Produto', 'Empresa', 'Qtd']
-        cw_det = [2.2*cm, 4.0*cm, 3.5*cm, 2.2*cm]
-
         for faccao in sorted(df_mes['FACCAO'].unique()):
             df_f = df_mes[df_mes['FACCAO'] == faccao]
             total_fac = int(df_f['QUANTIDADE'].sum())
             det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'])['QUANTIDADE']
                    .sum().reset_index().sort_values('DATA'))
 
-            _t_hdr = Table([[Paragraph(
-                f'{faccao}  -  Total: {_fmt(total_fac)} pcs',
-                ParagraphStyle('_fh', parent=e['subtitulo_secao'],
+            rr = meta_fac_map.get(faccao)
+            if rr is not None and rr['META_MES'] > 0:
+                header_txt = (
+                    f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
+                    f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
+                )
+            else:
+                header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
+
+            _t_hdr_dp = Table([[Paragraph(
+                header_txt,
+                ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
                                textColor=C_WHITE, fontName='Helvetica-Bold',
                                fontSize=9, spaceBefore=0, spaceAfter=0),
             )]], colWidths=[PAGE_W - 2 * MARGIN])
-            _t_hdr.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0F4C5C')),
+            _t_hdr_dp.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                 ('LEFTPADDING', (0, 0), (-1, -1), 10),
             ]))
-            story.append(_t_hdr)
+            story.append(_t_hdr_dp)
 
-            linhas_det = []
-            for _, r in det.iterrows():
-                linhas_det.append([
-                    pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'),
-                    str(r['PRODUTO']), str(r['CLIENTE']), _fmt(r['QUANTIDADE']),
-                ])
-            story.append(_tabela_generica(cab_det, linhas_det, e, cw_det,
+            linhas_dp = [
+                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), str(r['PRODUTO']),
+                 str(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
+                for _, r in det.iterrows()
+            ]
+            story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
                                           cor_header=colors.HexColor('#2A6496')))
             story.append(Spacer(1, 0.3 * cm))
 
