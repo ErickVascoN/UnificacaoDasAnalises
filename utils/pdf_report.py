@@ -3082,6 +3082,7 @@ def gerar_pdf_faccoes(
             if rr is not None and rr['META_MES'] > 0:
                 header_txt = (
                     f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
+                    f"Meta Diária: {_fmt(rr['META_DIA'])}  |  "
                     f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
                 )
             else:
