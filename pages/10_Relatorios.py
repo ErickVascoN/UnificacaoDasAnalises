@@ -30,6 +30,7 @@ from utils.cache_manager import get_raw
 from utils.date_parser import parse_date_series
 from utils.metas_manager import load_metas
 from utils.normalize import normalize_text
+from utils.ui_helpers import multiselect_reset_on_grow
 from config.settings import (
     CORTE_SHEETS_ID, CORTE_SHEETS_GID, CORTE_CACHE_TTL,
     IACANGA_SHEETS_ID, IACANGA_SHEETS_GID,
@@ -988,171 +989,186 @@ tab_corte, tab_prod, tab_cargas, tab_pedidos, tab_prog = st.tabs([
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_corte:
     st.markdown("### ✂️ Relatórios de Corte")
-    st.markdown("Escolha o relatório e o período — os campos abaixo mudam conforme a escolha.")
+    st.markdown("Escolha o relatório abaixo — o período aparece sempre no card seguinte.")
 
     _OPCOES_CORTE = {
-        "Consolidado — Todos os Cortes": (
+        "📋 Consolidado": (
             "Idêntico ao PDF enviado automaticamente por e-mail: Manta Arealva + Manta Iacanga + "
             "Lençol Arealva, em 3 seções (Dia / Mês Atual / Últimos 2 Meses)."
         ),
-        "Arealva Manta": "Relatório detalhado do corte Arealva Manta.",
-        "Iacanga Manta": "Relatório detalhado do corte Iacanga.",
-        "Lençol Arealva": "Relatório detalhado do corte de lençol.",
-        "Itaju (Ponto Palito)": "Relatório detalhado do corte Itaju.",
+        "🧵 Arealva Manta": "Relatório detalhado do corte Arealva Manta.",
+        "🧶 Iacanga Manta": "Relatório detalhado do corte Iacanga.",
+        "🛏️ Lençol Arealva": "Relatório detalhado do corte de lençol.",
+        "🪡 Itaju (Ponto Palito)": "Relatório detalhado do corte Itaju.",
     }
-    _tipo_corte = st.selectbox(
-        "Tipo de relatório", list(_OPCOES_CORTE.keys()), key="tipo_corte",
+    _tipo_corte = st.segmented_control(
+        "Tipo de relatório", list(_OPCOES_CORTE.keys()),
+        default="📋 Consolidado", key="tipo_corte",
     )
+    _tipo_corte = _tipo_corte or "📋 Consolidado"
     st.caption(_OPCOES_CORTE[_tipo_corte])
-    st.markdown("---")
 
-    if _tipo_corte == "Consolidado — Todos os Cortes":
-        _dia_cc = st.date_input(
-            "Dia de referência", value=date.today() - timedelta(days=1),
-            format="DD/MM/YYYY", key="dia_cc",
-        )
-        if st.button("📄 Gerar Corte Consolidado", key="btn_cc", type="primary"):
-            with st.spinner("Carregando dados e gerando PDF…"):
-                try:
-                    from scripts.relatorio_diario_corte import gerar_pdf_consolidado as _gerar_pdf_consolidado_email
-                    _bytes_cc = _gerar_pdf_consolidado_email(_dia_cc)
-                    st.session_state["pdf_cc_bytes"] = _bytes_cc
-                    st.session_state["pdf_cc_nome"] = f"relatorio_consolidado_{_dia_cc.strftime('%d-%m-%Y')}.pdf"
-                    st.success("PDF gerado! Clique em Baixar.")
-                except Exception as _e:
-                    st.error(f"Erro ao gerar PDF: {_e}")
-        if st.session_state.get("pdf_cc_bytes"):
-            st.download_button("⬇️ Baixar PDF Consolidado", data=st.session_state["pdf_cc_bytes"],
-                file_name=st.session_state.get("pdf_cc_nome", "corte_consolidado.pdf"),
-                mime="application/pdf", key="dl_cc")
-
-    else:
-        _ci, _cf = st.columns(2)
-        with _ci:
-            _ini_corte = st.date_input("Data Inicial", value=_mes_ini, format="DD/MM/YYYY", key="ini_corte")
-        with _cf:
-            _fim_corte = st.date_input("Data Final", value=_mes_fim, format="DD/MM/YYYY", key="fim_corte")
-
-        if _tipo_corte == "Arealva Manta":
-            if st.button("📄 Gerar Arealva Manta", key="btn_am", type="primary"):
-                with st.spinner("Gerando PDF…"):
-                    try:
-                        _df_am = _dados_arealva()
-                        _df_am_f = _df_am[(_df_am["DATA"].dt.date >= _ini_corte) & (_df_am["DATA"].dt.date <= _fim_corte)]
-                        _bytes_am = gerar_pdf_arealva_manta(
-                            df=_df_am_f,
-                            ini=_ini_corte,
-                            fim=_fim_corte,
-                            meta_total=_METAS_AREALVA_META_TOTAL,
-                            metas=_METAS_AREALVA_FLAT,
-                            filtros_texto="",
-                        )
-                        st.session_state["pdf_am_bytes"] = _bytes_am
-                        st.session_state["pdf_am_nome"] = nome_arquivo_pdf("arealva_manta", _ini_corte, _fim_corte)
-                        st.success("PDF gerado!")
-                    except Exception as _e:
-                        st.error(f"Erro: {_e}")
-            if st.session_state.get("pdf_am_bytes"):
-                st.download_button("⬇️ Baixar Arealva Manta PDF", data=st.session_state["pdf_am_bytes"],
-                    file_name=st.session_state.get("pdf_am_nome", "arealva_manta.pdf"),
-                    mime="application/pdf", key="dl_am")
-
-        elif _tipo_corte == "Iacanga Manta":
-            if st.button("📄 Gerar Iacanga Manta", key="btn_iac", type="primary"):
-                with st.spinner("Gerando PDF…"):
-                    try:
-                        _df_iac_full = _dados_iacanga()
-                        _df_iac = _df_iac_full[(_df_iac_full["DATA"].dt.date >= _ini_corte) & (_df_iac_full["DATA"].dt.date <= _fim_corte)]
-                        _meta_iac_total = sum(v.get("CASAL", 0) for v in _METAS_IACANGA.values())
-                        _bytes_iac = gerar_pdf_iacanga_manta(
-                            df=_df_iac,
-                            ini=_ini_corte,
-                            fim=_fim_corte,
-                            meta_total=_meta_iac_total,
-                            metas_por_grupo=_METAS_IACANGA,
-                            filtros_texto="",
-                        )
-                        st.session_state["pdf_iac_bytes"] = _bytes_iac
-                        st.session_state["pdf_iac_nome"] = nome_arquivo_pdf("iacanga_manta", _ini_corte, _fim_corte)
-                        st.success("PDF gerado!")
-                    except Exception as _e:
-                        st.error(f"Erro: {_e}")
-            if st.session_state.get("pdf_iac_bytes"):
-                st.download_button("⬇️ Baixar Iacanga Manta PDF", data=st.session_state["pdf_iac_bytes"],
-                    file_name=st.session_state.get("pdf_iac_nome", "iacanga_manta.pdf"),
-                    mime="application/pdf", key="dl_iac")
-
-        elif _tipo_corte == "Lençol Arealva":
-            if st.button("📄 Gerar Lençol", key="btn_ln", type="primary"):
-                with st.spinner("Gerando PDF…"):
-                    try:
-                        _df_ln_full = _dados_lencol()
-                        _df_ln = _df_ln_full[
-                            (_df_ln_full["DATA"].dt.date >= _ini_corte) &
-                            (_df_ln_full["DATA"].dt.date <= _fim_corte)
-                        ].copy()
-                        # Caseamento Jogo Duplo × Fundo (mesma lógica do dashboard, via
-                        # utils/lencol_caseamento) — sem isso os KPIs de Jogos/Fundos
-                        # do PDF ficam sempre zerados.
-                        _tipos_jf_ln, _ = _lencol_tipos_tams(_df_ln)
-                        _df_ln_jf = _df_ln.assign(_TIPO_JF=_tipos_jf_ln)
-                        _total_pecas_ln = int(_df_ln["QUANT"].sum())
-                        _total_fundos_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "FUNDO", "QUANT"].sum())
-                        _total_jogos_duplo_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "JOGO_DUPLO", "QUANT"].sum())
-                        _casea_ln = lencol_caseamento(_df_ln)
-                        _bytes_ln = gerar_pdf_lencol(
-                            df=_df_ln,
-                            ini=_ini_corte,
-                            fim=_fim_corte,
-                            filtros_texto="",
-                            caseamento_df=_casea_ln,
-                            totais_jf={
-                                "total_fundos": _total_fundos_ln,
-                                "total_sem_fundo": _total_pecas_ln - _total_fundos_ln,
-                                "total_jogos_duplo": _total_jogos_duplo_ln,
-                            },
-                        )
-                        st.session_state["pdf_ln_bytes"] = _bytes_ln
-                        st.session_state["pdf_ln_nome"] = nome_arquivo_pdf("lencol", _ini_corte, _fim_corte)
-                        st.success("PDF gerado!")
-                    except Exception as _e:
-                        st.error(f"Erro: {_e}")
-            if st.session_state.get("pdf_ln_bytes"):
-                st.download_button("⬇️ Baixar Lençol PDF", data=st.session_state["pdf_ln_bytes"],
-                    file_name=st.session_state.get("pdf_ln_nome", "lencol.pdf"),
-                    mime="application/pdf", key="dl_ln")
-
-        elif _tipo_corte == "Itaju (Ponto Palito)":
-            _obs_it = st.text_area(
-                "OBS (opcional, aparece em destaque no topo do PDF)",
-                value="",
-                placeholder="Ex.: Estão sem OS liberada para corte — no momento a equipe está apenas "
-                             "fazendo aproveitamento de sobras, aguardando a liberação dos próximos lotes.",
-                key="obs_itaju",
+    with st.container(border=True):
+        if _tipo_corte == "📋 Consolidado":
+            st.markdown("📅 **Período**")
+            st.caption(
+                "As seções 'Mês Atual' e 'Últimos 2 Meses' sempre usam a Data Final como "
+                "referência — só a seção 1 muda: dia único vira detalhado, período vira resumo."
             )
-            if st.button("📄 Gerar Itaju", key="btn_it", type="primary"):
-                with st.spinner("Gerando PDF…"):
+            _ci_cc, _cf_cc = st.columns(2)
+            with _ci_cc:
+                _ini_cc = st.date_input(
+                    "Data Inicial", value=date.today() - timedelta(days=1),
+                    format="DD/MM/YYYY", key="ini_cc",
+                )
+            with _cf_cc:
+                _dia_cc = st.date_input(
+                    "Data Final", value=date.today() - timedelta(days=1),
+                    format="DD/MM/YYYY", key="dia_cc",
+                )
+            if st.button("📄 Gerar Corte Consolidado", key="btn_cc", type="primary"):
+                with st.spinner("Carregando dados e gerando PDF…"):
                     try:
-                        _df_it_full = _dados_itaju()
-                        _df_it = _df_it_full[
-                            (_df_it_full["DATA"].dt.date >= _ini_corte) & (_df_it_full["DATA"].dt.date <= _fim_corte)
-                        ] if not _df_it_full.empty else _df_it_full
-                        _bytes_it = gerar_pdf_itaju(
-                            df=_df_it,
-                            ini=_ini_corte,
-                            fim=_fim_corte,
-                            filtros_texto="",
-                            obs_texto=_obs_it.strip(),
-                        )
-                        st.session_state["pdf_it_bytes"] = _bytes_it
-                        st.session_state["pdf_it_nome"] = nome_arquivo_pdf("itaju", _ini_corte, _fim_corte)
-                        st.success("PDF gerado!")
+                        from scripts.relatorio_diario_corte import gerar_pdf_consolidado as _gerar_pdf_consolidado_email
+                        _bytes_cc = _gerar_pdf_consolidado_email(_dia_cc, dia_ini=_ini_cc)
+                        st.session_state["pdf_cc_bytes"] = _bytes_cc
+                        st.session_state["pdf_cc_nome"] = f"relatorio_consolidado_{_dia_cc.strftime('%d-%m-%Y')}.pdf"
+                        st.success("PDF gerado! Clique em Baixar.")
                     except Exception as _e:
-                        st.error(f"Erro: {_e}")
-            if st.session_state.get("pdf_it_bytes"):
-                st.download_button("⬇️ Baixar Itaju PDF", data=st.session_state["pdf_it_bytes"],
-                    file_name=st.session_state.get("pdf_it_nome", "itaju.pdf"),
-                    mime="application/pdf", key="dl_it")
+                        st.error(f"Erro ao gerar PDF: {_e}")
+            if st.session_state.get("pdf_cc_bytes"):
+                st.download_button("⬇️ Baixar PDF Consolidado", data=st.session_state["pdf_cc_bytes"],
+                    file_name=st.session_state.get("pdf_cc_nome", "corte_consolidado.pdf"),
+                    mime="application/pdf", key="dl_cc")
+
+        else:
+            st.markdown("📅 **Período**")
+            _ci, _cf = st.columns(2)
+            with _ci:
+                _ini_corte = st.date_input("Data Inicial", value=_mes_ini, format="DD/MM/YYYY", key="ini_corte")
+            with _cf:
+                _fim_corte = st.date_input("Data Final", value=_mes_fim, format="DD/MM/YYYY", key="fim_corte")
+
+            if _tipo_corte == "🧵 Arealva Manta":
+                if st.button("📄 Gerar Arealva Manta", key="btn_am", type="primary"):
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            _df_am = _dados_arealva()
+                            _df_am_f = _df_am[(_df_am["DATA"].dt.date >= _ini_corte) & (_df_am["DATA"].dt.date <= _fim_corte)]
+                            _bytes_am = gerar_pdf_arealva_manta(
+                                df=_df_am_f,
+                                ini=_ini_corte,
+                                fim=_fim_corte,
+                                meta_total=_METAS_AREALVA_META_TOTAL,
+                                metas=_METAS_AREALVA_FLAT,
+                                filtros_texto="",
+                            )
+                            st.session_state["pdf_am_bytes"] = _bytes_am
+                            st.session_state["pdf_am_nome"] = nome_arquivo_pdf("arealva_manta", _ini_corte, _fim_corte)
+                            st.success("PDF gerado!")
+                        except Exception as _e:
+                            st.error(f"Erro: {_e}")
+                if st.session_state.get("pdf_am_bytes"):
+                    st.download_button("⬇️ Baixar Arealva Manta PDF", data=st.session_state["pdf_am_bytes"],
+                        file_name=st.session_state.get("pdf_am_nome", "arealva_manta.pdf"),
+                        mime="application/pdf", key="dl_am")
+
+            elif _tipo_corte == "🧶 Iacanga Manta":
+                if st.button("📄 Gerar Iacanga Manta", key="btn_iac", type="primary"):
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            _df_iac_full = _dados_iacanga()
+                            _df_iac = _df_iac_full[(_df_iac_full["DATA"].dt.date >= _ini_corte) & (_df_iac_full["DATA"].dt.date <= _fim_corte)]
+                            _meta_iac_total = sum(v.get("CASAL", 0) for v in _METAS_IACANGA.values())
+                            _bytes_iac = gerar_pdf_iacanga_manta(
+                                df=_df_iac,
+                                ini=_ini_corte,
+                                fim=_fim_corte,
+                                meta_total=_meta_iac_total,
+                                metas_por_grupo=_METAS_IACANGA,
+                                filtros_texto="",
+                            )
+                            st.session_state["pdf_iac_bytes"] = _bytes_iac
+                            st.session_state["pdf_iac_nome"] = nome_arquivo_pdf("iacanga_manta", _ini_corte, _fim_corte)
+                            st.success("PDF gerado!")
+                        except Exception as _e:
+                            st.error(f"Erro: {_e}")
+                if st.session_state.get("pdf_iac_bytes"):
+                    st.download_button("⬇️ Baixar Iacanga Manta PDF", data=st.session_state["pdf_iac_bytes"],
+                        file_name=st.session_state.get("pdf_iac_nome", "iacanga_manta.pdf"),
+                        mime="application/pdf", key="dl_iac")
+
+            elif _tipo_corte == "🛏️ Lençol Arealva":
+                if st.button("📄 Gerar Lençol", key="btn_ln", type="primary"):
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            _df_ln_full = _dados_lencol()
+                            _df_ln = _df_ln_full[
+                                (_df_ln_full["DATA"].dt.date >= _ini_corte) &
+                                (_df_ln_full["DATA"].dt.date <= _fim_corte)
+                            ].copy()
+                            # Caseamento Jogo Duplo × Fundo (mesma lógica do dashboard, via
+                            # utils/lencol_caseamento) — sem isso os KPIs de Jogos/Fundos
+                            # do PDF ficam sempre zerados.
+                            _tipos_jf_ln, _ = _lencol_tipos_tams(_df_ln)
+                            _df_ln_jf = _df_ln.assign(_TIPO_JF=_tipos_jf_ln)
+                            _total_pecas_ln = int(_df_ln["QUANT"].sum())
+                            _total_fundos_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "FUNDO", "QUANT"].sum())
+                            _total_jogos_duplo_ln = int(_df_ln_jf.loc[_df_ln_jf["_TIPO_JF"] == "JOGO_DUPLO", "QUANT"].sum())
+                            _casea_ln = lencol_caseamento(_df_ln)
+                            _bytes_ln = gerar_pdf_lencol(
+                                df=_df_ln,
+                                ini=_ini_corte,
+                                fim=_fim_corte,
+                                filtros_texto="",
+                                caseamento_df=_casea_ln,
+                                totais_jf={
+                                    "total_fundos": _total_fundos_ln,
+                                    "total_sem_fundo": _total_pecas_ln - _total_fundos_ln,
+                                    "total_jogos_duplo": _total_jogos_duplo_ln,
+                                },
+                            )
+                            st.session_state["pdf_ln_bytes"] = _bytes_ln
+                            st.session_state["pdf_ln_nome"] = nome_arquivo_pdf("lencol", _ini_corte, _fim_corte)
+                            st.success("PDF gerado!")
+                        except Exception as _e:
+                            st.error(f"Erro: {_e}")
+                if st.session_state.get("pdf_ln_bytes"):
+                    st.download_button("⬇️ Baixar Lençol PDF", data=st.session_state["pdf_ln_bytes"],
+                        file_name=st.session_state.get("pdf_ln_nome", "lencol.pdf"),
+                        mime="application/pdf", key="dl_ln")
+
+            elif _tipo_corte == "🪡 Itaju (Ponto Palito)":
+                _obs_it = st.text_area(
+                    "OBS (opcional, aparece em destaque no topo do PDF)",
+                    value="",
+                    placeholder="Ex.: Estão sem OS liberada para corte — no momento a equipe está apenas "
+                                 "fazendo aproveitamento de sobras, aguardando a liberação dos próximos lotes.",
+                    key="obs_itaju",
+                )
+                if st.button("📄 Gerar Itaju", key="btn_it", type="primary"):
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            _df_it_full = _dados_itaju()
+                            _df_it = _df_it_full[
+                                (_df_it_full["DATA"].dt.date >= _ini_corte) & (_df_it_full["DATA"].dt.date <= _fim_corte)
+                            ] if not _df_it_full.empty else _df_it_full
+                            _bytes_it = gerar_pdf_itaju(
+                                df=_df_it,
+                                ini=_ini_corte,
+                                fim=_fim_corte,
+                                filtros_texto="",
+                                obs_texto=_obs_it.strip(),
+                            )
+                            st.session_state["pdf_it_bytes"] = _bytes_it
+                            st.session_state["pdf_it_nome"] = nome_arquivo_pdf("itaju", _ini_corte, _fim_corte)
+                            st.success("PDF gerado!")
+                        except Exception as _e:
+                            st.error(f"Erro: {_e}")
+                if st.session_state.get("pdf_it_bytes"):
+                    st.download_button("⬇️ Baixar Itaju PDF", data=st.session_state["pdf_it_bytes"],
+                        file_name=st.session_state.get("pdf_it_nome", "itaju.pdf"),
+                        mime="application/pdf", key="dl_it")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1165,16 +1181,15 @@ with tab_prod:
         "com histórico unificado (planilha antiga + facções, mesmas correções do dashboard ao vivo)."
     )
 
-    _ci_pg, _cf_pg = st.columns(2)
-    with _ci_pg:
-        _ini_pg = st.date_input("Data Inicial", value=_mes_ini, format="DD/MM/YYYY", key="ini_pg")
-    with _cf_pg:
-        _fim_pg = st.date_input("Data Final", value=_mes_fim, format="DD/MM/YYYY", key="fim_pg")
+    with st.container(border=True):
+        st.markdown("📅 **Período**")
+        _ci_pg, _cf_pg = st.columns(2)
+        with _ci_pg:
+            _ini_pg = st.date_input("Data Inicial", value=_mes_ini, format="DD/MM/YYYY", key="ini_pg")
+        with _cf_pg:
+            _fim_pg = st.date_input("Data Final", value=_mes_fim, format="DD/MM/YYYY", key="fim_pg")
 
-    st.markdown("---")
-    _col_l_pg, _col_c_pg, _col_r_pg = st.columns([2, 4, 2])
-    with _col_c_pg:
-        if st.button("📄 Gerar Relatório de Produção", key="btn_pg", use_container_width=True, type="primary"):
+        if st.button("📄 Gerar Relatório de Produção", key="btn_pg", type="primary"):
             with st.spinner("Carregando dados de produção… pode levar alguns segundos."):
                 try:
                     from utils.producao_unificada import load_producao_unificada
@@ -1278,15 +1293,14 @@ with tab_cargas:
     st.markdown("### 🚛 Relatório de Previsão de Cargas")
     st.markdown("Comparativo previsão vs. realizado por mês e destino.")
 
-    _meses_disp_cg = [m[0] for m in _MESES_CARGAS]
-    _sel_meses_cg = st.multiselect("Meses", _meses_disp_cg, default=_meses_disp_cg, key="sel_mes_cg")
-    if not _sel_meses_cg:
-        _sel_meses_cg = _meses_disp_cg
+    with st.container(border=True):
+        st.markdown("📅 **Período**")
+        _meses_disp_cg = [m[0] for m in _MESES_CARGAS]
+        _sel_meses_cg = st.multiselect("Meses", _meses_disp_cg, default=_meses_disp_cg, key="sel_mes_cg")
+        if not _sel_meses_cg:
+            _sel_meses_cg = _meses_disp_cg
 
-    st.markdown("---")
-    _col_l_cg, _col_c_cg, _col_r_cg = st.columns([2, 4, 2])
-    with _col_c_cg:
-        if st.button("📄 Gerar Relatório de Cargas", key="btn_cg", use_container_width=True, type="primary"):
+        if st.button("📄 Gerar Relatório de Cargas", key="btn_cg", type="primary"):
             with st.spinner("Carregando dados de cargas… pode levar alguns segundos."):
                 try:
                     _df_raw_cg = _dados_cargas()
@@ -1356,40 +1370,41 @@ with tab_pedidos:
     st.markdown("### 📦 Relatório de Carteira de Pedidos")
     st.markdown("Análise consolidada de pedidos em aberto por cliente e categoria.")
 
-    _col_ano, _col_mes = st.columns(2)
     with st.spinner("Carregando carteira…") if "cart_raw" not in st.session_state else st.empty():
         _df_cart_raw = _dados_carteira()
 
     if _df_cart_raw.empty:
         st.warning("Dados de carteira não disponíveis.")
     else:
-        with _col_ano:
-            _anos_cart = sorted(_df_cart_raw["ANO"].unique())
-            _sel_anos_cart = st.multiselect("Ano", _anos_cart, default=_anos_cart, key="sel_ano_cart_rel")
-            if not _sel_anos_cart: _sel_anos_cart = _anos_cart
-        with _col_mes:
-            _meses_cart = sorted(_df_cart_raw[_df_cart_raw["ANO"].isin(_sel_anos_cart)]["ANO_MES"].unique())
-            _sel_meses_cart = st.multiselect("Mês", _meses_cart, placeholder="Todos", key="sel_mes_cart_rel")
+        with st.container(border=True):
+            st.markdown("📅 **Período**")
+            _col_ano, _col_mes = st.columns(2)
+            with _col_ano:
+                _anos_cart = sorted(_df_cart_raw["ANO"].unique())
+                _sel_anos_cart = st.multiselect("Ano", _anos_cart, default=_anos_cart, key="sel_ano_cart_rel")
+                if not _sel_anos_cart: _sel_anos_cart = _anos_cart
+            with _col_mes:
+                _meses_cart = sorted(_df_cart_raw[_df_cart_raw["ANO"].isin(_sel_anos_cart)]["ANO_MES"].unique())
+                _sel_meses_cart = multiselect_reset_on_grow(
+                    "Mês", _meses_cart, "sel_mes_cart_rel", reset_to="empty", placeholder="Todos",
+                )
 
-        _df_cart = _df_cart_raw[_df_cart_raw["ANO"].isin(_sel_anos_cart)].copy()
-        if _sel_meses_cart:
-            _df_cart = _df_cart[_df_cart["ANO_MES"].isin(_sel_meses_cart)]
+            _df_cart = _df_cart_raw[_df_cart_raw["ANO"].isin(_sel_anos_cart)].copy()
+            if _sel_meses_cart:
+                _df_cart = _df_cart[_df_cart["ANO_MES"].isin(_sel_meses_cart)]
 
-        _total_valor_cart  = _df_cart["VALOR_TOTAL"].sum()
-        _total_pecas_cart  = int(_df_cart["QUANTIDADE"].sum())
-        _n_pedidos_cart    = _df_cart["PEDIDO"].nunique()
-        _n_clientes_cart   = _df_cart["CLIENTE_CURTO"].nunique()
-        _n_produtos_cart   = _df_cart["COD_PROD"].nunique()
-        _ticket_medio_cart = _total_valor_cart / _n_pedidos_cart if _n_pedidos_cart > 0 else 0
+            _total_valor_cart  = _df_cart["VALOR_TOTAL"].sum()
+            _total_pecas_cart  = int(_df_cart["QUANTIDADE"].sum())
+            _n_pedidos_cart    = _df_cart["PEDIDO"].nunique()
+            _n_clientes_cart   = _df_cart["CLIENTE_CURTO"].nunique()
+            _n_produtos_cart   = _df_cart["COD_PROD"].nunique()
+            _ticket_medio_cart = _total_valor_cart / _n_pedidos_cart if _n_pedidos_cart > 0 else 0
 
-        _anos_str = ', '.join(str(a) for a in _sel_anos_cart)
-        _meses_str = ', '.join(_sel_meses_cart) if _sel_meses_cart else 'Todos'
-        _periodo_cart = f"{_anos_str} — {_meses_str}"
+            _anos_str = ', '.join(str(a) for a in _sel_anos_cart)
+            _meses_str = ', '.join(_sel_meses_cart) if _sel_meses_cart else 'Todos'
+            _periodo_cart = f"{_anos_str} — {_meses_str}"
 
-        st.markdown("---")
-        _col_l_cart, _col_c_cart, _col_r_cart = st.columns([2, 4, 2])
-        with _col_c_cart:
-            if st.button("📄 Gerar Relatório Carteira", key="btn_cart", use_container_width=True, type="primary"):
+            if st.button("📄 Gerar Relatório Carteira", key="btn_cart", type="primary"):
                 if _df_cart.empty:
                     st.warning("Nenhum registro no período selecionado.")
                 else:
@@ -1425,10 +1440,8 @@ with tab_prog:
     st.markdown("### 📋 Relatório de Programação de Corte")
     st.markdown("Status de OPs programadas vs. cortadas (todas as semanas disponíveis).")
 
-    st.markdown("---")
-    _col_l_prog, _col_c_prog, _col_r_prog = st.columns([2, 4, 2])
-    with _col_c_prog:
-        if st.button("📄 Gerar Relatório de Programação", key="btn_prog", use_container_width=True, type="primary"):
+    with st.container(border=True):
+        if st.button("📄 Gerar Relatório de Programação", key="btn_prog", type="primary"):
             with st.spinner("Carregando dados e gerando PDF… pode levar alguns segundos."):
                 try:
                     _df_prog, _df_cortes_prog = _dados_programacao()

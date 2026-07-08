@@ -33,6 +33,7 @@ from utils.producao_unificada import (
 )
 from utils.faccoes_metas_calc import calcular_meta_faccoes
 from utils.faccoes_viz import heatmap_por_dimensao, consistencia_por_dimensao
+from utils.ui_helpers import multiselect_reset_on_grow as _multiselect_reset_on_grow
 
 # ─
 # CONFIGURACAO DA PAGINA
@@ -891,20 +892,13 @@ def _faccao_sidebar_filtros(df_unif: pd.DataFrame) -> pd.DataFrame:
         st.markdown("### Filtros")
 
         all_anos = sorted(df_unif["Ano"].unique())
-        if "faccao_sel_ano" not in st.session_state:
-            st.session_state["faccao_sel_ano"] = list(all_anos)
-        sel_anos = st.multiselect("Ano", all_anos, key="faccao_sel_ano")
+        sel_anos = _multiselect_reset_on_grow("Ano", all_anos, "faccao_sel_ano")
         if not sel_anos:
             sel_anos = all_anos
 
         all_meses = sorted(df_unif[df_unif["Ano"].isin(sel_anos)]["Mes"].unique())
-        if "faccao_sel_mes" not in st.session_state:
-            st.session_state["faccao_sel_mes"] = list(all_meses)
-        else:
-            valid_set = set(all_meses)
-            st.session_state["faccao_sel_mes"] = [m for m in st.session_state["faccao_sel_mes"] if m in valid_set]
-        sel_meses = st.multiselect(
-            "Mês", all_meses, format_func=lambda m: MESES_NOME[m], key="faccao_sel_mes"
+        sel_meses = _multiselect_reset_on_grow(
+            "Mês", all_meses, "faccao_sel_mes", format_func=lambda m: MESES_NOME[m]
         )
         if not sel_meses:
             sel_meses = all_meses
@@ -1501,13 +1495,13 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
         st.sidebar.markdown("### Filtros")
 
         anos = sorted(df["Ano"].unique())
-        sel_anos = st.multiselect("Ano", anos, default=anos, key=_kp("ano"))
+        sel_anos = _multiselect_reset_on_grow("Ano", anos, _kp("ano"))
         if not sel_anos:
             sel_anos = anos
 
         meses_disp = sorted(df[df["Ano"].isin(sel_anos)]["Mes"].unique())
-        sel_meses = st.multiselect("Mês", meses_disp, default=meses_disp,
-                                   format_func=lambda m: MESES_NOME[m], key=_kp("mes"))
+        sel_meses = _multiselect_reset_on_grow("Mês", meses_disp, _kp("mes"),
+                                               format_func=lambda m: MESES_NOME[m])
         if not sel_meses:
             sel_meses = meses_disp
 
@@ -1532,7 +1526,7 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
                 df_f = df_f[df_f["DATA"].dt.date.between(ini, fim)]
 
         clientes = sorted(df_f["CLIENTE"].unique()) if not df_f.empty else []
-        sel_clientes = st.multiselect("Cliente", clientes, default=clientes, key=_kp("cliente"))
+        sel_clientes = _multiselect_reset_on_grow("Cliente", clientes, _kp("cliente"))
         if not sel_clientes:
             sel_clientes = clientes
 
@@ -1540,7 +1534,7 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
             sorted(df_f[df_f["CLIENTE"].isin(sel_clientes)]["PRODUTO"].unique())
             if not df_f.empty else []
         )
-        sel_produtos = st.multiselect("Produto", produtos, default=produtos, key=_kp("produto"))
+        sel_produtos = _multiselect_reset_on_grow("Produto", produtos, _kp("produto"))
         if not sel_produtos:
             sel_produtos = produtos
 
@@ -1729,7 +1723,8 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
 
 
 def render_por_faccao():
-    df_unif = _load_producao_unificada_cached()
+    with st.spinner("Carregando dados de produção…"):
+        df_unif = _load_producao_unificada_cached()
 
     if df_unif.empty:
         st.error("Não foi possível carregar os dados de produção (planilha antiga + planilha de facções).")
@@ -1947,7 +1942,8 @@ def _consistencia_colaboradores(base: pd.DataFrame, selecionados: list, dias_uni
     return pd.DataFrame(linhas)
 
 def _render_interno_tab(chave: str, cfg: dict):
-    df = load_interno_unidade(chave)
+    with st.spinner(f"Carregando dados de {cfg['label']}…"):
+        df = load_interno_unidade(chave)
     if df.empty:
         st.warning(f"⚠️ Sem dados disponíveis para {cfg['label']}.")
         return

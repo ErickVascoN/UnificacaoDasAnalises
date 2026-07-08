@@ -583,7 +583,6 @@ def gerar_html(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame
 
   <div class="footer">
     <span>Gerado automaticamente · Sistema Zanattex</span>
-    <span>Enviado em: {date.today().strftime("%d/%m/%Y")} às 10:00</span>
   </div>
 
 </div>
@@ -843,8 +842,7 @@ def gerar_pdf(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame,
 
 <!-- FOOTER -->
 <p style="font-size:8px;color:#aaa;margin-top:8px;border-top:1px solid #ddd;padding-top:4px;">
-  Gerado automaticamente &nbsp;|&nbsp; Sistema Zanattex &nbsp;|&nbsp;
-  Enviado em: {date.today().strftime("%d/%m/%Y")} as 10:00
+  Gerado automaticamente &nbsp;|&nbsp; Sistema Zanattex
 </p>
 
 </body>
@@ -983,8 +981,16 @@ def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
         f'<tbody>{linhas_op}</tbody></table>'
     )
 
-def gerar_pdf_consolidado(dia: date) -> bytes:
+def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
+    """
+    dia_ini : quando informado e diferente de `dia`, a seção 1 passa a somar
+    o período [dia_ini, dia] (mesmo estilo resumido das seções de mês) em vez
+    do detalhamento de um único dia — usado pela tela de Relatórios pra
+    permitir um intervalo real. O e-mail diário automático não passa esse
+    parâmetro, então continua idêntico (dia único, detalhado)."""
     from xhtml2pdf import pisa
+
+    range_real = dia_ini is not None and dia_ini != dia
 
     mes_ini = _inicio_mes(dia)
     m1      = _mes_ant(dia, 1)
@@ -993,9 +999,14 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
     m2_ini, m2_fim = _inicio_mes(m2), _fim_mes(m2)
 
     # Carregar (cacheado — mesmos objetos do relatório diário se já carregados)
-    are_dia = carregar_manta_arealva(dia)
-    iac_dia = carregar_manta_iacanga(dia)
-    len_dia = carregar_lencol_arealva(dia)
+    if range_real:
+        are_dia = carregar_manta_arealva_range(dia_ini, dia)
+        iac_dia = carregar_manta_iacanga_range(dia_ini, dia)
+        len_dia = carregar_lencol_arealva_range(dia_ini, dia)
+    else:
+        are_dia = carregar_manta_arealva(dia)
+        iac_dia = carregar_manta_iacanga(dia)
+        len_dia = carregar_lencol_arealva(dia)
 
     are_mes = carregar_manta_arealva_range(mes_ini, dia)
     iac_mes = carregar_manta_iacanga_range(mes_ini, dia)
@@ -1026,6 +1037,13 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
     dias_pt  = ["Segunda-feira", "Terca-feira", "Quarta-feira",
                 "Quinta-feira", "Sexta-feira", "Sabado", "Domingo"]
     dia_semana = dias_pt[dia.weekday()]
+
+    if range_real:
+        sec1_titulo = f"1. PERIODO — {dia_ini.strftime('%d/%m/%Y')} a {data_fmt}"
+        sec1_ref    = "Periodo selecionado"
+    else:
+        sec1_titulo = f"1. DIA — {data_fmt} (producao de ontem)"
+        sec1_ref    = "Referencia: dia anterior"
 
     kpi_cell = "background:#f0f4ff;border:1px solid #c5cae9;padding:4px;text-align:center;"
 
@@ -1063,18 +1081,16 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
     </td>
     <td align="right">
       <span style="font-size:12px;font-weight:bold;color:#1a237e;">{data_fmt}</span><br>
-      <span style="font-size:8px;color:#666;">{dia_semana} | Referencia: dia anterior</span>
+      <span style="font-size:8px;color:#666;">{dia_semana} | {sec1_ref}</span>
     </td>
   </tr>
 </table>
 
-{sec_header(f"1. DIA — {data_fmt} (producao de ontem)")}
+{sec_header(sec1_titulo)}
 <table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
   <tr>{kpi(f"{t_dia:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_dia:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_dia:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_dia:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
-{_bloco_pdf_manta("MANTA AREALVA", are_dia)}
-{_bloco_pdf_manta("MANTA IACANGA", iac_dia)}
-{_bloco_pdf_lencol(len_dia)}
+{(_bloco_resumo_manta("MANTA AREALVA", are_dia) + _bloco_resumo_manta("MANTA IACANGA", iac_dia) + _bloco_resumo_lencol(len_dia)) if range_real else (_bloco_pdf_manta("MANTA AREALVA", are_dia) + _bloco_pdf_manta("MANTA IACANGA", iac_dia) + _bloco_pdf_lencol(len_dia))}
 
 <div style="page-break-before:always;"></div>
 {sec_header(f"2. MES ATUAL — {_nome_mes(dia)}  (01/{dia.strftime('%m/%Y')} ate {data_fmt})", "#1565c0")}
@@ -1113,7 +1129,7 @@ def gerar_pdf_consolidado(dia: date) -> bytes:
 {_bloco_resumo_lencol(len_m2)}
 
 <p style="font-size:8px;color:#aaa;margin-top:8px;border-top:1px solid #ddd;padding-top:4px;">
-  Gerado automaticamente | Sistema Zanattex | {date.today().strftime("%d/%m/%Y")} as 10:00
+  Gerado automaticamente | Sistema Zanattex
 </p>
 </body>
 </html>"""

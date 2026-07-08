@@ -8,6 +8,143 @@ CHANGELOG = [
     {
         "date": "08/07/2026",
         "tag": "melhoria",
+        "title": "Análise de Faturamento removida (card + página)",
+        "description": (
+            "config/sectors.py (SECTORS_ANALISE): removido o card 'faturados' (Análise de "
+            "Faturamento) — estava marcado como 'maintenance' há um tempo e o usuário decidiu "
+            "não seguir com essa análise. Confirmado que nenhum outro arquivo importava ou "
+            "referenciava pages/1_Produtos_Faturados.py (nem utils/, nem outras páginas), então "
+            "o arquivo foi apagado do projeto junto com o card."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "novo",
+        "title": "Nova análise de Peças por Categoria na Carteira de Pedidos",
+        "description": (
+            "pages/9_Carteira_de_Pedidos.py: até agora a única visão por categoria era em R$ "
+            "(pizza 'Carteira por Categoria', evolução mensal, cliente × categoria) — não dava "
+            "pra saber quantas peças de cada categoria ainda faltam produzir. Nova seção "
+            "'Peças por Categoria — O que Falta Produzir', logo após os KPIs: gráfico de barras "
+            "horizontal com o total de peças em carteira por categoria (mesmas cores de "
+            "CORES_CAT usadas no resto do dashboard) + tabela com % do total e nº de pedidos "
+            "por categoria. Respeita os mesmos filtros da sidebar (Ano, Mês, Cliente, Categoria, "
+            "Produto etc.). Barra 'OUTROS' mostra ao passar o mouse os até 8 produtos "
+            "(DESCRICAO) que mais pesam nela, com a quantidade de peças de cada um — mesmo "
+            "padrão já usado na pizza 'Carteira por Categoria' (em R$), agora também em peças."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Spinner de carregamento replicado em todos os dashboards",
+        "description": (
+            "Varredura em todas as páginas (pages/1 a pages/9) atrás de carregamentos pesados "
+            "sem indicador visual, mesmo problema já corrigido na Produção Geral (ver item "
+            "anterior). A maioria já tinha spinner (Carteira de Pedidos, Programação, Facções, "
+            "Histórico, Plano de Metas, Previsão de Cargas) — cobertos por st.spinner() manual "
+            "ou pelo show_spinner do @st.cache_data. Adicionado onde faltava: "
+            "pages/1_Produtos_Faturados.py (load_data, carregamento principal da planilha) e "
+            "pages/3_Controle_de_Corte.py (carregar_dados/carregar_dados_iacanga — Manta "
+            "Arealva e Iacanga — antes usavam o spinner genérico padrão do Streamlit "
+            "'Running carregar_dados()...'; agora show_spinner=False no cache + st.spinner com "
+            "mensagem própria, no mesmo padrão do resto do arquivo). app.py (Home) e "
+            "pages/10_Relatorios.py não precisam — não fazem carregamento pesado ao abrir a "
+            "página, só quando o usuário clica em 'Gerar', o que já tinha spinner."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Removida a data/horário de geração de todos os relatórios PDF",
+        "description": (
+            "utils/pdf_report.py: removido 'Gerado em: {data/hora}' da capa e do rodapé de "
+            "todo relatório (função compartilhada por todos os PDFs — _make_cover, "
+            "_cover_page_template, _header_footer_normal — e a linha de assinatura no fim de "
+            "cada relatório, ~11 ocorrências). Mantido só 'Sistema de Gestão Industrial' como "
+            "identificação, sem timestamp. scripts/relatorio_diario_corte.py: mesmo tratamento "
+            "no relatório diário de corte e no consolidado (PDF anexado ao e-mail automático) — "
+            "removida a linha 'Enviado em: {data} às 10:00' dos três rodapés. Pedido do usuário: "
+            "tirar data e horário de geração dos relatórios."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Spinner de carregamento na Produção Geral pra não parecer travado",
+        "description": (
+            "pages/2_Producao_Geral.py: usuário relatou que o dashboard parece travado — tela "
+            "em branco (só o breadcrumb) enquanto os dados carregam, sem nenhum indicador "
+            "visual. render_por_faccao() (carrega o dataset unificado — planilha antiga + "
+            "facções, o load mais pesado da página) e _render_interno_tab() (carrega cada "
+            "unidade interna: LITTEX, GGTTEX etc.) agora envolvem o carregamento em "
+            "st.spinner() com mensagem descritiva. O título/cabeçalho de cada tela já renderiza "
+            "antes do load (confirmado lendo main() e render_por_faccao()); o que faltava era só "
+            "o indicador de 'carregando' no meio do caminho. Não é uma tela de splash de "
+            "verdade — o Streamlit não desenha nada antes do script rodar, então não tem como "
+            "mostrar algo antes disso — mas resolve a sensação de travado."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "correção",
+        "title": "Mesmo bug de filtro 'preso' corrigido em Carteira de Pedidos e Relatórios",
+        "description": (
+            "Varredura no projeto inteiro atrás do mesmo bug corrigido na Produção Geral (ver "
+            "item anterior). Novo helper utils/ui_helpers.py:multiselect_reset_on_grow "
+            "(reaproveitado pela correção da Produção Geral) aplicado em mais 3 pontos onde o "
+            "filtro de Mês depende do filtro de Ano — mesmo padrão de risco: "
+            "pages/9_Carteira_de_Pedidos.py (Mês e Produto, que depende de Categoria) e "
+            "pages/10_Relatorios.py (Mês da Carteira, aba Carteira de Pedidos). Conferidos e "
+            "descartados como já seguros: pages/1_Produtos_Faturados.py (o filtro de Ano já tem "
+            "on_change que limpa o de Mês, resolvendo o problema por outro caminho), "
+            "pages/7_Plano_de_Metas.py e pages/1_Produtos_Faturados.py (widgets sem key= "
+            "explícita resetam sozinhos ao mudar as opções, não travam), "
+            "pages/8_Previsao_Cargas.py, pages/4_Controladoria_Programacao.py, "
+            "pages/3_Controle_de_Corte.py e pages/5_Producao_Faccoes.py (nenhum filtro nesses "
+            "arquivos depende de outro — sem cascata, sem risco)."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "correção",
+        "title": "Filtros de Cliente/Produto podiam ficar 'presos' escondendo dados reais (Previttex Matriz e qualquer facção)",
+        "description": (
+            "pages/2_Producao_Geral.py (render_faccao_drilldown e _faccao_sidebar_filtros): "
+            "usuário reportou que a Previttex Matriz, na aba Por Cliente, só mostrava 'Cobertor "
+            "Velour' pro cliente Camesa, mesmo produzindo mais produtos pra esse cliente. "
+            "Investigação confirmou que os dados brutos (utils/faccao_loader.py, "
+            "utils/producao_unificada.py) sempre estiveram completos — o bug era nos widgets "
+            "st.multiselect em cascata (Ano → Mês → Cliente → Produto): o Streamlit só REDUZ a "
+            "seleção guardada quando as opções mudam, nunca a expande de volta ao novo default. "
+            "Assim, se o usuário estreitava o período (ex.: modo 'Um dia' num dia em que só um "
+            "produto rodou) e depois alargava de novo, o filtro de Produto continuava preso "
+            "naquele produto único, escondendo os outros em todas as abas (Visão Geral, Por "
+            "Cliente, Ranking, Dados) — bug genérico, afetava qualquer facção, não só a "
+            "Previttex. Corrigido com o novo helper _multiselect_reset_on_grow, que resincroniza "
+            "a seleção pra lista cheia sempre que as opções mudam."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Consolidado de Corte ganha período real; visual em card replicado em todas as abas de Relatórios",
+        "description": (
+            "scripts/relatorio_diario_corte.py (gerar_pdf_consolidado): novo parâmetro opcional "
+            "dia_ini — quando informado e diferente de 'dia', a seção 1 do PDF passa a somar o "
+            "período [dia_ini, dia] no formato resumido (igual às seções de mês) em vez do "
+            "detalhamento de um único dia. Sem esse parâmetro o comportamento é idêntico ao de "
+            "antes, então o e-mail diário automático (que não passa dia_ini) continua igual. "
+            "pages/10_Relatorios.py: a aba ✂️ Corte agora tem Data Inicial/Final também pro "
+            "Consolidado (antes só tinha 'Dia de referência'). O padrão visual em card com borda "
+            "('📅 Período' + campos + botão) foi replicado nas abas Produção Geral, Cargas, "
+            "Carteira de Pedidos e Programação, no lugar do antigo truque de 3 colunas pra "
+            "centralizar o botão."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
         "title": "Aba Corte reorganizada com seletor de relatório; aba Facções removida",
         "description": (
             "pages/10_Relatorios.py: a aba ✂️ Corte tinha 5 relatórios (Consolidado, Arealva "

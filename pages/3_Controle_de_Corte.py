@@ -520,7 +520,7 @@ def baixar_csv_google_sheets():
     st.error("❌ Não foi possível carregar a planilha de Corte (Arealva Manta). Verifique sua conexão.")
     raise RuntimeError("Falha ao carregar planilha de corte Arealva Manta.")
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def carregar_dados():
     csv_data = baixar_csv_google_sheets()
     # dtype=str evita que OP numérica vire float ("10" → "10.0").
@@ -587,7 +587,7 @@ def baixar_csv_google_sheets_iacanga():
         return io.StringIO(conteudo)
     raise RuntimeError("Falha ao carregar planilha de corte Iacanga.")
 
-@st.cache_data(ttl=CACHE_TTL)
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def carregar_dados_iacanga():
     csv_data = baixar_csv_google_sheets_iacanga()
     # dtype=str evita que OP numérica vire float ("10" → "10.0").
@@ -1308,7 +1308,8 @@ elif screen == 'iacanga_rendimento':
 
     # load data
     try:
-        df_corte_iac = carregar_dados_iacanga()
+        with st.spinner("⏳ Carregando dados da planilha Iacanga…"):
+            df_corte_iac = carregar_dados_iacanga()
     except KeyError as e:
         st.error(f"❌ Erro de coluna: {e}")
         st.error("📋 Colunas obrigatórias: DATA, OP, COR, QUANTIDADE, ESTAÇÃO DE CORTE, PRODUTO, TAMANHO")
@@ -2031,7 +2032,8 @@ elif screen == 'arealva_manta':
 
     # load data
     try:
-        df_corte = carregar_dados()
+        with st.spinner("⏳ Carregando dados da planilha de corte…"):
+            df_corte = carregar_dados()
     except KeyError as e:
         st.error(f"❌ Erro de coluna: {e}")
         st.error("📋 Verifique se a planilha tem: DATA, OP, COR, QUANTIDADE, ESTAÇÃO DE CORTE, PRODUTO")

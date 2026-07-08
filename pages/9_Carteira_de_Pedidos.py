@@ -17,6 +17,7 @@ import streamlit as st
 
 from styles.global_ui import get_global_ui_css
 from utils.pdf_report import gerar_pdf_carteira_pedidos
+from utils.ui_helpers import multiselect_reset_on_grow
 from components.filtros_btn import render_filtros_btn
 from components.sidebar import render_home_button
 
@@ -353,7 +354,9 @@ with st.sidebar:
         anos_sel = anos_disp
 
     meses_disp = sorted(df_raw[df_raw["ANO"].isin(anos_sel)]["ANO_MES"].unique())
-    meses_sel  = st.multiselect("Mês", meses_disp, placeholder="Todos", key="sel_mes_cart")
+    meses_sel  = multiselect_reset_on_grow(
+        "Mês", meses_disp, "sel_mes_cart", reset_to="empty", placeholder="Todos",
+    )
 
     st.markdown("**🏢 Cliente**")
     clientes_disp = sorted(df_raw["CLIENTE_CURTO"].unique())
@@ -366,8 +369,8 @@ with st.sidebar:
     st.markdown("**🏷 Produto**")
     _df_prod_disp = df_raw[df_raw["CATEGORIA"].isin(cats_sel)] if cats_sel else df_raw
     produtos_disp = sorted(_df_prod_disp["SUBCATEGORIA"].dropna().unique())
-    produtos_sel = st.multiselect(
-        "Produto", produtos_disp, placeholder="Todos", key="sel_prod_cart",
+    produtos_sel = multiselect_reset_on_grow(
+        "Produto", produtos_disp, "sel_prod_cart", reset_to="empty", placeholder="Todos",
         help="Agrupado por produto-base — variações de tamanho e cor entram juntas "
              "(ex.: 'COB DAY BY DAY ROLINHO SORT' inclui casal, queen, king etc.).",
     )
@@ -454,6 +457,68 @@ for col, label, value, sub, color in _kpis:
             f"{sub_html}</div>",
             unsafe_allow_html=True,
         )
+
+st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+
+# ── Peças por Categoria — quanto falta produzir ────────────────────────────────
+st.markdown("<div class='sec-title'>🏭 Peças por Categoria — O que Falta Produzir</div>", unsafe_allow_html=True)
+
+df_pecas_cat = (
+    df.groupby("CATEGORIA")
+    .agg(PECAS=("QUANTIDADE", "sum"), PEDIDOS=("PEDIDO", "nunique"))
+    .reset_index()
+    .sort_values("PECAS", ascending=True)
+)
+total_pecas_cat = df_pecas_cat["PECAS"].sum()
+df_pecas_cat["PCT"] = (df_pecas_cat["PECAS"] / total_pecas_cat * 100) if total_pecas_cat else 0
+
+col_pc1, col_pc2 = st.columns([2, 1])
+with col_pc1:
+    cores_pecas = [CORES_CAT.get(c, "#718096") for c in df_pecas_cat["CATEGORIA"]]
+
+    # Detalhe por produto no hover — pra qualquer categoria "guarda-chuva"
+    # (ex.: OUTROS) mostrar quais produtos ela engloba, não só o total.
+    _detalhe_por_cat = {}
+    for cat in df_pecas_cat["CATEGORIA"]:
+        _prods_cat = (
+            df[df["CATEGORIA"] == cat]
+            .groupby("DESCRICAO")["QUANTIDADE"].sum()
+            .sort_values(ascending=False)
+            .head(8)
+        )
+        _detalhe_por_cat[cat] = "<br>".join(
+            f"• {d[:40]}: {_fmt_n(v)} pçs" for d, v in _prods_cat.items()
+        )
+    _custom_pecas = [
+        f"<br>{_detalhe_por_cat[cat]}" if cat == "OUTROS" else ""
+        for cat in df_pecas_cat["CATEGORIA"]
+    ]
+
+    fig_pecas_cat = go.Figure(go.Bar(
+        y=df_pecas_cat["CATEGORIA"], x=df_pecas_cat["PECAS"],
+        orientation="h", marker_color=cores_pecas,
+        text=[_fmt_n(v) for v in df_pecas_cat["PECAS"]],
+        textposition="outside", textfont=dict(size=11),
+        customdata=_custom_pecas,
+        hovertemplate="<b>%{y}</b><br>%{x:,.0f} peças%{customdata}<extra></extra>",
+    ))
+    fig_pecas_cat.update_layout(
+        **_layout(
+            height=max(280, 42 * len(df_pecas_cat)),
+            title="Peças em Carteira por Categoria (a produzir)",
+            xaxis=dict(title="Peças", tickformat=","),
+        )
+    )
+    st.plotly_chart(fig_pecas_cat, use_container_width=True)
+
+with col_pc2:
+    tbl_pecas_cat = df_pecas_cat.sort_values("PECAS", ascending=False).copy()
+    tbl_pecas_cat["Peças"] = tbl_pecas_cat["PECAS"].map(_fmt_n)
+    tbl_pecas_cat["% do Total"] = tbl_pecas_cat["PCT"].map(lambda v: f"{v:.1f}%")
+    tbl_pecas_cat = tbl_pecas_cat.rename(
+        columns={"CATEGORIA": "Categoria", "PEDIDOS": "Pedidos"}
+    )[["Categoria", "Peças", "% do Total", "Pedidos"]]
+    st.dataframe(tbl_pecas_cat, use_container_width=True, hide_index=True, height=max(280, 42 * len(df_pecas_cat)))
 
 st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 

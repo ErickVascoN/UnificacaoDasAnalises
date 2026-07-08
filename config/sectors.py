@@ -69,24 +69,6 @@ SECTORS_ANALISE = [
         "admin_only": True,
         "maintenance": True,
     },
-    {
-        "key": "faturados",
-        "title": "Análise de Faturamento",
-        "subtitle": "Análise comercial e faturamento",
-        "description": (
-            "Visão completa de produtos faturados, ranking de clientes, "
-            "evolução de receita, Acompanhamento comercial para tomada de decisões estratégicas."
-        ),
-        "icon": "📊",
-        "page_path": "pages/1_Produtos_Faturados.py",
-        "color_a": "#1D3557",
-        "color_b": "#0C6E74",
-        "accent":  "#E76F51",
-        "tags": ["Comercial", "Receita", "Clientes"],
-        "requires_auth": True,
-        "admin_only": True,
-        "maintenance": True,
-    },
 ]
 
 SECTORS_CONTROLADORIA = [

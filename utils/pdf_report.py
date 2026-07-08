@@ -616,8 +616,7 @@ def _make_page_template(doc, titulo_relatorio: str, periodo: str):
         canvas.rect(0, 0, w, 1.1 * cm, fill=1, stroke=0)
         canvas.setFillColor(C_GRAY_TEXT)
         canvas.setFont('Helvetica', 7.5)
-        canvas.drawString(MARGIN, 0.4 * cm,
-                          f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  Sistema de Gestão Industrial")
+        canvas.drawString(MARGIN, 0.4 * cm, "Sistema de Gestão Industrial")
         canvas.setFont('Helvetica-Bold', 8)
         canvas.drawRightString(w - MARGIN, 0.4 * cm, f"Pág. {doc.page}")
 
@@ -647,8 +646,6 @@ def _make_cover(titulo: str, subtitulo: str, periodo: str, gerado_em: str, filtr
         Spacer(1, 1.2 * cm),
         _linha_divisoria(cor=C_TEAL, espessura=3, espaco_acima=2, espaco_abaixo=12),
         Paragraph(f"Período: {periodo}", estilos['periodo_capa']),
-        Spacer(1, 0.5 * cm),
-        Paragraph(f"Gerado em: {gerado_em}", estilos['emissao_capa']),
     ]
     if filtros:
         linhas_capa.append(Spacer(1, 0.5 * cm))
@@ -697,13 +694,8 @@ def _cover_page_template(canvas_obj, doc, titulo: str, subtitulo: str,
     canvas_obj.setFont('Helvetica-Bold', 18)
     canvas_obj.drawCentredString(w / 2, cy, f"Período: {periodo}")
 
-    cy -= 0.9 * cm
-    canvas_obj.setFont('Helvetica', 12)
-    canvas_obj.setFillColor(colors.HexColor('#85C1E9'))
-    canvas_obj.drawCentredString(w / 2, cy, f"Gerado em: {gerado_em}")
-
     if filtros:
-        cy -= 0.7 * cm
+        cy -= 0.9 * cm
         canvas_obj.setFont('Helvetica', 10)
         canvas_obj.setFillColor(colors.HexColor('#7FB3D3'))
         canvas_obj.drawCentredString(w / 2, cy, f"Filtros: {filtros}")
@@ -772,8 +764,7 @@ def _header_footer_normal(canvas_obj, doc, titulo_relatorio: str, periodo: str):
     canvas_obj.rect(0, 0, w, 1.15 * cm, fill=1, stroke=0)
     canvas_obj.setFillColor(C_GRAY_TEXT)
     canvas_obj.setFont('Helvetica', 7.5)
-    canvas_obj.drawString(MARGIN, 0.42 * cm,
-                          f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  Sistema de Gestão Industrial")
+    canvas_obj.drawString(MARGIN, 0.42 * cm, "Sistema de Gestão Industrial")
     canvas_obj.setFont('Helvetica-Bold', 8)
     canvas_obj.drawRightString(w - MARGIN, 0.42 * cm, f"Página {doc.page}")
 
@@ -1105,7 +1096,7 @@ def gerar_pdf_arealva_manta(
     )
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Arealva Manta  ·  {gerado_em}',
+        f'Arealva Manta',
         assinatura,
     ))
 
@@ -1356,7 +1347,7 @@ def gerar_pdf_iacanga_manta(
     story.append(Spacer(1, 1.0*cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Iacanga · Mantas Giattex  ·  {gerado_em}',
+        f'Iacanga · Mantas Giattex',
         ParagraphStyle('ass_i', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -1506,7 +1497,7 @@ def gerar_pdf_itaju(
     story.append(Spacer(1, 0.8 * cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Corte Itaju · Ponto Palito  ·  {gerado_em}',
+        f'Corte Itaju · Ponto Palito',
         ParagraphStyle('ass_it2', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -1843,7 +1834,7 @@ def gerar_pdf_lencol(
     story.append(Spacer(1, 1.5*cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Arealva · Lençol  ·  {gerado_em}',
+        f'Arealva · Lençol',
         ParagraphStyle('ass_ln', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -2279,7 +2270,7 @@ def gerar_pdf_producao_geral(
     story.append(Spacer(1, 1.5*cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Produção Geral  ·  {gerado_em}',
+        f'Produção Geral',
         ParagraphStyle('ass_pg', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -2628,7 +2619,7 @@ def gerar_pdf_previsao_cargas(
     story.append(Spacer(1, 0.8 * cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Previsão de Cargas  ·  {gerado_em}',
+        f'Previsão de Cargas',
         ParagraphStyle('ass_c', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -2963,7 +2954,7 @@ def gerar_pdf_carteira_pedidos(
     story.append(Spacer(1, 1.2 * cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Carteira de Pedidos  ·  {gerado_em}',
+        f'Carteira de Pedidos',
         ParagraphStyle('ass_cp', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -3426,7 +3417,7 @@ def gerar_pdf_faccoes(
     story.append(Spacer(1, 0.8 * cm))
     story.append(Paragraph(
         f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
-        f'Producao por Faccao  ·  {gerado_em}',
+        f'Producao por Faccao',
         ParagraphStyle('ass_fac', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -3556,7 +3547,7 @@ def gerar_pdf_colaborador(
     bloco.append(Spacer(1, 0.8 * cm))
     bloco.append(Paragraph(
         f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
-        f'Produção — Colaborador Interno  ·  {gerado_em}',
+        f'Produção — Colaborador Interno',
         ParagraphStyle('ass_colab', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -3718,7 +3709,7 @@ def gerar_pdf_programacao(
     story.append(Spacer(1, 0.8 * cm))
     story.append(Paragraph(
         f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
-        f'Programacao de Corte  ·  {gerado_em}',
+        f'Programacao de Corte',
         ParagraphStyle('ass_prog', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
@@ -3938,7 +3929,7 @@ def gerar_pdf_corte_consolidado(
     story.append(Spacer(1, 1.0*cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Corte Consolidado · {mes_label}  ·  {gerado_em}',
+        f'Corte Consolidado · {mes_label}',
         ParagraphStyle('ass_cc', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
 
