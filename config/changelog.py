@@ -6,6 +6,35 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Aba Corte reorganizada com seletor de relatório; aba Facções removida",
+        "description": (
+            "pages/10_Relatorios.py: a aba ✂️ Corte tinha 5 relatórios (Consolidado, Arealva "
+            "Manta, Iacanga Manta, Lençol, Itaju) espalhados em duas colunas, cada um com sua "
+            "própria data e botão — confuso de entender à primeira vista. Agora tem um seletor "
+            "'Tipo de relatório' e só mostra os campos e o botão do relatório escolhido por vez. "
+            "A aba 👕 Facções foi removida (não é mais usada — o relatório de Produção Geral já "
+            "cobre o mesmo caso via dataset unificado, ver changelog de 07/07/2026); as funções "
+            "_dias_uteis e _dados_faccoes, que só serviam essa aba, e os imports load_faccoes / "
+            "FACCOES_FACCAO_ALIAS, que ficaram sem uso, foram removidos junto."
+        ),
+    },
+    {
+        "date": "08/07/2026",
+        "tag": "melhoria",
+        "title": "Total do produto agora é coluna mesclada, não linha extra, na tabela de Facções/Produção Geral",
+        "description": (
+            "utils/pdf_report.py (gerar_pdf_faccoes, tabela 'Visão Geral por Empresa / "
+            "Produto'): antes cada grupo de produto era fechado com uma linha extra 'TOTAL' "
+            "no meio da tabela — testado e achado bagunçado pelo usuário. Agora a tabela tem "
+            "duas colunas novas, 'Total do Produto' e 'Média/Dia (Produto)', mescladas "
+            "verticalmente (SPAN) e centralizadas ao lado das linhas de facção de cada "
+            "produto, sem linha extra. Vale tanto pro relatório de Facções quanto pro de "
+            "Produção Geral, que reaproveita a mesma função."
+        ),
+    },
+    {
         "date": "07/07/2026",
         "tag": "novo",
         "title": "Relatório 'Corte Consolidado' agora é idêntico ao PDF do e-mail diário",

@@ -1832,15 +1832,7 @@ def _screen_analysis_type():
             st.session_state.producao_screen = 'analysis_type'
             st.switch_page("app.py")
 
-_GUT_APONTADOR_URL = (
-    "https://www.appsheet.com/start/6ab5d5b4-6ceb-4641-be36-26a273f1f303"
-    "#appName=ApontadorZanattex-819603934"
-    "&group=%5B%7B%22Column%22%3A%22Data%22%2C%22Order%22%3A%22Descending%22%7D%5D"
-    "&page=fastTable"
-    "&sort=%5B%7B%22Column%22%3A%22Hora%22%2C%22Order%22%3A%22Descending%22%7D"
-    "%2C%7B%22Column%22%3A%22Efici%C3%AAncia%22%2C%22Order%22%3A%22Descending%22%7D%5D"
-    "&table=GIATTEX&view=GIATTEX"
-)
+_GUT_APONTADOR_URL = "https://www.appsheet.com/start/bcbb42c8-42a6-4424-8cb2-c11a69052d89"
 _GUT_ANALISE_URL = (
     "https://datastudio.google.com/u/0/reporting/"
     "720db0c0-be65-40d9-ae9d-7627741385ce/page/p_si214uowdd"

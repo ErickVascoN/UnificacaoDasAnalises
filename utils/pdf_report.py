@@ -723,7 +723,7 @@ class _RelatorioDoc(BaseDocTemplate):
     """BaseDocTemplate personalizado que suporta capa navy + páginas normais."""
 
     def __init__(self, buf: io.BytesIO, titulo_rel: str, subtitulo_rel: str,
-                 periodo: str, gerado_em: str, filtros: str = ''):
+                 periodo: str, gerado_em: str, filtros: str = '', capa: bool = True):
         super().__init__(buf, pagesize=A4, rightMargin=MARGIN, leftMargin=MARGIN,
                          topMargin=MARGIN + 1.0 * cm, bottomMargin=MARGIN + 0.8 * cm)
         self._titulo_rel = titulo_rel
@@ -731,7 +731,7 @@ class _RelatorioDoc(BaseDocTemplate):
         self._periodo = periodo
         self._gerado_em = gerado_em
         self._filtros = filtros
-        self._is_capa = True
+        self._is_capa = capa
 
         frame_normal = Frame(
             MARGIN, 1.6 * cm,
@@ -3044,6 +3044,107 @@ def gerar_pdf_faccoes(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
+    # ── Visão Geral por Empresa / Produto — tabela única, agrupada por
+    # produto (linhas do mesmo produto ficam juntas) — confirmado 08/07/2026.
+    story.append(Paragraph('Visão Geral por Empresa / Produto', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    from datetime import timedelta as _td_vg
+    from utils.normalize import is_blank, normalize_text
+    _txt = lambda v: 'Sem Dados' if is_blank(v) else str(v)
+
+    # Dias úteis do período filtrado — base da "Média/Dia" (mínimo 1 pra
+    # nunca dividir por zero num filtro de um único dia de fim de semana).
+    dias_uteis_periodo = max(1, sum(
+        1 for i in range((data_fim - data_ini).days + 1)
+        if (data_ini + _td_vg(days=i)).weekday() < 5
+    ))
+    periodo_txt = (
+        f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
+        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
+    )
+    story.append(Paragraph(
+        f"<b>Período analisado:</b> {periodo_txt}  "
+        f"({dias_uteis_periodo} dia(s) útil(eis))",
+        ParagraphStyle('periodo_vg', parent=e['nota'], fontSize=9.5, spaceAfter=8),
+    ))
+
+    def _familia_produto(produto: str) -> str:
+        """Agrupa variantes do mesmo produto (ex.: MANTA / MANTA C/CINTA /
+        MANTA PRENSADA, ou JOGO DUPLO PP / JOGOS DUPLOS) pela 1ª palavra do
+        nome, ignorando singular/plural — usado só pra decidir onde colocar
+        a linha separadora, o texto exibido continua o produto original."""
+        primeira = normalize_text(produto).split()[0] if produto.strip() else ''
+        return primeira[:-1] if len(primeira) > 3 and primeira.endswith('S') else primeira
+
+    cab_vg = ['Facção', 'Tipo de Produto', 'Cliente', 'Produzido', 'Média/Dia',
+              'Total do Produto', 'Média/Dia (Produto)']
+    cw_vg = [2.6 * cm, 3.4 * cm, 2.4 * cm, 2.0 * cm, 2.0 * cm, 2.6 * cm, 2.6 * cm]
+
+    linhas_vg = []
+    separadores_vg = []
+    grupos_produto_vg = []  # (linha_inicio, linha_fim) 1-based, p/ mesclar colunas de total
+    if not df_mes.empty:
+        # Agrupa pelos valores já convertidos pra texto ("Sem Dados" no lugar
+        # de NaN) — groupby ignora silenciosamente linhas com chave NaN, o
+        # que sumiria com produtos/clientes em branco na tabela.
+        df_vg = df_mes.assign(
+            _PRODUTO_TXT=df_mes['PRODUTO'].apply(_txt),
+            _CLIENTE_TXT=df_mes['CLIENTE'].apply(_txt),
+        )
+        df_vg['_FAMILIA'] = df_vg['_PRODUTO_TXT'].apply(_familia_produto)
+        vg_grp = (
+            df_vg.groupby(['_FAMILIA', '_PRODUTO_TXT', 'FACCAO', '_CLIENTE_TXT'], as_index=False)
+            .agg(QUANTIDADE=('QUANTIDADE', 'sum'))
+            .sort_values(['_FAMILIA', '_PRODUTO_TXT', 'QUANTIDADE'], ascending=[True, True, False])
+        )
+        produto_totais = df_vg.groupby('_PRODUTO_TXT')['QUANTIDADE'].sum()
+
+        familia_anterior = None
+        produto_anterior = None
+        grupo_inicio = None
+        for _, r in vg_grp.iterrows():
+            if produto_anterior is not None and r['_PRODUTO_TXT'] != produto_anterior:
+                grupos_produto_vg.append((grupo_inicio, len(linhas_vg)))
+            if familia_anterior is not None and r['_FAMILIA'] != familia_anterior:
+                separadores_vg.append(len(linhas_vg) + 1)  # +1 = offset da linha de cabeçalho
+            if produto_anterior is None or r['_PRODUTO_TXT'] != produto_anterior:
+                grupo_inicio = len(linhas_vg) + 1  # +1 = offset da linha de cabeçalho
+            familia_anterior = r['_FAMILIA']
+            produto_anterior = r['_PRODUTO_TXT']
+            media_linha = r['QUANTIDADE'] / dias_uteis_periodo
+            tot_prod = int(produto_totais[r['_PRODUTO_TXT']])
+            media_prod = tot_prod / dias_uteis_periodo
+            linhas_vg.append([
+                str(r['FACCAO']), r['_PRODUTO_TXT'], r['_CLIENTE_TXT'],
+                _fmt(r['QUANTIDADE']), _fmt(round(media_linha)),
+                _fmt(tot_prod), _fmt(round(media_prod)),
+            ])
+        if produto_anterior is not None:
+            grupos_produto_vg.append((grupo_inicio, len(linhas_vg)))
+
+    t_vg = _tabela_generica(cab_vg, linhas_vg, e, cw_vg, cor_header=C_NAVY)
+    # Linha sutil entre blocos de produto, pra não ficar tudo misturado
+    # visualmente (confirmado 08/07/2026).
+    for linha_sep in separadores_vg:
+        t_vg.setStyle(TableStyle([
+            ('LINEABOVE', (0, linha_sep), (-1, linha_sep), 1.1, C_TEAL),
+        ]))
+    # Colunas "Total do Produto" / "Média/Dia (Produto)" mescladas verticalmente
+    # por grupo — aparecem uma única vez por produto, centralizadas, em vez de
+    # uma linha extra de total embaixo do grupo (feedback do usuário 08/07/2026).
+    for linha_ini, linha_fim in grupos_produto_vg:
+        t_vg.setStyle(TableStyle([
+            ('SPAN', (5, linha_ini), (5, linha_fim)),
+            ('SPAN', (6, linha_ini), (6, linha_fim)),
+            ('VALIGN', (5, linha_ini), (6, linha_fim), 'MIDDLE'),
+            ('BACKGROUND', (5, linha_ini), (6, linha_fim), C_TEAL_LT),
+            ('FONTNAME', (5, linha_ini), (6, linha_fim), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (5, linha_ini), (6, linha_fim), C_NAVY),
+        ]))
+    story.append(t_vg)
+    story.append(Spacer(1, 0.5 * cm))
+
     # ── Painel de Alertas — logo após os KPIs, é o que a diretoria olha
     # primeiro (confirmado com o usuário 07/07/2026: substitui o texto
     # explicativo sobre meta que ficava aqui, movido/resumido mais abaixo).
@@ -3201,8 +3302,8 @@ def gerar_pdf_faccoes(
             story.append(_t_hdr_dp)
 
             linhas_dp = [
-                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), str(r['PRODUTO']),
-                 str(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
+                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), _txt(r['PRODUTO']),
+                 _txt(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
                 for _, r in det.iterrows()
             ]
             story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
@@ -3220,16 +3321,31 @@ def gerar_pdf_faccoes(
     cw_rs = [3.2*cm, 5.8*cm, 2.4*cm, 2.2*cm, 2.4*cm, 2.0*cm]
 
     linhas_rs = []
+    separadores_rs = []
     if rank_df is not None and not rank_df.empty:
-        rk_resumo = rank_df.sort_values(
-            ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
-        )
-        for _, r in rk_resumo.iterrows():
+        # Uma linha por facção (Tipo de Produto lista tudo que ela faz),
+        # agrupada pela família do produto principal (maior volume) —
+        # confirmado 08/07/2026.
+        _rs_rows = []
+        for _, r in rank_df.iterrows():
             faccao = str(r['FACCAO'])
-            produtos_fac = (
-                sorted(df_mes[df_mes['FACCAO'] == faccao]['PRODUTO'].unique())
-                if not df_mes.empty else []
-            )
+            df_fac = df_mes[df_mes['FACCAO'] == faccao] if not df_mes.empty else df_mes
+            produtos_fac = sorted(df_fac['PRODUTO'].unique()) if not df_fac.empty else []
+            if not df_fac.empty:
+                produto_principal = df_fac.groupby('PRODUTO')['QUANTIDADE'].sum().idxmax()
+                familia = _familia_produto(_txt(produto_principal))
+            else:
+                familia = '~SEM PRODUTO'
+            _rs_rows.append((familia, r, faccao, produtos_fac))
+
+        _rs_rows.sort(key=lambda x: (x[0], -x[1]['PCT'] if pd.notna(x[1]['PCT']) else 1e9))
+
+        familia_anterior = None
+        for familia, r, faccao, produtos_fac in _rs_rows:
+            if familia_anterior is not None and familia != familia_anterior:
+                separadores_rs.append(len(linhas_rs) + 1)  # +1 = offset do cabeçalho
+            familia_anterior = familia
+
             tem_meta = r['META_MES'] > 0
             linhas_rs.append([
                 faccao,
@@ -3248,6 +3364,10 @@ def gerar_pdf_faccoes(
             cor_s = C_GREEN if pct_v >= 100 else (C_AMBER if pct_v >= 75 else C_RED)
             t_rs.setStyle(TableStyle([('TEXTCOLOR', (5, ri), (5, ri), cor_s),
                                       ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold')]))
+    for linha_sep in separadores_rs:
+        t_rs.setStyle(TableStyle([
+            ('LINEABOVE', (0, linha_sep), (-1, linha_sep), 1.1, C_TEAL),
+        ]))
     story.append(t_rs)
     story.append(Spacer(1, 0.4 * cm))
     story.append(PageBreak())
@@ -3309,6 +3429,143 @@ def gerar_pdf_faccoes(
         f'Producao por Faccao  ·  {gerado_em}',
         ParagraphStyle('ass_fac', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — PRODUÇÃO POR COLABORADOR INTERNO (LITTEX / GGTTEX)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_colaborador(
+    df_colab: pd.DataFrame,
+    colaborador: str,
+    unidade_label: str,
+    data_ini: date,
+    data_fim: date,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Produção de um Colaborador Interno (LITTEX / GGTTEX).
+
+    Parameters
+    ----------
+    df_colab      : DataFrame já filtrado pelo colaborador e pelo período —
+                     colunas DATA, COLABORADOR, QUANTIDADE, SETOR, CLIENTE
+                     (ver utils/producao_interno_loader.py — PRODUTO fica
+                     vazio em algumas unidades, como GGTTEX Cortina, onde
+                     SETOR é quem carrega o tipo de operação/produção).
+    colaborador   : nome do colaborador (já em maiúsculas).
+    unidade_label : rótulo da unidade (ex.: "GGTTEX Cortina").
+    data_ini/fim  : período selecionado.
+    filtros_texto : string descritiva de filtros adicionais.
+    """
+    e = _estilos()
+    periodo_str = (
+        f"{data_ini.strftime('%d/%m/%Y')}  até  {data_fim.strftime('%d/%m/%Y')}"
+        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
+    )
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel=f'Relatório de Produção · {colaborador.title()}',
+        subtitulo_rel=f'{unidade_label} — Colaborador Interno',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+        capa=False,
+    )
+
+    total_prod = int(df_colab['QUANTIDADE'].sum()) if not df_colab.empty else 0
+
+    meses_pt = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
+                7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
+    titulo_txt = f'Relatório de Produção — {colaborador.title()} — {meses_pt.get(data_ini.month, "")}'
+    titulo_estilo = ParagraphStyle(
+        'titulo_relatorio_colab', parent=e['titulo_secao'],
+        fontSize=18, alignment=TA_CENTER, spaceBefore=0, spaceAfter=18,
+    )
+
+    # ── Bloco de conteúdo (título + tabelas) — medido pra poder centralizar
+    # verticalmente na página, já que o relatório é curto e sobrava muito
+    # espaço em branco embaixo (confirmado com o usuário 08/07/2026).
+    bloco: list = [Paragraph(titulo_txt, titulo_estilo)]
+
+    bloco.append(Paragraph('Produção por Setor / Tipo', e['titulo_secao']))
+    bloco.append(_linha_divisoria())
+
+    if not df_colab.empty:
+        setor_grp = (
+            df_colab.groupby('SETOR', as_index=False)['QUANTIDADE'].sum()
+            .sort_values('QUANTIDADE', ascending=False)
+        )
+        cab_st = ['Setor / Tipo', 'Produzido', '% do Total']
+        cw_st = [8.0 * cm, 4.0 * cm, 4.0 * cm]
+        linhas_st = []
+        for _, r in setor_grp.iterrows():
+            pct = r['QUANTIDADE'] / total_prod * 100 if total_prod else 0
+            linhas_st.append([
+                str(r['SETOR']) if r['SETOR'] else '-', _fmt(r['QUANTIDADE']), f"{pct:.1f}%",
+            ])
+        bloco.append(_tabela_generica(cab_st, linhas_st, e, cw_st, cor_header=C_NAVY))
+        bloco.append(Spacer(1, 0.4 * cm))
+
+    bloco.append(Paragraph('Produção por Empresa', e['titulo_secao']))
+    bloco.append(_linha_divisoria())
+
+    if not df_colab.empty:
+        cli_grp = (
+            df_colab.groupby('CLIENTE', as_index=False)['QUANTIDADE'].sum()
+            .sort_values('QUANTIDADE', ascending=False)
+        )
+        cab_cl = ['Empresa', 'Produzido', '% do Total']
+        cw_cl = [8.0 * cm, 4.0 * cm, 4.0 * cm]
+        linhas_cl = []
+        for _, r in cli_grp.iterrows():
+            pct = r['QUANTIDADE'] / total_prod * 100 if total_prod else 0
+            linhas_cl.append([
+                str(r['CLIENTE']) if r['CLIENTE'] else '-', _fmt(r['QUANTIDADE']), f"{pct:.1f}%",
+            ])
+        bloco.append(_tabela_generica(cab_cl, linhas_cl, e, cw_cl, cor_header=C_NAVY))
+        bloco.append(Spacer(1, 0.4 * cm))
+
+    bloco.append(Paragraph('Produção Detalhada por Dia', e['titulo_secao']))
+    bloco.append(_linha_divisoria())
+
+    if not df_colab.empty:
+        det = (
+            df_colab.groupby(['DATA', 'SETOR', 'CLIENTE'], as_index=False)['QUANTIDADE'].sum()
+            .sort_values('DATA')
+        )
+        cab_det = ['Data', 'Setor / Tipo', 'Empresa', 'Qtd']
+        cw_det = [2.4 * cm, 5.5 * cm, 4.5 * cm, 2.5 * cm]
+        linhas_det = [
+            [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'),
+             str(r['SETOR']) if r['SETOR'] else '-',
+             str(r['CLIENTE']) if r['CLIENTE'] else '-',
+             _fmt(r['QUANTIDADE'])]
+            for _, r in det.iterrows()
+        ]
+        bloco.append(_tabela_generica(cab_det, linhas_det, e, cw_det,
+                                      cor_header=colors.HexColor('#2A6496')))
+        bloco.append(Spacer(1, 0.4 * cm))
+
+    bloco.append(Spacer(1, 0.8 * cm))
+    bloco.append(Paragraph(
+        f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
+        f'Produção — Colaborador Interno  ·  {gerado_em}',
+        ParagraphStyle('ass_colab', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    frame_w = PAGE_W - 2 * MARGIN
+    frame_h = PAGE_H - 3.2 * cm
+    altura_bloco = sum(f.wrap(frame_w, frame_h)[1] for f in bloco)
+    espaco_topo = max(0.0, (frame_h - altura_bloco) / 2)
+
+    story = [Spacer(1, espaco_topo), *bloco]
 
     doc.build(story)
     return buf.getvalue()
