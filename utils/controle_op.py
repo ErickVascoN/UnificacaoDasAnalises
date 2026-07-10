@@ -347,6 +347,18 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     if "_CHAVE" not in df.columns:
         df["_CHAVE"] = df["PED. CLIENTE"]
 
+    # Em várias linhas a coluna PRODUTO da planilha guarda só o código
+    # (ex.: "700075-2021-25", "1.12636.02.9999") em vez do nome — quando
+    # DESCRIÇÃO DO PRODUTO existe, ela é o nome legível de verdade. Prefere
+    # a descrição sempre que disponível; sem isso, a tabela de OPs mostrava
+    # código em vez de nome de produto (feedback do usuário 10/07/2026). Não
+    # muda o matching multi-produto abaixo — ele já usa essa mesma
+    # preferência (DESCRIÇÃO DO PRODUTO ou PRODUTO) pra montar `desc`.
+    if "DESCRIÇÃO DO PRODUTO" in df.columns:
+        _desc = df["DESCRIÇÃO DO PRODUTO"].astype(str).str.strip()
+        _desc_valida = _desc.ne("") & ~_desc.str.upper().isin({"NAN", "NONE", "N/A"})
+        df["PRODUTO"] = _desc.where(_desc_valida, df["PRODUTO"])
+
     # QNT_PROG_TOTAL inicial = soma da OP inteira (usado para OPs de 1 produto)
     total_prog_op = df.groupby(["_CHAVE", "SEMANA"])["QNT. PROG"].transform("sum")
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)

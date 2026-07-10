@@ -985,8 +985,9 @@ _today = date.today()
 _mes_ini = _today.replace(day=1)
 _mes_fim = _today.replace(day=monthrange(_today.year, _today.month)[1])
 
-tab_corte, tab_prod, tab_cargas, tab_pedidos, tab_prog = st.tabs([
-    "✂️ Corte", "🏭 Produção Geral", "🚛 Cargas", "📦 Carteira de Pedidos", "📋 Programação",
+tab_corte, tab_prod, tab_interno, tab_cargas, tab_pedidos, tab_prog = st.tabs([
+    "✂️ Corte", "🏭 Produção Geral", "👥 Colaboradores Internos", "🚛 Cargas",
+    "📦 Carteira de Pedidos", "📋 Programação",
 ])
 
 
@@ -1312,6 +1313,84 @@ with tab_prod:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — FACÇÕES
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — COLABORADORES INTERNOS
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_interno:
+    st.markdown("### 👥 Relatório de Colaborador Interno")
+    st.markdown(
+        "Produção individual de um colaborador interno (LITTEX / GGTTEX), por período — "
+        "mesmo relatório usado no dashboard 'Por Colaborador → Interno'."
+    )
+
+    from utils.producao_interno_loader import load_interno_unidade
+    from utils.pdf_report import gerar_pdf_colaborador
+    from config.settings import PRODUCAO_INTERNO_SHEETS
+
+    _unidades_int = list(PRODUCAO_INTERNO_SHEETS.keys())
+    _rotulos_int = [PRODUCAO_INTERNO_SHEETS[k]["label"] for k in _unidades_int]
+
+    with st.container(border=True):
+        _unidade_lbl_int = st.selectbox("Unidade", _rotulos_int, key="unidade_int")
+        _chave_int = _unidades_int[_rotulos_int.index(_unidade_lbl_int)]
+
+        with st.spinner("Carregando colaboradores…"):
+            _df_int_full = load_interno_unidade(_chave_int)
+
+        if _df_int_full.empty:
+            st.warning("⚠️ Sem dados disponíveis para essa unidade.")
+        else:
+            _dmin_int = _df_int_full["DATA"].min().date()
+            _dmax_int = _df_int_full["DATA"].max().date()
+
+            _colab_disp_int = sorted(_df_int_full["COLABORADOR"].unique())
+            _colab_sel_int = st.selectbox("Colaborador", _colab_disp_int, key="colab_int")
+
+            _ci_int, _cf_int = st.columns(2)
+            with _ci_int:
+                _ini_int = st.date_input("Data Inicial", value=_dmin_int, min_value=_dmin_int,
+                                          max_value=_dmax_int, format="DD/MM/YYYY", key="ini_int")
+            with _cf_int:
+                _fim_int = st.date_input("Data Final", value=_dmax_int, min_value=_dmin_int,
+                                          max_value=_dmax_int, format="DD/MM/YYYY", key="fim_int")
+
+            if st.button("📄 Gerar Relatório do Colaborador", key="btn_int", type="primary"):
+                if _ini_int > _fim_int:
+                    st.error("A data inicial não pode ser maior que a final.")
+                else:
+                    with st.spinner("Gerando PDF…"):
+                        try:
+                            _mask_int = (
+                                (_df_int_full["COLABORADOR"] == _colab_sel_int)
+                                & (_df_int_full["DATA"].dt.date >= _ini_int)
+                                & (_df_int_full["DATA"].dt.date <= _fim_int)
+                            )
+                            _df_colab_int = _df_int_full[_mask_int].copy()
+                            if _df_colab_int.empty:
+                                st.warning("Nenhum registro desse colaborador no período selecionado.")
+                            else:
+                                _bytes_int = gerar_pdf_colaborador(
+                                    df_colab=_df_colab_int,
+                                    colaborador=_colab_sel_int,
+                                    unidade_label=PRODUCAO_INTERNO_SHEETS[_chave_int]["label"],
+                                    data_ini=_ini_int,
+                                    data_fim=_fim_int,
+                                )
+                                st.session_state["pdf_int_bytes"] = _bytes_int
+                                _slug_int = normalize_text(_colab_sel_int).replace(" ", "_")
+                                st.session_state["pdf_int_nome"] = nome_arquivo_pdf(
+                                    f"colaborador_{_chave_int.lower()}_{_slug_int}", _ini_int, _fim_int
+                                )
+                                st.success("PDF gerado!")
+                        except Exception as _e:
+                            st.error(f"Erro ao gerar PDF: {_e}")
+
+        if st.session_state.get("pdf_int_bytes"):
+            st.download_button("⬇️ Baixar Relatório do Colaborador", data=st.session_state["pdf_int_bytes"],
+                file_name=st.session_state.get("pdf_int_nome", "relatorio_colaborador.pdf"),
+                mime="application/pdf", key="dl_int", use_container_width=True)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — CARGAS
 # ══════════════════════════════════════════════════════════════════════════════

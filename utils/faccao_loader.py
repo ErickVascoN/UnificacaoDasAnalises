@@ -89,14 +89,17 @@ def _load_tab(
         )
         return None
 
+    # fillna ANTES do astype(str): no pandas 3.x, astype(str) não converte
+    # células ausentes (NaN real) em string "nan" — o valor permanece float,
+    # escapando dos filtros de "vazios" abaixo e quebrando comparações/sorted().
     out = pd.DataFrame()
     out["DATA"]       = raw[col_data]
-    out["PRODUTO"]    = raw[col_prod].astype(str).str.strip().str.upper()
-    out["CLIENTE"]    = raw[col_cli].astype(str).str.strip().str.upper()
+    out["PRODUTO"]    = raw[col_prod].fillna("").astype(str).str.strip().str.upper()
+    out["CLIENTE"]    = raw[col_cli].fillna("").astype(str).str.strip().str.upper()
     out["QUANTIDADE"] = _parse_qty(raw[col_qtd])
     out["ABA"]        = tab_name.strip()
     out["PRESTADOR"]  = (
-        raw[col_prest].astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper()
+        raw[col_prest].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper()
         if col_prest
         else ""
     )
@@ -114,7 +117,7 @@ def _load_tab(
     out["DATA"] = parse_date_series(out["DATA"], default_order="MDY")
 
     # Remove linhas inválidas (placeholder, sem quantidade, etc.)
-    raw_data_upper = raw[col_data].astype(str).str.strip().str.upper()
+    raw_data_upper = raw[col_data].fillna("").astype(str).str.strip().str.upper()
     valid = (
         ~raw_data_upper.isin(_BLANKS)
         & out["DATA"].notna()

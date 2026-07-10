@@ -58,7 +58,10 @@ _TAMANHOS_JOGO_NORM: dict[str, str] = {
 
 def _limpar_texto(serie: pd.Series) -> pd.Series:
     """Strip + transforma valores 'vazios' (nan/none/-/...) em string vazia ''."""
-    s = serie.astype(str).str.strip()
+    # fillna ANTES do astype(str): no pandas 3.x, astype(str) não converte
+    # células ausentes (NaN real) em string "nan" — o valor permanece float,
+    # escapando do filtro de vazios abaixo e quebrando comparações (ex: sorted()).
+    s = serie.fillna("").astype(str).str.strip()
     return s.where(~s.str.upper().isin(_TEXTO_VAZIO), "")
 
 
@@ -133,7 +136,7 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
         # Resolve duplicatas visuais como "LUÊNIA" vs "LUêNIA" (acento em caixa
         # diferente) e "MARIA  EDUARDA" vs "MARIA EDUARDA" (espaço duplo).
         out["COLABORADOR"] = (
-            raw[col_colab].astype(str)
+            raw[col_colab].fillna("").astype(str)
             .str.replace(r"\s+", " ", regex=True)
             .str.strip()
             .str.upper()

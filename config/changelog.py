@@ -7,6 +7,38 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "10/07/2026",
+        "tag": "correção",
+        "title": "Tela de Produção Interna quebrava com TypeError ao listar colaboradores",
+        "description": (
+            "Erro 'not supported between instances of float and str' ao abrir a aba "
+            "GGTTEX Cortina em Produção Geral → Colaboradores Internos. Causa: no pandas 3.x, "
+            "'.astype(str)' deixou de converter células vazias (NaN) em string 'nan' — o valor "
+            "ficava como float mesmo depois da limpeza, escapando do filtro de linhas vazias e "
+            "quebrando o sorted() da lista de colaboradores. Corrigido em "
+            "utils/producao_interno_loader.py (coluna COLABORADOR e _limpar_texto) e no mesmo "
+            "padrão em utils/faccao_loader.py (PRODUTO, CLIENTE, PRESTADOR, DATA), adicionando "
+            "fillna('') antes do astype(str). Validado recarregando as 4 unidades internas e as "
+            "abas de Facções: todas as colunas de texto agora só têm string, sem mistura de tipos."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "correção",
+        "title": "Nome do produto às vezes vinha como código na tabela de OPs",
+        "description": (
+            "Usuário notou, na tabela 'Todas as OPs' do Controle de OP, produtos aparecendo "
+            "como o código (ex.: '700075-2021-25', '1.12636.02.9999') ou como o próprio número "
+            "da OP, em vez do nome. Causa: em várias linhas da planilha de Programação a coluna "
+            "PRODUTO guarda só o código — quem tem o nome legível é DESCRIÇÃO DO PRODUTO, e "
+            "utils/controle_op.py::enriquecer() usava sempre a coluna PRODUTO crua na saída. "
+            "Corrigido pra preferir DESCRIÇÃO DO PRODUTO sempre que ela existir (só cai pra "
+            "PRODUTO quando a descrição está vazia) — não muda o matching multi-produto interno "
+            "(já usava essa mesma preferência) nem os números de status/quantidade, só o nome "
+            "exibido. Testado com dados reais: 120 OPs com código no lugar do nome, agora 0."
+        ),
+    },
+    {
+        "date": "10/07/2026",
         "tag": "melhoria",
         "title": "Controle de OP com visual mais rico (rosca de status, gauge, top clientes, badges)",
         "description": (
