@@ -14,7 +14,6 @@ from calendar import monthrange
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -31,6 +30,7 @@ from utils.date_parser import parse_date_series
 from utils.metas_manager import load_metas
 from utils.normalize import normalize_text
 from utils.ui_helpers import multiselect_reset_on_grow
+from utils.feriados import contar_dias_uteis, feriados_no_periodo
 from config.settings import (
     CORTE_SHEETS_ID, CORTE_SHEETS_GID, CORTE_CACHE_TTL,
     IACANGA_SHEETS_ID, IACANGA_SHEETS_GID,
@@ -186,6 +186,29 @@ def _normaliza_tamanho(tam: str) -> str:
     return s
 
 
+def _canoniza_estacao_iacanga(estacao: str) -> str:
+    """Uniformiza a grafia da estação de corte (Iacanga).
+
+    A planilha tem "Maquina 1" e "Máquina 1" (com/sem acento) digitados ao
+    longo do tempo pra mesma estação física — sem normalizar, cada grafia vira
+    uma linha própria no relatório (estação duplicada) e a variante sem match
+    exato de acento escapa da classificação de Grupo Meta (MAQUINA/MESA),
+    puxando a meta de referência errada. Reconhece MAQUINA/MESA/BURDAY/
+    REFILAMENTO/DERIVADOS + número opcional; nomes fora desse padrão passam
+    inalterados (só strip), pra não mascarar uma estação nova ainda não mapeada.
+    """
+    s = re.sub(r"\s+", " ", _norm_text(estacao)).strip()
+    m = re.match(r"^(MAQUINA|MESA|BURDAY|REFILAMENTO|DERIVADOS)\s*(\d*)$", s)
+    if not m:
+        return str(estacao).strip()
+    label = {
+        "MAQUINA": "Máquina", "MESA": "Mesa", "BURDAY": "Burday",
+        "REFILAMENTO": "Refilamento", "DERIVADOS": "Derivados",
+    }[m.group(1)]
+    numero = m.group(2)
+    return f"{label} {numero}".strip() if numero else label
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LOADERS LOCAIS (cacheados)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -228,7 +251,10 @@ def _dados_iacanga() -> pd.DataFrame:
     df["DATA"] = parse_date_series(df["DATA"])
     df = df.dropna(subset=["DATA"])
     df["QUANTIDADE"] = pd.to_numeric(df["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
-    df["ESTACAO"] = df.get("ESTAÇÃO DE CORTE", df.get("ESTACAO", pd.Series(dtype=str))).astype(str).str.strip()
+    df["ESTACAO"] = (
+        df.get("ESTAÇÃO DE CORTE", df.get("ESTACAO", pd.Series(dtype=str)))
+        .astype(str).str.strip().apply(_canoniza_estacao_iacanga)
+    )
     df["PRODUTO"] = df["PRODUTO"].astype(str).str.strip() if "PRODUTO" in df.columns else ""
     df["OP"] = df.get("OP", pd.Series("SEM OP", index=df.index)).fillna("SEM OP").astype(str).str.strip()
     df["COR"] = df.get("COR", pd.Series("", index=df.index)).astype(str).str.strip().str.upper()
@@ -928,37 +954,17 @@ def _dados_programacao() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def _calcular_df_agg(df_prog: pd.DataFrame, df_cortes: pd.DataFrame):
-    """Agrega programação vs corte e retorna (df_agg, KPIs)."""
+    """Agrega programação vs corte e retorna (df_agg, KPIs).
+
+    Reaproveita utils.controle_op.enriquecer/agregar_por_op — mesma lógica
+    usada ao vivo em pages/4_Controladoria_Programacao.py, em vez de uma
+    reimplementação própria (que tinha divergido: limiar de 100% aqui contra
+    96% lá para status 'Concluído')."""
     if df_prog.empty:
         return pd.DataFrame(), 0, 0, 0, 0, 0.0, 0, 0
-    from utils.normalize import normalize_op
-    df_prog = df_prog.copy()
-    df_prog["OP_NORM"] = df_prog["_CHAVE"].apply(normalize_op)
 
-    if not df_cortes.empty:
-        df_cortes = df_cortes.copy()
-        df_cortes["OP_NORM"] = df_cortes["OP"].apply(normalize_op)
-        agg_c = df_cortes.groupby("OP_NORM")["QUANTIDADE"].sum().reset_index().rename(columns={"QUANTIDADE": "QNT_CORTADA"})
-    else:
-        agg_c = pd.DataFrame(columns=["OP_NORM", "QNT_CORTADA"])
-
-    agg_p = (
-        df_prog.groupby(["OP_NORM", "PED. CLIENTE", "CLIENTE", "PRODUTO", "LOCAL", "SEMANA"])
-        .agg(QNT_PROG_TOTAL=("QNT. PROG", "sum"))
-        .reset_index()
-    )
-    df_agg = agg_p.merge(agg_c, on="OP_NORM", how="left")
-    df_agg["QNT_CORTADA"] = df_agg["QNT_CORTADA"].fillna(0).astype(int)
-    df_agg["EFICIENCIA"] = np.where(
-        df_agg["QNT_PROG_TOTAL"] > 0,
-        (df_agg["QNT_CORTADA"] / df_agg["QNT_PROG_TOTAL"] * 100).round(1),
-        0.0
-    )
-    def _status(row):
-        if row["QNT_CORTADA"] <= 0: return "Pendente"
-        if row["QNT_CORTADA"] >= row["QNT_PROG_TOTAL"]: return "Concluído"
-        return "Parcial"
-    df_agg["STATUS_CORTE"] = df_agg.apply(_status, axis=1)
+    from utils.controle_op import enriquecer, agregar_por_op
+    df_agg = agregar_por_op(enriquecer(df_prog, df_cortes))
 
     total_ops  = len(df_agg)
     concluidas = (df_agg["STATUS_CORTE"] == "Concluído").sum()
@@ -1233,10 +1239,9 @@ with tab_prod:
                             _total_mes_pg = int(_df_mes_pg["QUANTIDADE"].sum())
 
                             _fim_ref_pg = min(_today, _fim_pg)
-                            _du_passados_pg = sum(
-                                1 for i in range((_fim_ref_pg - _ini_pg).days + 1)
-                                if (_ini_pg + timedelta(days=i)).weekday() < 5
-                            ) if _fim_ref_pg >= _ini_pg else 0
+                            _du_passados_pg = (
+                                contar_dias_uteis(_ini_pg, _fim_ref_pg) if _fim_ref_pg >= _ini_pg else 0
+                            )
                             _esperado_pg = _du_passados_pg * _meta_dia_total_pg
                             _pct_mes_pg   = _total_mes_pg / _meta_mes_total_pg * 100 if _meta_mes_total_pg > 0 else 0
                             _pct_ritmo_pg = _total_mes_pg / _esperado_pg * 100 if _esperado_pg > 0 else 0

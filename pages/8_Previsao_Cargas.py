@@ -43,6 +43,17 @@ MESES_DISPONIVEIS = [
     ("JUNHO",     6, 2026),
 ]
 
+# Override manual do REALIZADO mensal para meses fechados onde o lançamento
+# diário na planilha ficou incompleto e não é mais recuperável (confirmado com
+# o usuário 10/07/2026) — o valor abaixo vem do relatório "Acompanhamento
+# Mensal" (fechamento por empresa), que é a fonte confiável pra esses meses.
+# Não mexe na extração normal: meses fora deste dict continuam vindo 100% da
+# linha de resumo da planilha (_find_resumo_mensal), inclusive Julho em diante.
+REALIZADO_MENSAL_OVERRIDE: dict[tuple[int, int], float] = {
+    (2026, 5): 4_065_134.69,  # Maio/2026
+    (2026, 6): 4_124_995.84,  # Junho/2026
+}
+
 DARK = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
@@ -439,6 +450,8 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
     REALIZADO mensal = valor oficial da planilha (linha de resumo).
     """
     previsto_mensal, realizado_mensal = _find_resumo_mensal(rows)
+    if (ano, mes_num) in REALIZADO_MENSAL_OVERRIDE:
+        realizado_mensal = REALIZADO_MENSAL_OVERRIDE[(ano, mes_num)]
     day_realized = _extract_day_realized(rows, mes_num, ano)
 
     # Pré-computa índices de "linha mesclada": linha sem data onde SOMENTE col[6]

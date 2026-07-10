@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
+from utils.feriados import contar_dias_uteis
+
 _DARK_LAYOUT_PADRAO = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
@@ -94,10 +96,7 @@ def consistencia_por_dimensao(
     [dim_col, "Dias Ativos", "Assiduidade (%)", "Média/Dia", "Regularidade (%)",
      "Melhor Dia", "Pior Dia (>0)"]
     """
-    du_per = sum(
-        1 for i in range((data_fim - data_ini).days + 1)
-        if (data_ini + timedelta(days=i)).weekday() < 5
-    )
+    du_per = contar_dias_uteis(data_ini, data_fim)
 
     rows = []
     for valor in sorted(df[dim_col].unique()):

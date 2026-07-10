@@ -89,6 +89,25 @@ def identifica_grupo_estacao_iacanga(estacao: str) -> str:
         return "MESA"
     return "OUTRO"
 
+def canoniza_estacao_iacanga(estacao: str) -> str:
+    """uniformiza a grafia da estacao (ex: 'Maquina 1' e 'Máquina 1' são a
+    mesma estação física, digitada com/sem acento em datas diferentes na
+    planilha) — sem isso a mesma estação vira 2 linhas nos relatórios e nos
+    filtros/gráficos do dashboard. Reconhece MAQUINA/MESA/BURDAY/REFILAMENTO/
+    DERIVADOS + número opcional; nomes fora desse padrão passam só com strip,
+    pra não mascarar uma estação nova ainda não mapeada."""
+    import re
+    s = re.sub(r"\s+", " ", _norm_iacanga(estacao)).strip()
+    m = re.match(r"^(MAQUINA|MESA|BURDAY|REFILAMENTO|DERIVADOS)\s*(\d*)$", s)
+    if not m:
+        return str(estacao).strip()
+    label = {
+        "MAQUINA": "Máquina", "MESA": "Mesa", "BURDAY": "Burday",
+        "REFILAMENTO": "Refilamento", "DERIVADOS": "Derivados",
+    }[m.group(1)]
+    numero = m.group(2)
+    return f"{label} {numero}".strip() if numero else label
+
 def normaliza_tamanho_iacanga(tam: str) -> str:
     """normaliza tamanho pra SOLTEIRO/CASAL/QUEEN/KING."""
     s = _norm_iacanga(tam)
@@ -225,12 +244,13 @@ def _analisa_dias(datas_trabalhadas, data_ini, data_fim):
                         (lista vazia se >15 ausentes, para não poluir)
     """
     from datetime import timedelta as _td
+    from utils.feriados import eh_dia_util
     trabalhadas = set(datas_trabalhadas)
     sabados = sum(1 for d in trabalhadas if d.weekday() == 5)
     uteis = []
     cur = data_ini
     while cur <= data_fim:
-        if cur.weekday() < 5:   # Seg(0)…Sex(4)
+        if eh_dia_util(cur):   # Seg(0)…Sex(4), exceto feriado nacional/SP
             uteis.append(cur)
         cur += _td(days=1)
     ausentes = [d for d in uteis if d not in trabalhadas]
@@ -612,7 +632,7 @@ def carregar_dados_iacanga():
     df.loc[df['OP'] == '', 'OP'] = 'SEM OP'
     df['COR'] = df['COR'].astype(str).str.strip().str.upper()
     df['QUANTIDADE'] = pd.to_numeric(df['QUANTIDADE'], errors='coerce').fillna(0).astype(int)
-    df['ESTACAO'] = df['ESTAÇÃO DE CORTE'].astype(str).str.strip()
+    df['ESTACAO'] = df['ESTAÇÃO DE CORTE'].astype(str).str.strip().apply(canoniza_estacao_iacanga)
     df['PRODUTO'] = df['PRODUTO'].astype(str).str.strip()
     df['TAMANHO'] = df['TAMANHO'].astype(str).str.strip().apply(normaliza_tamanho_iacanga)
     df['GRUPO_ESTACAO'] = df['ESTACAO'].apply(identifica_grupo_estacao_iacanga)

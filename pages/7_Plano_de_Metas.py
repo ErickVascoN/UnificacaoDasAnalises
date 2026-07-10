@@ -40,6 +40,7 @@ from config.settings import (
 )
 from components.filtros_btn import render_filtros_btn
 from components.sidebar import render_home_button
+from utils.feriados import eh_dia_util, contar_dias_uteis
 
 # ─
 # CONFIG DA PÁGINA
@@ -220,11 +221,11 @@ def _parse_num(val) -> float:
         return float("nan")
 
 def _dias_uteis_mes(ano: int, mes: int) -> int:
-    """Conta dias úteis (seg–sex) no mês inteiro."""
+    """Conta dias úteis (seg–sex, exceto feriados nacionais/SP) no mês inteiro."""
     _, n_dias = calendar.monthrange(ano, mes)
     count = 0
     for d in range(1, n_dias + 1):
-        if date(ano, mes, d).weekday() < 5:
+        if eh_dia_util(date(ano, mes, d)):
             count += 1
     return count
 
@@ -674,7 +675,7 @@ def _calcular_indicadores(
             _, n_dias = calendar.monthrange(ano, mes)
             dias_restantes = sum(
                 1 for d in range(hoje.day + 1, n_dias + 1)
-                if date(ano, mes, d).weekday() < 5
+                if eh_dia_util(date(ano, mes, d))
             )
         else:
             dias_restantes = 0
@@ -685,7 +686,7 @@ def _calcular_indicadores(
         if hoje.month == mes and hoje.year == ano:
             dias_passados = sum(
                 1 for d in range(1, hoje.day + 1)
-                if date(ano, mes, d).weekday() < 5
+                if eh_dia_util(date(ano, mes, d))
             )
         else:
             dias_passados = dias_uteis_mes
@@ -768,7 +769,7 @@ def _serie_diaria(
     _, n_dias = calendar.monthrange(ano, mes)
     dias_uteis = [
         date(ano, mes, d) for d in range(1, n_dias + 1)
-        if date(ano, mes, d).weekday() < 5
+        if eh_dia_util(date(ano, mes, d))
     ]
     datas_real = sorted(daily["DATA"].tolist())
     if len(datas_real) >= 2:

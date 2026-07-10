@@ -32,6 +32,8 @@ from reportlab.platypus import (
 )
 from reportlab.pdfbase import pdfmetrics
 
+from utils.feriados import eh_dia_util, eh_feriado, contar_dias_uteis, feriados_no_periodo
+
 logger = logging.getLogger(__name__)
 
 # ─── Paleta de cores ──────────────────────────────────────────────────────────
@@ -58,6 +60,7 @@ MP_BAR_NOK  = '#CB4335'
 MP_META     = '#D4860A'
 MP_TREND    = '#1E8449'
 MP_TEXT     = '#1C2833'
+MP_FERIADO  = '#D4860A'
 
 PAGE_W, PAGE_H = A4
 MARGIN = 1.8 * cm
@@ -194,7 +197,14 @@ def _chart_producao_diaria(
         fig.savefig(buf, format='png', dpi=130); plt.close(fig); buf.seek(0)
         return buf
 
-    cores_bar = [MP_BAR_OK if q >= meta_total else MP_BAR_NOK for q in qtds]
+    # Dia de feriado (nacional/SP) ganha cor própria em vez de vermelho/verde —
+    # produção baixa num feriado (só parte da equipe trabalha) não é falha de
+    # meta (feedback do usuário 10/07/2026, feriado de 09/07 em SP).
+    feriados_dia = [eh_feriado(d) for d in datas]
+    cores_bar = [
+        MP_FERIADO if feriado else (MP_BAR_OK if q >= meta_total else MP_BAR_NOK)
+        for q, feriado in zip(qtds, feriados_dia)
+    ]
     bars = ax.bar(range(n), qtds, color=cores_bar, alpha=0.85, width=0.65, zorder=3)
 
     if meta_total > 0:
@@ -882,11 +892,12 @@ def gerar_pdf_arealva_manta(
     from datetime import timedelta as _td
     datas_set = set(df['DATA'].dt.date.unique())
     dias_uteis = [ini + _td(days=i) for i in range((fim - ini).days + 1)
-                  if (ini + _td(days=i)).weekday() < 5]
+                  if eh_dia_util(ini + _td(days=i))]
     dias_sabado = [ini + _td(days=i) for i in range((fim - ini).days + 1)
                    if (ini + _td(days=i)).weekday() == 5]
     sabados_trab = [d for d in dias_sabado if d in datas_set]
     dias_ausentes = [d for d in dias_uteis if d not in datas_set]
+    feriados_periodo = feriados_no_periodo(ini, fim)
 
     obs_parts = []
     if sabados_trab:
@@ -896,6 +907,9 @@ def gerar_pdf_arealva_manta(
         obs_parts.append(f"<b>Dias úteis sem registro ({len(dias_ausentes)}):</b> "
                          + ', '.join(d.strftime('%d/%m') for d in dias_ausentes[:20])
                          + (' ...' if len(dias_ausentes) > 20 else ''))
+    if feriados_periodo:
+        obs_parts.append(f"<b>Feriados no período ({len(feriados_periodo)}):</b> "
+                         + ', '.join(f"{d.strftime('%d/%m')} ({nome})" for d, nome in feriados_periodo))
     if obs_parts:
         story.append(Paragraph('<br/>'.join(obs_parts), e['nota']))
 
@@ -1174,16 +1188,26 @@ def gerar_pdf_iacanga_manta(
     estacoes_iac = df['ESTACAO'].dropna().unique().tolist()
     cabec_est = ['Estação', 'Grupo Meta', 'Total Peças', 'Dias', 'Média/Dia', '% Meta Ref.']
     linhas_est = []
-    GRUPOS_IAC = {
-        'MAQUINA': 'MAQUINA', 'MESA': 'MESA', 'BURDAY': 'BURDAY',
-    }
+
+    def _grupo_estacao(est: str, df_est: pd.DataFrame) -> str:
+        # Reusa GRUPO_ESTACAO já calculado (com acento tratado) quando o df
+        # trouxer essa coluna — evita reclassificar "Máquina 1" como MESA por
+        # comparação de string sem normalizar acento (bug antigo daqui).
+        if 'GRUPO_ESTACAO' in df_est.columns and not df_est['GRUPO_ESTACAO'].empty:
+            g = df_est['GRUPO_ESTACAO'].iloc[0]
+            if g in ('MAQUINA', 'MESA', 'BURDAY'):
+                return g
+        from utils.normalize import normalize_text
+        s = normalize_text(est)
+        return 'MAQUINA' if 'MAQUINA' in s else ('BURDAY' if 'BURDAY' in s else 'MESA')
+
     for est in sorted(estacoes_iac):
         df_est = df[df['ESTACAO'] == est]
         total_e = int(df_est['QUANTIDADE'].sum())
         dias_e = df_est['DATA'].dt.date.nunique()
         media_e = total_e / max(dias_e, 1)
         # Referência de meta (usando _DEFAULT ou CASAL como base)
-        grupo = 'MAQUINA' if 'MAQUINA' in est.upper() else ('BURDAY' if 'BURDAY' in est.upper() else 'MESA')
+        grupo = _grupo_estacao(est, df_est)
         metas_g = metas_por_grupo.get(grupo, {})
         meta_ref = metas_g.get('CASAL', metas_g.get('_DEFAULT', 0))
         pct_e = (media_e / meta_ref * 100) if meta_ref > 0 else 0
@@ -2204,11 +2228,7 @@ def gerar_pdf_producao_geral(
             tbl_fp['%'] = (tbl_fp['Quantidade'] / tbl_fp['Quantidade'].sum() * 100).round(1)
 
             if _tem_meta:
-                from datetime import timedelta as _td_fp
-                _wdays_fp = sum(
-                    1 for _di in range((fim - ini).days + 1)
-                    if (ini + _td_fp(days=_di)).weekday() < 5
-                )
+                _wdays_fp = contar_dias_uteis(ini, fim)
                 _meta_num = pd.to_numeric(tbl_fp['Meta Diaria'], errors='coerce').fillna(0)
                 tbl_fp['Meta Periodo'] = _meta_num * _wdays_fp
                 tbl_fp['Media Dia'] = tbl_fp['Quantidade'] / max(_wdays_fp, 1)
@@ -3024,7 +3044,7 @@ def gerar_pdf_faccoes(
 
     kpis = [
         {'label': 'Producao do Mes',  'valor': _fmt(total_mes),       'cor': C_TEAL_LT},
-        {'label': 'Meta Mensal',      'valor': _fmt(meta_mes_total),   'cor': C_GRAY_BG},
+        {'label': 'Meta do Período',  'valor': _fmt(meta_mes_total),   'cor': C_GRAY_BG},
         {'label': '% da Meta',        'valor': f'{pct_mes:.1f}%',      'cor': _pct_bg(pct_mes)},
         {'label': 'Ritmo do Mes',     'valor': f'{pct_ritmo:.1f}%',    'cor': _pct_bg(pct_ritmo)},
         {'label': 'Meta Diaria',      'valor': _fmt(meta_dia_total),   'cor': C_AMBER_LT},
@@ -3040,16 +3060,12 @@ def gerar_pdf_faccoes(
     story.append(Paragraph('Visão Geral por Empresa / Produto', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    from datetime import timedelta as _td_vg
     from utils.normalize import is_blank, normalize_text
     _txt = lambda v: 'Sem Dados' if is_blank(v) else str(v)
 
     # Dias úteis do período filtrado — base da "Média/Dia" (mínimo 1 pra
     # nunca dividir por zero num filtro de um único dia de fim de semana).
-    dias_uteis_periodo = max(1, sum(
-        1 for i in range((data_fim - data_ini).days + 1)
-        if (data_ini + _td_vg(days=i)).weekday() < 5
-    ))
+    dias_uteis_periodo = max(1, contar_dias_uteis(data_ini, data_fim))
     periodo_txt = (
         f"{data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
         if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
@@ -3718,6 +3734,156 @@ def gerar_pdf_programacao(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# GERADOR — FECHAMENTO DE OP (Controladoria)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def gerar_pdf_fechamento_op(
+    df_agg: pd.DataFrame,
+    periodo_ini: date,
+    periodo_fim: date,
+    total_ops: int,
+    concluidas: int,
+    parciais: int,
+    pendentes: int,
+    aderencia_pct: float,
+    fora_programacao: int = 0,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Fechamento de OP (Controladoria) — histórico de
+    conclusão no ciclo Programação → Corte.
+
+    Parameters
+    ----------
+    df_agg : DataFrame agregado por OP (utils.controle_op.historico_op) —
+             colunas PED. CLIENTE, CLIENTE, PRODUTO, QNT_PROG_TOTAL,
+             QNT_CORTADA, EFICIÊNCIA_PRC, STATUS_CORTE, DATA_CONCLUSAO
+    periodo_ini/fim : período de conclusão selecionado na tela
+    total_ops, concluidas, parciais, pendentes, aderencia_pct,
+    fora_programacao : KPIs já calculados na página (sobre o conjunto
+             filtrado, não só as concluídas no período — ver
+             pages/11_Controle_de_OP.py). fora_programacao = OPs cortadas
+             sem linha na Programação (status "Fora da Programação").
+    filtros_texto : string descritiva dos filtros ativos
+    """
+    e = _estilos()
+    periodo_str = f"{periodo_ini.strftime('%d/%m/%Y')}  até  {periodo_fim.strftime('%d/%m/%Y')}"
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel='Relatório de Fechamento de OP',
+        subtitulo_rel='Controladoria — Histórico de Conclusão (Programação × Corte)',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = [PageBreak()]
+
+    # ── KPIs ─────────────────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Executivo', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    kpis = [
+        {'label': 'Total de OPs',        'valor': str(total_ops),          'cor': C_GRAY_BG},
+        {'label': 'Concluídas',          'valor': str(concluidas),         'cor': C_GREEN_LT},
+        {'label': 'Parciais',            'valor': str(parciais),           'cor': C_AMBER_LT},
+        {'label': 'Pendentes',           'valor': str(pendentes),          'cor': C_RED_LT},
+        {'label': 'Aderência',           'valor': f'{aderencia_pct:.1f}%', 'cor': _pct_bg(aderencia_pct)},
+        {'label': 'Fora da Programação', 'valor': str(fora_programacao),   'cor': C_TEAL_LT},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=3))
+    story.append(Spacer(1, 0.6 * cm))
+
+    # ── Gráfico OPs concluídas por semana ─────────────────────────────────────
+    _df_concl = df_agg[df_agg['STATUS_CORTE'] == 'Concluído'].copy() if not df_agg.empty else df_agg
+    if not _df_concl.empty and 'DATA_CONCLUSAO' in _df_concl.columns and _df_concl['DATA_CONCLUSAO'].notna().any():
+        try:
+            _dc = _df_concl.dropna(subset=['DATA_CONCLUSAO']).copy()
+            _dc['SEMANA_CONCLUSAO'] = pd.to_datetime(_dc['DATA_CONCLUSAO']).dt.to_period('W').astype(str)
+            _por_semana = _dc.groupby('SEMANA_CONCLUSAO').size().reset_index(name='OPS')
+            _por_semana = _por_semana.sort_values('SEMANA_CONCLUSAO')
+
+            fig_sem, ax_sem = plt.subplots(figsize=(14, 4.5))
+            fig_sem.patch.set_facecolor(MP_BG)
+            ax_sem.set_facecolor(MP_BG)
+            ax_sem.bar(range(len(_por_semana)), _por_semana['OPS'], color=MP_BAR_OK, alpha=0.85)
+            ax_sem.set_xticks(range(len(_por_semana)))
+            ax_sem.set_xticklabels(_por_semana['SEMANA_CONCLUSAO'].tolist(), fontsize=7,
+                                   color=MP_TEXT, rotation=45, ha='right')
+            ax_sem.set_title('OPs Concluídas por Semana', fontsize=11, fontweight='bold', color=MP_TEXT)
+            ax_sem.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{int(v)}'))
+            ax_sem.grid(axis='y', color=MP_GRID, linewidth=0.7, alpha=0.8)
+            ax_sem.spines['top'].set_visible(False)
+            ax_sem.spines['right'].set_visible(False)
+            plt.tight_layout()
+            buf_sem = io.BytesIO()
+            fig_sem.savefig(buf_sem, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
+            plt.close(fig_sem)
+            buf_sem.seek(0)
+            story.append(_imagem_de_buf(buf_sem, largura_cm=16.5))
+            story.append(Spacer(1, 0.4 * cm))
+        except Exception as _ex:
+            logger.warning('gerar_pdf_fechamento_op: chart semanas: %s', _ex)
+
+    story.append(PageBreak())
+
+    # ── Tabela de OPs ────────────────────────────────────────────────────────
+    story.append(Paragraph('Histórico de OPs', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    cabec_op = ['OP', 'Cliente', 'Produto', 'Prog.', 'Cortado', '% Concl.', 'Status', 'Conclusão']
+    cw_op = [2.2*cm, 3.0*cm, 4.3*cm, 1.8*cm, 1.8*cm, 1.6*cm, 2.0*cm, 2.1*cm]
+
+    linhas_op = []
+    for _, r in df_agg.iterrows():
+        _ef_raw = r.get('EFICIÊNCIA_PRC')
+        ef_txt = f'{float(_ef_raw):.1f}%' if pd.notna(_ef_raw) else '—'
+        status_c = str(r.get('STATUS_CORTE', ''))
+        op_val = str(r.get('PED. CLIENTE', '')).strip() or '-'
+        dt_concl = r.get('DATA_CONCLUSAO')
+        dt_txt = dt_concl.strftime('%d/%m/%Y') if pd.notna(dt_concl) else '—'
+        _prog = r.get('QNT_PROG_TOTAL', 0)
+        prog_txt = _fmt(_prog) if _prog else '—'
+        linhas_op.append([
+            op_val,
+            str(r.get('CLIENTE', ''))[:20],
+            str(r.get('PRODUTO', ''))[:28],
+            prog_txt,
+            _fmt(r.get('QNT_CORTADA', 0)),
+            ef_txt,
+            status_c,
+            dt_txt,
+        ])
+
+    t_ops = _tabela_generica(cabec_op, linhas_op, e, cw_op,
+                             cor_header=colors.HexColor('#1E1B4B'))
+    for ri, row in enumerate(linhas_op, start=1):
+        status_v = row[6]
+        cor_st = (
+            C_GREEN if status_v == 'Concluído' else
+            C_AMBER if status_v == 'Parcial' else
+            C_TEAL if status_v == 'Fora da Programação' else
+            C_RED
+        )
+        t_ops.setStyle(TableStyle([('TEXTCOLOR', (6, ri), (6, ri), cor_st),
+                                   ('FONTNAME', (6, ri), (6, ri), 'Helvetica-Bold')]))
+    story.append(t_ops)
+
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
+        'Fechamento de OP — Programação × Corte',
+        ParagraphStyle('ass_op', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # GERADOR — RELATÓRIO CONSOLIDADO DE CORTE (todas as regiões)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -3735,7 +3901,6 @@ def gerar_pdf_corte_consolidado(
     Relatório mensal consolidado de corte — Arealva Manta, Lençol, Iacanga e Itaju.
     Formato compacto para envio por e-mail.
     """
-    from datetime import timedelta as _tdc
     e = _estilos()
     periodo_str = f"{ini.strftime('%d/%m/%Y')}  até  {fim.strftime('%d/%m/%Y')}"
     gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
@@ -3743,8 +3908,7 @@ def gerar_pdf_corte_consolidado(
                 7:'Julho',8:'Agosto',9:'Setembro',10:'Outubro',11:'Novembro',12:'Dezembro'}
     mes_label = meses_pt.get(ini.month, '') + f'/{ini.year}'
 
-    _wdays = sum(1 for i in range((fim - ini).days + 1)
-                 if (ini + _tdc(days=i)).weekday() < 5)
+    _wdays = contar_dias_uteis(ini, fim)
 
     buf = io.BytesIO()
     doc = _RelatorioDoc(

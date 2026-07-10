@@ -89,7 +89,24 @@ SECTORS_CONTROLADORIA = [
         "tags": ["Programação", "Corte", "Planejado vs Realizado"],
         "requires_auth": True,
     },
-    
+    {
+        "key": "controle_op",
+        "title": "Controle de OP",
+        "subtitle": "Histórico e Fechamento — Programação x Corte",
+        "description": (
+            "Status, % de conclusão e histórico de fechamento de OPs, calculados "
+            "automaticamente a partir da programação e do corte real. Cobre o ciclo "
+            "Programação → Corte; relatório de fechamento em PDF."
+        ),
+        "icon": "🗂️",
+        "page_path": "pages/11_Controle_de_OP.py",
+        "color_a": "#1E1B4B",
+        "color_b": "#6366F1",
+        "accent":  "#A5B4FC",
+        "tags": ["OP", "Fechamento", "Histórico"],
+        "requires_auth": True,
+    },
+
     {
         "key": "carteira_pedidos",
         "title": "Carteira de Pedidos",

@@ -20,6 +20,7 @@ from utils.faccao_loader import load_faccoes
 from utils.metas_manager import load_metas, save_metas, reset_metas
 from utils.anotacoes_manager import add_anotacao, remove_anotacao, load_anotacoes, apply_to_fig
 from utils.normalize import normalize_text
+from utils.feriados import eh_dia_util, contar_dias_uteis
 from components.filtros_btn import render_filtros_btn
 from components.sidebar import render_home_button
 from config.settings import FACCOES_FACCAO_ALIAS, CORES_FACCAO
@@ -90,7 +91,7 @@ DARK_LAYOUT = dict(
 
 def _dias_uteis(year: int, month: int) -> int:
     _, n = monthrange(year, month)
-    return sum(1 for d in range(1, n + 1) if date(year, month, d).weekday() < 5)
+    return sum(1 for d in range(1, n + 1) if eh_dia_util(date(year, month, d)))
 
 
 def _fmt(n: float | int) -> str:
@@ -477,13 +478,7 @@ with tab_mes:
 
     # Dias úteis decorridos no período selecionado (até hoje ou até data_fim)
     _fim_ref = min(today, data_fim)
-    if _fim_ref < data_ini:
-        du_passados = 0
-    else:
-        du_passados = sum(
-            1 for i in range((_fim_ref - data_ini).days + 1)
-            if (data_ini + timedelta(days=i)).weekday() < 5
-        )
+    du_passados = 0 if _fim_ref < data_ini else contar_dias_uteis(data_ini, _fim_ref)
     esperado = du_passados * meta_dia_total
     pct_mes  = total_mes / meta_mes_total * 100 if meta_mes_total > 0 else 0
     pct_ritmo = total_mes / esperado * 100 if esperado > 0 else 0
@@ -543,8 +538,7 @@ with tab_mes:
         daily_cum = daily.copy()
         daily_cum["ACUM"] = daily_cum["QUANTIDADE"].cumsum()
         daily_cum["DU_ACUM"] = [
-            sum(1 for i in range((ts.date() - data_ini).days + 1)
-                if (data_ini + timedelta(days=i)).weekday() < 5)
+            contar_dias_uteis(data_ini, ts.date())
             for ts in daily_cum["DATA"]
         ]
         daily_cum["META_ACUM"] = (daily_cum["DU_ACUM"] * meta_dia_total).round()
@@ -1616,10 +1610,7 @@ with tab_fac:
             "**Assiduidade** mostra em quantos dias úteis do período houve produção."
         )
 
-        du_per = sum(
-            1 for i in range((data_fim - data_ini).days + 1)
-            if (data_ini + timedelta(days=i)).weekday() < 5
-        )
+        du_per = contar_dias_uteis(data_ini, data_fim)
 
         cons_rows = []
         for faccao in sorted(df_fac["FACCAO"].unique()):

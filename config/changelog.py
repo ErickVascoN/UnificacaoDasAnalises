@@ -7,6 +7,164 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "10/07/2026",
+        "tag": "melhoria",
+        "title": "Controle de OP com visual mais rico (rosca de status, gauge, top clientes, badges)",
+        "description": (
+            "Usuário achou o Controle de OP simples demais — só números crus nos KPIs e "
+            "tabelas sem cor. pages/11_Controle_de_OP.py: adicionado gráfico de rosca "
+            "'Distribuição por Status' (Concluído/Parcial/Pendente/Fora da Programação, com o "
+            "total de OPs no centro), gauge de 'Aderência Geral' e gráfico de barras 'Top 10 "
+            "Clientes por Peças Cortadas', todos logo abaixo dos KPIs. As duas tabelas "
+            "(Detalhamento e Todas as OPs) agora coloriram a coluna Status com a cor de cada "
+            "status (fundo + texto, via pandas Styler) e emoji (✅🟡🔴🟣) na frente do texto. "
+            "KPIs ganharam os mesmos emojis. Testado: Styler renderiza sem erro com dados "
+            "reais (1397 linhas) e o app sobe normal."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "correção",
+        "title": "Controle de OP agora inclui cortes fora da programação",
+        "description": (
+            "Usuário perguntou se o Controle de OP considerava cortes que não foram "
+            "programados. Não considerava: historico_op() partia sempre da planilha de "
+            "Programação e só juntava o corte por cima — qualquer OP cortada sem nunca ter "
+            "sido lançada na Programação ficava 100% invisível. Testado com dados reais: 313 "
+            "OPs (~1,58 milhão de peças) estavam nessa situação. "
+            "utils/controle_op.py: nova _ops_fora_programacao() identifica, a partir do "
+            "próprio histórico de corte, toda OP que não bateu com nenhuma linha da "
+            "Programação, e entram no resultado de historico_op() com status novo 'Fora da "
+            "Programação' (FORA_PROGRAMACAO=True). Produto: preenchido pelo MATERIAL do "
+            "próprio registro de corte (sempre disponível — 313/313 preenchidos no teste); só "
+            "cai pra busca na Carteira de Pedidos (_load_carteira_lookup, novo) quando o corte "
+            "não tem material nenhum — mesma ressalva de match baixo (~2%) já registrada no "
+            "item anterior, mas ainda vale tentar preencher o que der. Quantidade de "
+            "referência (pra calcular % e status Concluído/Parcial em vez de só 'Fora da "
+            "Programação') também vem da Carteira quando encontrada. Efeito colateral bom: "
+            "'0' (placeholder de linhas em branco/retrabalho sem OP, 13 registros) passou a "
+            "ser filtrado como OP inválida em load_cortes — antes viraria uma falsa 'OP fora "
+            "da programação' misturando produtos sem relação. pages/11_Controle_de_OP.py: "
+            "novo KPI 'Fora da Programação', novo status no filtro, tabela geral trata "
+            "% Conclusão/Data Conclusão vazios sem quebrar. gerar_pdf_fechamento_op "
+            "(utils/pdf_report.py) idem, mais nova cor (teal) pro status na tabela do PDF. "
+            "Testado: PDF gera sem erro com a mistura de status."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "novo",
+        "title": "Novo Controle de OP — histórico de conclusão, status, % e relatório de fechamento",
+        "description": (
+            "Pedido do usuário: um controle de OP com histórico de conclusão, status, % de "
+            "conclusão e relatório de fechamento, o mais automático possível com os dados já "
+            "existentes. Investigação: só o estágio de corte tem OP rastreável hoje "
+            "(Programação × Corte, já calculado em pages/4_Controladoria_Programacao.py); "
+            "produção nas facções não tem OP nenhuma e a Carteira de Pedidos (campo PEDIDO) "
+            "tem só 2,1% de match com as OPs da Programação (23 de 1082, testado com dados "
+            "reais) — não é um vínculo confiável, então não foi usado. Escopo definido com o "
+            "usuário: só Programação → Corte, 100% automático, sem digitação nova.\n"
+            "Extraída pra utils/controle_op.py (antes só existia dentro de "
+            "pages/4_Controladoria_Programacao.py) toda a lógica de cruzamento: "
+            "load_programacao, load_cortes, enriquecer, agregar_por_op — pages/4 e "
+            "pages/10_Relatorios.py (_calcular_df_agg, aba Programação) passaram a importar "
+            "dali em vez de reimplementar (as duas versões tinham divergido: 100% vs 96% de "
+            "limiar pro status 'Concluído' — unificado em 96%, LIMIAR_CONCLUSAO). Nova função "
+            "calcular_data_conclusao: acumula os registros de corte de cada OP por data até "
+            "atingir 96% do programado — mesmo limiar do status, pra nunca dar 'Concluído' sem "
+            "data ou vice-versa (testado: 378/378 OPs concluídas com data calculada). Nova "
+            "página pages/11_Controle_de_OP.py: KPIs (Total/Concluídas/Parciais/Pendentes/"
+            "Aderência), gráfico de OPs concluídas por semana, tabela de histórico de "
+            "conclusão e tabela geral, aviso de escopo (só corte, facção ainda não rastreada) "
+            "e botão de gerar relatório PDF (gerar_pdf_fechamento_op, utils/pdf_report.py). "
+            "Card novo na Home (config/sectors.py, SECTORS_CONTROLADORIA). Testado com dados "
+            "reais: números batem exatamente com pages/4 (1084 OPs, 378 concluídas, 114 "
+            "parciais, 592 pendentes) e o PDF gera sem erro."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "melhoria",
+        "title": "KPI 'Meta Mensal' renomeado pra 'Meta do Período' no relatório PDF",
+        "description": (
+            "utils/pdf_report.py (gerar_pdf_faccoes, 'Resumo Executivo'): o KPI dizia 'Meta "
+            "Mensal', mas o relatório (aba Produção Geral / Facções de pages/10_Relatorios.py) "
+            "aceita qualquer intervalo de Data Inicial/Final, não só um mês fechado — nome "
+            "desatualizado desde que o filtro de período virou livre. Renomeado pra 'Meta do "
+            "Período', igual ao label que o dashboard ao vivo (pages/2_Producao_Geral.py, KPI "
+            "k2) já usa."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "novo",
+        "title": "Calendário de feriados (nacional + SP) reconhecido em toda a meta e nos relatórios",
+        "description": (
+            "Usuário notou que 09/07/2026 (feriado estadual de SP, Revolução "
+            "Constitucionalista) apareceu como dia normal no dashboard/relatório, mesmo com só "
+            "parte da equipe trabalhando — todo cálculo de 'dia útil' do projeto usava só "
+            "weekday() < 5 (seg-sex), sem noção de feriado. Novo módulo utils/feriados.py, "
+            "usando a lib 'holidays' (adicionada em requirements.txt) com calendário Brasil + "
+            "SP (confirmado com o usuário: todas as facções são de SP). Expõe eh_feriado, "
+            "nome_feriado, eh_dia_util e contar_dias_uteis — substituído o padrão "
+            "'weekday() < 5' repetido em ~15 lugares: utils/faccoes_metas_calc.py (cálculo "
+            "central de meta, maior alcance — alimenta dashboard e relatórios), "
+            "pages/2_Producao_Geral.py, pages/3_Controle_de_Corte.py, "
+            "pages/5_Producao_Faccoes.py, pages/7_Plano_de_Metas.py, utils/faccoes_viz.py e "
+            "utils/pdf_report.py. Em pages/2_Producao_Geral.py "
+            "(calcular_dias_com_sabados_trabalhados), feriado com produção passou a contar "
+            "como 'dia extra trabalhado' — mesma regra já usada pra sábado — em vez de dia "
+            "útil cheio. Visual: o gráfico 'Produção Diária x Meta' (dashboard, aba Por "
+            "Cliente) e _chart_producao_diaria (relatórios PDF de corte) agora pintam a barra "
+            "do feriado de âmbar (não vermelho/verde) com o nome do feriado no hover/legenda, "
+            "e o relatório Arealva Manta ganhou uma linha 'Feriados no período' junto das "
+            "observações que já existiam de sábado trabalhado / dia útil sem registro."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "correção",
+        "title": "Estações do Corte Iacanga duplicadas por acento/maiúscula",
+        "description": (
+            "A planilha de corte Iacanga tem a mesma estação física digitada de formas "
+            "diferentes ao longo do tempo ('Maquina 1' sem acento, 'Máquina 1' com acento, "
+            "'mesa 2' minúsculo) — sem normalizar, cada grafia virava uma linha própria no "
+            "relatório 'Desempenho por Estação' e nos filtros/gráficos do dashboard "
+            "(confirmado com dados reais: 'Máquina 1' tinha 120 peças numa grafia + 52 na "
+            "outra, deveriam somar 172 juntos). Pior: o relatório PDF (utils/pdf_report.py) "
+            "classificava a variante SEM acento como grupo MAQUINA mas a variante COM "
+            "acento como MESA (comparação de string sem tratar acento), puxando a meta de "
+            "referência errada pra metade dos registros de Máquina. Adicionada "
+            "canoniza_estacao_iacanga() em pages/3_Controle_de_Corte.py (usada por "
+            "carregar_dados_iacanga) e _canoniza_estacao_iacanga() equivalente em "
+            "pages/10_Relatorios.py (usada por _dados_iacanga, que alimenta o PDF) — "
+            "reconhece MAQUINA/MESA/BURDAY/REFILAMENTO/DERIVADOS + número e uniformiza pra "
+            "grafia única (ex.: sempre 'Máquina 1'); nomes fora desse padrão passam "
+            "inalterados. gerar_pdf_iacanga_manta também parou de reclassificar o grupo por "
+            "conta própria sem tratar acento — agora reusa GRUPO_ESTACAO já calculado "
+            "corretamente quando o df traz essa coluna. Testado com dados reais da "
+            "planilha: 17 grafias distintas viraram 11 estações reais, sem perder peça."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "correção",
+        "title": "Realizado de Maio/Junho corrigido na Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py: o REALIZADO mensal de Maio e Junho/2026, extraído "
+            "automaticamente da linha-resumo da planilha de cargas, não batia com o valor "
+            "real de fechamento (relatório 'Acompanhamento Mensal' por empresa) — o "
+            "lançamento diário desses meses ficou incompleto na origem e o usuário "
+            "confirmou que não há mais como recuperar esse detalhe dia a dia. Adicionado "
+            "REALIZADO_MENSAL_OVERRIDE (dict (ano, mes) → valor) aplicado logo após "
+            "_find_resumo_mensal(), só para Maio (R$ 4.065.134,69) e Junho (R$ "
+            "4.124.995,84) — os valores corretos vêm do Acompanhamento Mensal. Não altera a "
+            "extração normal: Julho em diante continua vindo 100% da planilha, e a "
+            "reconciliação do painel diário (_fator) usa o valor já corrigido, então o "
+            "gráfico de evolução diária desses dois meses também soma certo."
+        ),
+    },
+    {
+        "date": "10/07/2026",
         "tag": "novo",
         "title": "Filtro de Facção/Empresa no Relatório de Produção Geral",
         "description": (

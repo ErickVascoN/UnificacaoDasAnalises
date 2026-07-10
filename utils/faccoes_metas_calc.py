@@ -23,11 +23,12 @@ import pandas as pd
 
 from utils.metas_manager import load_metas
 from utils.normalize import normalize_text
+from utils.feriados import eh_dia_util
 
 
 def dias_uteis(year: int, month: int) -> int:
     _, n = monthrange(year, month)
-    return sum(1 for d in range(1, n + 1) if date(year, month, d).weekday() < 5)
+    return sum(1 for d in range(1, n + 1) if eh_dia_util(date(year, month, d)))
 
 
 def _build_goals() -> pd.DataFrame:

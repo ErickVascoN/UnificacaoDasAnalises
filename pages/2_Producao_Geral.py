@@ -33,6 +33,7 @@ from utils.producao_unificada import (
 )
 from utils.faccoes_metas_calc import calcular_meta_faccoes
 from utils.faccoes_viz import heatmap_por_dimensao, consistencia_por_dimensao
+from utils.feriados import eh_dia_util, eh_feriado, nome_feriado, feriados_no_periodo
 from utils.ui_helpers import multiselect_reset_on_grow as _multiselect_reset_on_grow
 
 # ─
@@ -457,7 +458,7 @@ def dias_uteis(datas):
     # MÉDIO #17: drop_duplicates after normalize to count unique calendar dates
     # This ensures timestamps with different times (e.g., 14:30 vs 14:45) count as 1 day
     d = pd.to_datetime(datas).dropna().dt.normalize().drop_duplicates()
-    return int((d.dt.weekday <= 4).sum())
+    return int(d.dt.date.map(eh_dia_util).sum())
 
 def calcular_dias_com_sabados_trabalhados(datas_grupo):
     """
@@ -486,14 +487,18 @@ def calcular_dias_com_sabados_trabalhados(datas_grupo):
     # MÉDIO #17: drop_duplicates after normalize - counts unique calendar dates
     # Handles multiple timestamps per day (e.g., morning/afternoon batches)
     d = pd.to_datetime(datas_grupo).dropna().dt.normalize().drop_duplicates()
-    
-    # Dias de segunda a sexta no período
-    dias_seg_sex = (d.dt.weekday <= 4).sum()
-    
-    # Sábados onde houve produção (weekday 5)
+
+    # Dias de segunda a sexta no período, exceto feriados (nacionais/SP) —
+    # feriado só entra na conta como sábado (linha abaixo): se teve produção
+    # nele, é "dia extra trabalhado", não um dia útil normal cheio.
+    _dia_feriado = d.dt.date.map(eh_feriado)
+    dias_seg_sex = ((d.dt.weekday <= 4) & ~_dia_feriado).sum()
+
+    # Sábados onde houve produção (weekday 5) + feriados onde houve produção
     sabados_com_prod = (d.dt.weekday == 5).sum()
-    
-    return int(dias_seg_sex + sabados_com_prod)
+    feriados_com_prod = ((d.dt.weekday <= 4) & _dia_feriado).sum()
+
+    return int(dias_seg_sex + sabados_com_prod + feriados_com_prod)
 
 # REMOVIDO: dias_uteis_com_sabados_trabalhados() - ver replacement abaixo
 # REMOVIDO: dias_uteis_com_trabalho() - consolidada em calcular_dias_com_sabados_trabalhados()
@@ -1602,15 +1607,31 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
         serie = df_f.groupby("DATA", as_index=False)["QUANTIDADE"].sum().sort_values("DATA")
         meta_dia_medio = (meta_periodo / d_uteis) if (tem_meta and d_uteis) else 0
         serie["Acum. Produzido"] = serie["QUANTIDADE"].cumsum()
-        serie["_dia_util"] = serie["DATA"].dt.weekday < 5
+        serie["_feriado"] = serie["DATA"].dt.date.map(eh_feriado)
+        serie["_dia_util"] = serie["DATA"].dt.date.map(eh_dia_util)
         serie["Acum. Meta"] = serie["_dia_util"].cumsum() * meta_dia_medio
 
-        fig1 = go.Figure()
+        # Barra de feriado ganha cor própria (âmbar) em vez de vermelho/verde —
+        # produção baixa num feriado (só parte da equipe trabalha) não é falha
+        # de meta, e sem essa marcação isso ficava invisível no gráfico
+        # (feedback do usuário 10/07/2026, feriado de 09/07 em SP).
         cores_barras = (
-            ["#22c55e" if q >= meta_dia_medio else "#ef4444" for q in serie["QUANTIDADE"]]
-            if tem_meta else [cor] * len(serie)
+            [
+                "#f59e0b" if feriado else ("#22c55e" if q >= meta_dia_medio else "#ef4444")
+                for q, feriado in zip(serie["QUANTIDADE"], serie["_feriado"])
+            ]
+            if tem_meta else
+            ["#f59e0b" if feriado else cor for feriado in serie["_feriado"]]
         )
-        fig1.add_bar(x=serie["DATA"], y=serie["QUANTIDADE"], name="Produzido", marker_color=cores_barras)
+        hover_texto = [
+            f"{d.strftime('%d/%m/%Y')}<br>{q:,.0f} peças<br>🎉 Feriado: {nome_feriado(d.date())}".replace(",", ".")
+            if feriado else f"{d.strftime('%d/%m/%Y')}<br>{q:,.0f} peças".replace(",", ".")
+            for d, q, feriado in zip(serie["DATA"], serie["QUANTIDADE"], serie["_feriado"])
+        ]
+
+        fig1 = go.Figure()
+        fig1.add_bar(x=serie["DATA"], y=serie["QUANTIDADE"], name="Produzido", marker_color=cores_barras,
+                     text=hover_texto, hovertemplate="%{text}<extra></extra>")
         if tem_meta:
             fig1.add_scatter(x=serie["DATA"], y=[meta_dia_medio] * len(serie), mode="lines",
                              name="Meta Diária (média)", line=dict(color="#facc15", width=2, dash="dash"))
@@ -1619,6 +1640,16 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
                            xaxis=dict(tickformat="%d/%m/%Y"),
                            legend=dict(orientation="h", y=-0.15), margin=dict(t=50, b=60))
         st.plotly_chart(fig1, width="stretch")
+
+        _feriados_periodo = feriados_no_periodo(
+            df_f["DATA"].min().date(), df_f["DATA"].max().date()
+        ) if not df_f.empty else []
+        if _feriados_periodo:
+            st.caption(
+                "🎉 Feriados no período: " + ", ".join(
+                    f"{d.strftime('%d/%m')} ({nome})" for d, nome in _feriados_periodo
+                )
+            )
 
         col_a, col_b = st.columns(2)
         with col_a:
