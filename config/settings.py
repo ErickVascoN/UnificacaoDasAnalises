@@ -116,6 +116,10 @@ METAS_CACHE_TTL = 300  # segundos
 #   "JOSE C SANTOS":   "JOSE CARVALHO SANTOS",
 NOME_EQUIVALENCIAS: dict[str, str] = {
     # Adicione aqui aliases permanentes conforme forem identificados:
+    "GIATTEX (LETICIA)":        "GIATTEX",
+    "ZARO TEXTIL (LUIS)":       "ZARO (LUIS)",
+    "MARCELA SOARES DE MATTOS": "MARCELA SOARES",
+    "MEGA PREVEN":              "MEGA PREVEN MATRIZ",
 }
 
 # ── Produção externa (facções / prestadores) ──────────────────────────────────

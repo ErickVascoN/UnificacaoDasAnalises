@@ -398,6 +398,30 @@ def _load_producao_geral() -> pd.DataFrame:
 
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
+@st.cache_data(ttl=METAS_CACHE_TTL)
+def _load_faccoes_quarterizadas() -> pd.DataFrame:
+    """
+    Carrega só a aba QUARTERIZADAS da planilha de facções externas
+    (utils/faccao_loader.py) — prestadores avulsos sem aba própria, que por
+    isso não aparecem na Produção Geral (xlsx). As demais abas dessa planilha
+    (GGTTEX, MEGA, PREVITTEX etc.) já duplicam nomes existentes na Produção
+    Geral, então não são incluídas aqui para não contar produção em dobro.
+    """
+    from utils.faccao_loader import load_faccoes
+    df = load_faccoes()
+    if df.empty:
+        return pd.DataFrame()
+    df_q = df[df["ABA"] == "QUARTERIZADAS"]
+    if df_q.empty:
+        return pd.DataFrame()
+    out = pd.DataFrame()
+    out["PRESTADOR"] = df_q["FACCAO"].apply(_norm)
+    out["EMPRESA"] = df_q["CLIENTE"].apply(_norm)
+    out["PRODUTO"] = df_q["PRODUTO"].apply(lambda p: _base_produto(_norm(p)))
+    out["DATA"] = df_q["DATA"]
+    out["QUANTIDADE"] = df_q["QUANTIDADE"]
+    return out
+
 def _load_lancamentos(centro_custo_norm: str) -> pd.DataFrame:
     """Carrega e normaliza lançamentos para um CENTRO DE CUSTO."""
     chaves = CENTRO_CUSTO_PARA_LANCAMENTO.get(centro_custo_norm, [])
@@ -547,6 +571,17 @@ def _build_producao_real(centros: list[str]) -> pd.DataFrame:
         df_pg = df_pg.copy()
         df_pg["CENTRO_CUSTO"] = "PRODUCAO_GERAL"
         frames.append(df_pg)
+
+    # 1b. Facções externas — aba QUARTERIZADAS (prestadores avulsos sem aba
+    #     própria, ex: trabalhador terceirizado individual). Só entram os que a
+    #     Produção Geral não cobre, pra não contar a mesma produção duas vezes.
+    df_fac = _load_faccoes_quarterizadas()
+    if not df_fac.empty:
+        ja_cobertos = set(df_pg["PRESTADOR"].unique()) if not df_pg.empty else set()
+        df_fac = df_fac[~df_fac["PRESTADOR"].isin(ja_cobertos)].copy()
+        if not df_fac.empty:
+            df_fac["CENTRO_CUSTO"] = "FACCOES_QUARTERIZADAS"
+            frames.append(df_fac)
 
     # 2. Lançamentos detalhados por unidade — complemento para unidades mapeadas
     for cc in centros:
@@ -966,66 +1001,13 @@ def main():
     real_total     = df_ind["REALIZADO"].sum() if not df_ind.empty else 0.0
     proj_total     = df_ind["PROJECAO"].sum() if not df_ind.empty else 0.0
     pct_atingido   = (real_total / meta_total * 100) if meta_total > 0 else 0.0
-    receita_prev_t = df_ind["RECEITA_PREV"].sum(skipna=True) if not df_ind.empty else 0.0
-    receita_proj_t = df_ind["RECEITA_PROJ"].sum(skipna=True) if not df_ind.empty else 0.0
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Meta Total do Mês", _fmt_br(meta_total))
     c2.metric("Realizado Acumulado", _fmt_br(real_total),
               delta=f"{pct_atingido:.1f}% da meta")
     c3.metric("Projeção Fim do Mês", _fmt_br(proj_total),
               delta=f"{(proj_total/meta_total*100 if meta_total > 0 else 0):.1f}% da meta")
-    c4.metric("Receita Prevista", _fmt_reais(receita_prev_t))
-    c5.metric("Receita Projetada", _fmt_reais(receita_proj_t))
-
-    st.markdown("---")
-
-    # diagnóstico de equivalências de nomes
-    n_auto   = len(auto_matches)
-    n_manual = len(NOME_EQUIVALENCIAS)
-    n_sem    = len(sem_match_list)
-    _exp_label = (
-        f"🔤 Equivalências de Nomes — "
-        f"{n_auto} auto-detectadas · {n_manual} manuais · {n_sem} sem resolução"
-    )
-    with st.expander(_exp_label, expanded=(n_sem > 0)):
-        col_a, col_b, col_c = st.columns(3)
-        col_a.metric("Auto (≥ 90%)", n_auto)
-        col_b.metric("Manuais (settings.py)", n_manual)
-        col_c.metric("Sem resolução ❌", n_sem)
-
-        if auto_matches:
-            st.markdown("##### ✅ Matches automáticos detectados")
-            st.dataframe(
-                pd.DataFrame([
-                    {"Nome no Plano de Metas": k, "Equivalente na Produção": v}
-                    for k, v in sorted(auto_matches.items())
-                ]),
-                use_container_width=True, hide_index=True,
-            )
-
-        if NOME_EQUIVALENCIAS:
-            st.markdown("##### 📋 Mapeamentos manuais ativos")
-            st.dataframe(
-                pd.DataFrame([
-                    {"Alias (config/settings.py)": k, "Canônico": v}
-                    for k, v in sorted(NOME_EQUIVALENCIAS.items())
-                ]),
-                use_container_width=True, hide_index=True,
-            )
-
-        if sem_match_list:
-            st.markdown("##### ❌ Prestadores sem match — produção zerada")
-            st.warning(
-                "Estes nomes não foram encontrados nem por similaridade ≥ 90%. "
-                "Para corrigir, adicione entradas manualmente em "
-                "`config/settings.py → NOME_EQUIVALENCIAS`."
-            )
-            _cols = st.columns(3)
-            for i, nome in enumerate(sem_match_list):
-                _cols[i % 3].code(nome)
-        else:
-            st.success("Todos os prestadores do plano têm correspondência na produção.")
 
     st.markdown("---")
 
@@ -1036,18 +1018,16 @@ def main():
         tbl = df_ind[[
             "STATUS_ICON", "CENTRO_CUSTO", "RESPONSAVEL", "CLIENTE", "PRODUTO",
             "META_MES", "REALIZADO", "PCT_META", "META_DIARIA", "MEDIA_DIARIA_REAL",
-            "PROJECAO", "RECEITA_PREV", "RECEITA_PROJ", "CUSTO_PROJ", "MARGEM_PROJ",
+            "PROJECAO",
         ]].copy()
         tbl = tbl.sort_values(["CENTRO_CUSTO", "RESPONSAVEL"])
         tbl["PCT_META"] = tbl["PCT_META"].apply(lambda v: f"{v:.1f}%" if not np.isnan(v) else "—")
         for col in ["META_MES", "REALIZADO", "META_DIARIA", "MEDIA_DIARIA_REAL", "PROJECAO"]:
             tbl[col] = tbl[col].apply(lambda v: _fmt_br(v) if not np.isnan(v) else "—")
-        for col in ["RECEITA_PREV", "RECEITA_PROJ", "CUSTO_PROJ", "MARGEM_PROJ"]:
-            tbl[col] = tbl[col].apply(_fmt_reais)
         tbl.columns = [
             "⬤", "Centro Custo", "Prestador", "Cliente", "Produto",
             "Meta Mês", "Realizado", "% Meta", "Meta Diária", "Média Diária",
-            "Projeção", "Receita Prev.", "Receita Proj.", "Custo Proj.", "Margem Proj.",
+            "Projeção",
         ]
         st.dataframe(tbl, use_container_width=True, hide_index=True)
     else:
@@ -1127,19 +1107,14 @@ def main():
 
     st.markdown("---")
 
-    # seção 4 — análise de custos por centro de custo
-    st.markdown("<div class='sec-header'>💰 Análise de Custos e Receita por Centro de Custo</div>", unsafe_allow_html=True)
+    # seção 4 — produção por centro de custo
+    st.markdown("<div class='sec-header'>📊 Produção por Centro de Custo</div>", unsafe_allow_html=True)
 
     if not df_ind.empty:
         df_cc = df_ind.groupby("CENTRO_CUSTO", as_index=False).agg(
             META_MES=("META_MES", "sum"),
             REALIZADO=("REALIZADO", "sum"),
             PROJECAO=("PROJECAO", "sum"),
-            RECEITA_PREV=("RECEITA_PREV", "sum"),
-            RECEITA_PROJ=("RECEITA_PROJ", "sum"),
-            CUSTO_PREV=("CUSTO_PREV", "sum"),
-            CUSTO_PROJ=("CUSTO_PROJ", "sum"),
-            MARGEM_PROJ=("MARGEM_PROJ", "sum"),
         )
 
         # Gráfico barras: produção
@@ -1157,32 +1132,10 @@ def main():
         )
         st.plotly_chart(fig_prod, use_container_width=True)
 
-        # Gráfico financeiro
-        fig_fin = go.Figure()
-        fig_fin.add_trace(go.Bar(name="Receita Prevista", x=df_cc["CENTRO_CUSTO"], y=df_cc["RECEITA_PREV"], marker_color="#2A9D5C"))
-        fig_fin.add_trace(go.Bar(name="Receita Projetada", x=df_cc["CENTRO_CUSTO"], y=df_cc["RECEITA_PROJ"], marker_color="#4ADE80"))
-        fig_fin.add_trace(go.Bar(name="Custo Projetado", x=df_cc["CENTRO_CUSTO"], y=df_cc["CUSTO_PROJ"], marker_color="#F87171"))
-        fig_fin.add_trace(go.Bar(name="Margem Projetada", x=df_cc["CENTRO_CUSTO"], y=df_cc["MARGEM_PROJ"], marker_color="#FCD34D"))
-        fig_fin.update_layout(
-            barmode="group", height=320,
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#CBD5E0"), xaxis=dict(gridcolor="#2D3748"),
-            yaxis=dict(gridcolor="#2D3748", title="R$"),
-            legend=dict(bgcolor="rgba(0,0,0,0)"), margin=dict(l=10,r=10,t=10,b=10),
-            separators=",.",
-        )
-        st.plotly_chart(fig_fin, use_container_width=True)
-
-        # Tabela de margem
         tbl_cc = df_cc.copy()
         for col in ["META_MES", "REALIZADO", "PROJECAO"]:
             tbl_cc[col] = tbl_cc[col].apply(lambda v: _fmt_br(v))
-        for col in ["RECEITA_PREV", "RECEITA_PROJ", "CUSTO_PREV", "CUSTO_PROJ", "MARGEM_PROJ"]:
-            tbl_cc[col] = tbl_cc[col].apply(_fmt_reais)
-        tbl_cc.columns = [
-            "Centro Custo", "Meta Mês", "Realizado", "Projeção",
-            "Receita Prev.", "Receita Proj.", "Custo Prev.", "Custo Proj.", "Margem Proj.",
-        ]
+        tbl_cc.columns = ["Centro Custo", "Meta Mês", "Realizado", "Projeção"]
         st.dataframe(tbl_cc, use_container_width=True, hide_index=True)
 
     st.markdown("---")

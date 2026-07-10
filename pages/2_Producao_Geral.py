@@ -1655,6 +1655,25 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
         st.plotly_chart(fig_mes, width="stretch")
 
     with tab_cli:
+        if tem_meta:
+            st.markdown("### 🎯 Produzido x Meta — Total do Período")
+            fig_meta_total = go.Figure()
+            fig_meta_total.add_bar(
+                y=["Total"], x=[prod_total], name="Produzido", orientation="h",
+                marker_color=cor, text=[fmt_br(prod_total)], textposition="auto",
+            )
+            fig_meta_total.add_bar(
+                y=["Total"], x=[meta_periodo], name="Meta", orientation="h",
+                marker_color="#facc15", text=[fmt_br(meta_periodo)], textposition="auto",
+            )
+            fig_meta_total.update_layout(
+                barmode="group", template="plotly_dark", height=160,
+                xaxis_title="Peças", separators=",.",
+                margin=dict(t=10, b=40), legend=dict(orientation="h", y=-0.3),
+            )
+            st.plotly_chart(fig_meta_total, width="stretch")
+            st.markdown("---")
+
         tbl = df_f.groupby(["CLIENTE", "PRODUTO"], as_index=False).agg(Produzido=("QUANTIDADE", "sum"))
         tbl = tbl[tbl["Produzido"] > 0].sort_values(["CLIENTE", "PRODUTO"])
 
@@ -1665,12 +1684,13 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
             width="stretch", hide_index=True,
         )
 
-        st.markdown("### Evolução Diária por Cliente")
-        prod_cli = df_f.groupby(["DATA", "CLIENTE"], as_index=False)["QUANTIDADE"].sum().sort_values("DATA")
-        fig_linhas = px.line(prod_cli, x="DATA", y="QUANTIDADE", color="CLIENTE", markers=True,
+        st.markdown("### Evolução Diária por Produto")
+        prod_prod = df_f.groupby(["DATA", "PRODUTO"], as_index=False)["QUANTIDADE"].sum().sort_values("DATA")
+        fig_linhas = px.line(prod_prod, x="DATA", y="QUANTIDADE", color="PRODUTO", markers=True,
                              template="plotly_dark")
-        fig_linhas.update_layout(title="Evolução Diária por Cliente", xaxis_title="Data", yaxis_title="Peças",
+        fig_linhas.update_layout(title="Evolução Diária por Produto", xaxis_title="Data", yaxis_title="Peças",
                                  xaxis=dict(tickformat="%d/%m/%Y"),
+                                 yaxis=dict(rangemode="tozero"),
                                  legend=dict(orientation="h", y=-0.2), margin=dict(t=50, b=60),
                                  separators=",.")
         st.plotly_chart(fig_linhas, width="stretch")

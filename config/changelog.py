@@ -6,6 +6,84 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "10/07/2026",
+        "tag": "novo",
+        "title": "Filtro de Facção/Empresa no Relatório de Produção Geral",
+        "description": (
+            "pages/10_Relatorios.py (aba 🏭 Produção Geral): antes o relatório sempre saía com "
+            "todas as facções fixas + quarterizadas do período, sem como isolar 1 ou algumas "
+            "empresas específicas. Novo multiselect 'Facção / Empresa' (placeholder 'Todas', "
+            "vazio = sem filtro, mesmo padrão de pages/9_Carteira_de_Pedidos.py) dentro do card "
+            "de período, populado com a lista completa de FACCAO do dataset unificado "
+            "(utils/producao_unificada.load_producao_unificada) — carregado uma vez fora do "
+            "clique do botão pra já aparecer no filtro antes de gerar. O filtro selecionado "
+            "aparece na capa do PDF ('Filtros ativos: Facção(ões): ...') e, quando são 1 a 3 "
+            "facções, entra no nome do arquivo baixado. Nenhuma mudança em "
+            "utils/pdf_report.py — gerar_pdf_faccoes já funciona sobre qualquer subconjunto do "
+            "dataset."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "novo",
+        "title": "Comparação Produzido x Meta na aba 'Por Cliente' do drilldown de facção",
+        "description": (
+            "pages/2_Producao_Geral.py (render_faccao_drilldown, aba 'Por Cliente'): "
+            "primeira tentativa rateava a Meta do Período por (cliente, produto) e "
+            "mostrava Meta/Saldo/% dentro da tabela 'Resumo por Cliente/Produto' — usuário "
+            "apontou que isso está errado, porque a meta é um valor único pra quarterizada "
+            "inteira, não definida por produto, então fragmentá-la por linha é enganoso "
+            "(removida a função _calcular_meta_cliente_produto_faccao_periodo criada pra "
+            "isso, ficou sem uso). Substituído por um gráfico de barras separado "
+            "'🎯 Produzido x Meta — Total do Período', acima da tabela, comparando só os "
+            "dois totais (Produzido vs Meta) já calculados no topo da página — não quebra "
+            "nada por produto/cliente, e deixa claro que é uma meta só. Também troquei "
+            "'Evolução Diária por Cliente' (uma linha por cliente) por 'Evolução Diária por "
+            "Produto' (uma linha por produto, pedido do usuário) e corrigi o eixo Y desse "
+            "gráfico pra sempre começar em zero — antes ele autoescalava a partir do menor "
+            "valor da série (ex.: começava em 3.600 em vez de 0), fazendo variações "
+            "pequenas parecerem quedas ou saltos dramáticos."
+        ),
+    },
+    {
+        "date": "09/07/2026",
+        "tag": "correção",
+        "title": "Realizado do Plano de Metas não batia com prestadores terceirizados",
+        "description": (
+            "pages/7_Plano_de_Metas.py: o Realizado é calculado cruzando o nome do RESPONSAVEL "
+            "(planilha de metas) com o nome do FACÇÃO/PRESTADOR na Produção Geral (xlsx). "
+            "Diagnóstico mostrou 5 de 11 prestadores de maio/2026 sem match (Realizado caiu pra "
+            "2,2% da meta): 'GIATTEX (LETICIA)', 'ZARO TEXTIL (LUIS)' e 'MARCELA SOARES DE "
+            "MATTOS' tinham sufixos que quebravam o match com 'GIATTEX', 'ZARO (LUIS)' e "
+            "'MARCELA SOARES'; 'MEGA PREVEN' era ambíguo entre 'MEGA PREVEN BARIRI' e 'MEGA "
+            "PREVEN MATRIZ' (confirmado com o usuário → MATRIZ). Os 4 aliases foram cadastrados "
+            "em config/settings.py → NOME_EQUIVALENCIAS. Faltava ainda 'ANAILA TELLES', que não "
+            "aparece na Produção Geral — usuário indicou que ela está na aba QUARTERIZADAS da "
+            "planilha de facções externas (utils/faccao_loader.py), fonte que essa página nunca "
+            "consultava. Adicionada _load_faccoes_quarterizadas() e plugada em "
+            "_build_producao_real(), mas SÓ incluindo prestadores que a Produção Geral não cobre "
+            "— 13 dos 14 nomes da aba QUARTERIZADAS já existem na Produção Geral (mesma produção "
+            "registrada nas duas fontes) e entrariam em dobro se fossem somados sem esse filtro. "
+            "Resultado: Realizado subiu de 11.285 (2,2%) para 136.084 (26,1%) da meta de maio, "
+            "sem inflar os prestadores que já batiam."
+        ),
+    },
+    {
+        "date": "09/07/2026",
+        "tag": "melhoria",
+        "title": "Plano de Metas simplificado para apresentação",
+        "description": (
+            "pages/7_Plano_de_Metas.py: removida a seção financeira (Receita Prevista/Projetada, "
+            "Custo Projetado, Margem Projetada) dos KPIs, da tabela de progresso por prestador e "
+            "da seção por centro de custo — mantendo só produção (Meta Mês, Realizado, Projeção). "
+            "Removido também o expander de diagnóstico 'Equivalências de Nomes' (debug técnico de "
+            "auto-match, sem valor para quem só consulta o painel). Seção 4 renomeada para "
+            "'Produção por Centro de Custo'. Confirmado que o link da planilha de metas "
+            "(config/settings.py → SHEET_ID_METAS/GID_METAS) já apontava para a planilha nova "
+            "informada pelo usuário — nenhuma mudança necessária ali."
+        ),
+    },
+    {
         "date": "08/07/2026",
         "tag": "melhoria",
         "title": "Análise de Faturamento removida (card + página)",

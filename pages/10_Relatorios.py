@@ -1181,6 +1181,14 @@ with tab_prod:
         "com histórico unificado (planilha antiga + facções, mesmas correções do dashboard ao vivo)."
     )
 
+    from utils.producao_unificada import load_producao_unificada
+    _all_data_legado_pg = _dados_producao()
+    with st.spinner("Carregando lista de facções…"):
+        _df_unif_pg_full = load_producao_unificada(_all_data_legado_pg)
+    _faccoes_disp_pg = (
+        sorted(_df_unif_pg_full["FACCAO"].unique()) if not _df_unif_pg_full.empty else []
+    )
+
     with st.container(border=True):
         st.markdown("📅 **Período**")
         _ci_pg, _cf_pg = st.columns(2)
@@ -1189,22 +1197,25 @@ with tab_prod:
         with _cf_pg:
             _fim_pg = st.date_input("Data Final", value=_mes_fim, format="DD/MM/YYYY", key="fim_pg")
 
+        _sel_faccoes_pg = st.multiselect(
+            "Facção / Empresa", _faccoes_disp_pg, placeholder="Todas", key="faccoes_pg",
+        )
+
         if st.button("📄 Gerar Relatório de Produção", key="btn_pg", type="primary"):
             with st.spinner("Carregando dados de produção… pode levar alguns segundos."):
                 try:
-                    from utils.producao_unificada import load_producao_unificada
                     from utils.faccoes_metas_calc import calcular_meta_faccoes
 
-                    _all_data_legado_pg = _dados_producao()
-                    _df_unif_pg = load_producao_unificada(_all_data_legado_pg)
-                    if _df_unif_pg.empty:
+                    if _df_unif_pg_full.empty:
                         st.error("Nenhum dado de produção disponível. Verifique a conexão com a planilha.")
                     else:
-                        _df_mes_pg = _df_unif_pg[
-                            (_df_unif_pg["DATA"].dt.date >= _ini_pg) & (_df_unif_pg["DATA"].dt.date <= _fim_pg)
+                        _df_mes_pg = _df_unif_pg_full[
+                            (_df_unif_pg_full["DATA"].dt.date >= _ini_pg) & (_df_unif_pg_full["DATA"].dt.date <= _fim_pg)
                         ].copy()
+                        if _sel_faccoes_pg:
+                            _df_mes_pg = _df_mes_pg[_df_mes_pg["FACCAO"].isin(_sel_faccoes_pg)]
                         if _df_mes_pg.empty:
-                            st.warning("Nenhuma produção no período selecionado.")
+                            st.warning("Nenhuma produção no período/facções selecionados.")
                         else:
                             _mes_sel_pg = _ini_pg.month
                             _ano_sel_pg = _ini_pg.year
@@ -1258,6 +1269,9 @@ with tab_prod:
                             _tabela_pg.columns = ["Produto","Empresa","Faccao","Produzido","Meta Mes","% Meta","Restante"]
                             _tabela_pg["Meta Mes"] = _tabela_pg["Meta Mes"].replace(0, None)
 
+                            _filtros_txt_pg = (
+                                f"Facção(ões): {', '.join(_sel_faccoes_pg)}" if _sel_faccoes_pg else ""
+                            )
                             _bytes_pg = gerar_pdf_faccoes(
                                 tabela=_tabela_pg,
                                 df_mes=_df_mes_pg,
@@ -1268,11 +1282,18 @@ with tab_prod:
                                 meta_dia_total=_meta_dia_total_pg,
                                 data_ini=_ini_pg,
                                 data_fim=_fim_pg,
-                                filtros_texto="",
+                                filtros_texto=_filtros_txt_pg,
                                 rank_df=_rank_df_pg,
                             )
                             st.session_state["pdf_pg_bytes"] = _bytes_pg
-                            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf("producao", _ini_pg, _fim_pg)
+                            if 1 <= len(_sel_faccoes_pg) <= 3:
+                                _slug_pg = "_".join(
+                                    normalize_text(f).replace(" ", "_") for f in _sel_faccoes_pg
+                                )
+                                _dashboard_slug_pg = f"producao_{_slug_pg}"
+                            else:
+                                _dashboard_slug_pg = "producao"
+                            st.session_state["pdf_pg_nome"] = nome_arquivo_pdf(_dashboard_slug_pg, _ini_pg, _fim_pg)
                             st.success("PDF gerado!")
                 except Exception as _e:
                     st.error(f"Erro ao gerar PDF: {_e}")
