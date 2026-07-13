@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import io
 import re
 import unicodedata
@@ -34,24 +35,41 @@ render_home_button()  # sempre visível, mesmo sem dados
 CARGAS_SHEET_ID = "1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk"
 CARGAS_CACHE_TTL = 300  # segundos
 
-MESES_DISPONIVEIS = [
-    ("JANEIRO",   1, 2026),
-    ("FEVEREIRO", 2, 2026),
-    ("MARÇO",     3, 2026),
-    ("ABRIL",     4, 2026),
-    ("MAIO",      5, 2026),
-    ("JUNHO",     6, 2026),
-]
+_MESES_NOMES_PT = {
+    1: "JANEIRO", 2: "FEVEREIRO", 3: "MARÇO", 4: "ABRIL", 5: "MAIO", 6: "JUNHO",
+    7: "JULHO", 8: "AGOSTO", 9: "SETEMBRO", 10: "OUTUBRO", 11: "NOVEMBRO", 12: "DEZEMBRO",
+}
+
+
+def _meses_disponiveis(ano_inicio: int = 2026, mes_inicio: int = 1) -> list[tuple[str, int, int]]:
+    """Gera (NOME, mes, ano) de ano_inicio/mes_inicio até o mês atual — antes
+    era uma lista fixa que parava em junho/2026 e precisava ser editada todo
+    mês manualmente (por isso julho não aparecia sozinho; feedback do
+    usuário 13/07/2026)."""
+    hoje = date.today()
+    meses = []
+    ano, mes = ano_inicio, mes_inicio
+    while (ano, mes) <= (hoje.year, hoje.month):
+        meses.append((_MESES_NOMES_PT[mes], mes, ano))
+        mes += 1
+        if mes > 12:
+            mes = 1
+            ano += 1
+    return meses
+
+
+MESES_DISPONIVEIS = _meses_disponiveis()
 
 # Override manual do REALIZADO mensal para meses fechados onde o lançamento
 # diário na planilha ficou incompleto e não é mais recuperável (confirmado com
 # o usuário 10/07/2026) — o valor abaixo vem do relatório "Acompanhamento
 # Mensal" (fechamento por empresa), que é a fonte confiável pra esses meses.
 # Não mexe na extração normal: meses fora deste dict continuam vindo 100% da
-# linha de resumo da planilha (_find_resumo_mensal), inclusive Julho em diante.
+# linha de resumo da planilha (_find_resumo_mensal). Junho removido em
+# 13/07/2026: usuário preencheu os dias que faltavam na planilha, então
+# volta a ler o total direto de lá.
 REALIZADO_MENSAL_OVERRIDE: dict[tuple[int, int], float] = {
     (2026, 5): 4_065_134.69,  # Maio/2026
-    (2026, 6): 4_124_995.84,  # Junho/2026
 }
 
 DARK = dict(
@@ -224,6 +242,70 @@ def _pct(v: float) -> str:
     return f"{v:+.1f}%".replace(".", ",")
 
 
+def _estimativa_mes_atual(df_raw: pd.DataFrame) -> dict | None:
+    """Projeta o fechamento (Previsto e Realizado) do mês corrente.
+
+    Cálculo (confirmado com o usuário em 13/07/2026):
+    1. Previsto Projetado = Previsto lançado / dias cobertos pelos lançamentos
+       x dias totais do mês (run-rate). "Dias cobertos" é o intervalo entre a
+       primeira e a última carga já lançada no mês — não "dias corridos desde
+       o dia 1" — porque a planilha é preenchida em blocos semanais (ex.:
+       "SEMANA 06/07 A 11/07"), não dia a dia; contar por dias corridos do
+       calendário dilui o valor pelos dias da semana seguinte que ainda nem
+       foi lançada, subestimando a projeção pela metade (bug relatado pelo
+       usuário em 13/07/2026).
+    2. Aderência Média = média simples de (Realizado/Previsto) dos 2 últimos
+       meses fechados (com Realizado oficial > 0) antes do mês corrente.
+    3. Realizado Estimado = Previsto Projetado x Aderência Média.
+    """
+    hoje = date.today()
+    ano_atual, mes_atual = hoje.year, hoje.month
+
+    df_mes_atual = df_raw[(df_raw["ANO"] == ano_atual) & (df_raw["MES_NUM"] == mes_atual)]
+    if df_mes_atual.empty:
+        return None
+
+    previsto_lancado = df_mes_atual["PREVISAO"].sum()
+    dias_totais = calendar.monthrange(ano_atual, mes_atual)[1]
+
+    df_cargas_mes = df_mes_atual[~df_mes_atual["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])]
+    if df_cargas_mes.empty:
+        return None
+    dias_cobertos = (df_cargas_mes["DATA"].max() - df_cargas_mes["DATA"].min()).days + 1
+    if dias_cobertos <= 0 or previsto_lancado <= 0:
+        return None
+    previsto_projetado = previsto_lancado / dias_cobertos * dias_totais
+
+    df_real_mensal = (
+        df_raw[df_raw["STATUS"] == "CARGO_REAL"]
+        .groupby(["ANO", "MES_NUM"])
+        .agg(PREVISAO=("PREVISAO", "sum"), REALIZADO=("REALIZADO", "sum"))
+        .reset_index()
+    )
+    df_real_mensal = df_real_mensal[
+        (df_real_mensal["REALIZADO"] > 0) & (df_real_mensal["PREVISAO"] > 0) &
+        ((df_real_mensal["ANO"] < ano_atual) |
+         ((df_real_mensal["ANO"] == ano_atual) & (df_real_mensal["MES_NUM"] < mes_atual)))
+    ].sort_values(["ANO", "MES_NUM"])
+
+    ultimos_2 = df_real_mensal.tail(2).copy()
+    if ultimos_2.empty:
+        return None
+    ultimos_2["ADERENCIA"] = ultimos_2["REALIZADO"] / ultimos_2["PREVISAO"]
+    aderencia_media = ultimos_2["ADERENCIA"].mean()
+    realizado_estimado = previsto_projetado * aderencia_media
+
+    return {
+        "previsto_lancado": previsto_lancado,
+        "previsto_projetado": previsto_projetado,
+        "aderencia_media": aderencia_media,
+        "realizado_estimado": realizado_estimado,
+        "dias_corridos": dias_cobertos,
+        "dias_totais": dias_totais,
+        "n_meses_base": len(ultimos_2),
+    }
+
+
 # ── Loader ────────────────────────────────────────────────────────────────────
 def _fetch_csv(sheet_name: str) -> list[list[str]]:
     nome_enc = urllib.parse.quote(sheet_name)
@@ -238,13 +320,23 @@ def _fetch_csv(sheet_name: str) -> list[list[str]]:
     return list(csv.reader(io.StringIO(raw)))
 
 
-def _first_frete(row: list[str]) -> float:
-    """Primeiro R$ positivo em cols 5-9.
+def _first_frete(row: list[str], limit: int | None = None) -> float:
+    """Primeiro R$ positivo em cols 5 até `limit` (exclusivo, default col 10).
 
     Para a maioria dos meses o frete está em col[6], mas JANEIRO usa col[7]
     (layout com coluna MOTORISTA extra). Varredura dinâmica evita hard-code.
+
+    `limit` deve ser a coluna-base do painel diário (_find_painel_col) quando
+    conhecida. Sem isso, em cargas com a própria célula de frete vazia (ex.:
+    Armazenagem, frete subcontratado "FRETE GALICE") a varredura continuava
+    até a col 9 e acabava lendo o Previsto do painel diário de OUTRO cliente
+    no mesmo dia como se fosse o frete dessa carga — ex.: Julho/2026, painel
+    começa na col 8, e a carga de Armazenagem de 06/07 (frete vazio) herdou
+    os R$ 40.000 do Previsto de SULTAN no painel, inflando o Previsto da
+    semana em R$ 70.000 (bug relatado pelo usuário em 13/07/2026).
     """
-    for j in range(5, min(10, len(row))):
+    hi = min(limit, len(row)) if limit is not None else min(10, len(row))
+    for j in range(5, hi):
         v = _parse_money(row[j])
         if v and abs(v) > 0:
             return abs(v)
@@ -272,7 +364,11 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
        numéricos > R$10K da linha seguinte (previsto, realizado). Aplicada PRIMEIRO
        pois é a mais confiável e funciona mesmo quando o realizado > R$1M (que
        interferiria com a estratégia 2).
-    2. Linha com 'GERAL' em cols 8-14 → col[GERAL+2] é o realizado (JANEIRO).
+    2. Linha com 'GERAL' em cols 8-14 → col[GERAL+2] é o realizado (JANEIRO);
+       col[GERAL+1] é o previsto quando presente (ex.: "Total geral (dd a
+       dd/mm)" nos meses em andamento — antes ficava sempre 0.0, forçando o
+       previsto a cair no fallback por carga individual, que não bate com o
+       total oficial; bug relatado pelo usuário em 13/07/2026).
     3. Maior valor não-redondo (not % 1.000) > R$1 M em cols 8-15 de linhas
        não-data → realizado oficial do mês (FEVEREIRO-ABRIL concluídos).
     """
@@ -299,10 +395,12 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
         for j in range(8, min(15, len(row))):
             if "GERAL" in _norm(row[j]):
                 real_col = j + 2
+                prev_col = j + 1
                 if len(row) > real_col:
                     v = _parse_money(row[real_col])
                     if v and abs(v) > 1_000_000:
-                        return (0.0, abs(v))
+                        prev_v = _parse_money(row[prev_col]) if len(row) > prev_col else None
+                        return (abs(prev_v) if prev_v else 0.0, abs(v))
 
     # 3. Maior valor não-redondo > R$1M em cols 8-15
     best = 0.0
@@ -407,6 +505,13 @@ def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict
 
             # Linha de cliente: col[base]=nome, col[base+2]=realizado por cliente
             cliente_raw = cell_base.strip().upper()
+            # Linha de "Total geral" do painel (ex.: "TOTAL GERAL (01 A 11/07)")
+            # não é um cliente — se entrar aqui, soma o acumulado do mês inteiro
+            # como se fosse mais um lançamento diário, dobrando o total do painel
+            # (bug relatado pelo usuário em 13/07/2026 — semana 06/07-11/07 com
+            # Realizado muito acima do previsto).
+            if "TOTAL" in cliente_raw or "GERAL" in cliente_raw:
+                continue
             v = _parse_num(str(row[col + 2]).strip())
             if v and v > 0 and cliente_raw:
                 key = (current_date, _norm(cliente_raw))
@@ -423,6 +528,8 @@ def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict
             continue
         cliente_raw = str(row[col]).strip().upper()
         if not cliente_raw or 'R$' in cliente_raw:
+            continue
+        if "TOTAL" in cliente_raw or "GERAL" in cliente_raw:
             continue
         row_date = _parse_date_pt(row[1]) if len(row) > 1 else None
         if row_date is None:
@@ -453,6 +560,17 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
     if (ano, mes_num) in REALIZADO_MENSAL_OVERRIDE:
         realizado_mensal = REALIZADO_MENSAL_OVERRIDE[(ano, mes_num)]
     day_realized = _extract_day_realized(rows, mes_num, ano)
+    _painel_col = _find_painel_col(rows)
+
+    # Fallback para o mês corrente/em andamento: a linha de resumo ("Previsto
+    # total | Realizado total") só é preenchida na planilha perto do fim do
+    # mês, quando o total acumulado passa dos R$1,5M usados como filtro em
+    # _find_resumo_mensal. Enquanto isso não acontece, usa a soma do painel
+    # diário (mesma fonte da quebra semanal) para não deixar o Realizado do
+    # mês travado em zero (bug relatado pelo usuário em 13/07/2026 — Julho
+    # não atualizava automaticamente).
+    if realizado_mensal == 0:
+        realizado_mensal = sum(day_realized.values())
 
     # Pré-computa índices de "linha mesclada": linha sem data onde SOMENTE col[6]
     # tem valor (todos os outros cols estão vazios) E a próxima linha tem data.
@@ -531,8 +649,9 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
         else:
             _last_destino_raw = destino
 
-        # PREVISTO = primeiro R$ positivo em cols 5-9 (col[6] na maioria; col[7] em JANEIRO)
-        valor_frete = _first_frete(row)
+        # PREVISTO = primeiro R$ positivo em cols 5-9 (col[6] na maioria; col[7] em JANEIRO),
+        # nunca além da coluna-base do painel diário (senão vaza pro previsto de outro cliente)
+        valor_frete = _first_frete(row, limit=_painel_col)
 
         # Cliente: busca textual de col[4] a col[7]
         cliente = ""
@@ -640,16 +759,52 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
 
     # Nem todo lançamento do painel diário casa por nome com uma carga (ex.: entradas
     # que somam vários clientes numa única célula, ou grafia diferente da planilha de
-    # cargas). Reconcilia proporcionalmente para que a soma do mês bata exatamente com
-    # o Realizado oficial da linha-resumo — o mesmo número já usado no gráfico mensal e
-    # nos KPIs da página. Sem isso, a quebra semanal ficaria sistematicamente abaixo do
-    # total oficial e o dashboard mostraria dois valores de Realizado diferentes para
-    # o mesmo mês.
+    # cargas). Reconcilia proporcionalmente para que a soma das cargas casadas bata com
+    # o total do painel diário DAS MESMAS DATAS que já têm carga cadastrada — nunca com
+    # o Realizado mensal inteiro. Usar o mensal inteiro jogava o dinheiro de dias sem
+    # nenhuma carga no mês (ex.: 01/07-04/07 em Julho/2026, cujo painel diário já tinha
+    # lançamento mas a aba ainda não tinha as cargas daqueles dias) inteiro dentro da
+    # única semana existente, inflando-a bem acima do que ela realmente produziu (bug
+    # relatado pelo usuário em 13/07/2026 — semana 06/07-11/07 aparecendo com 133% de
+    # aderência).
+    _datas_com_carga = {r["DATA"] for r in records}
+    _painel_datas_com_carga = sum(
+        v for (_d, _c), v in day_realized.items() if _d in _datas_com_carga
+    )
     _soma_batida = sum(r["REALIZADO_DIA"] for r in records)
-    if _soma_batida > 0 and realizado_mensal > 0:
-        _fator = realizado_mensal / _soma_batida
+    if _soma_batida > 0 and _painel_datas_com_carga > 0:
+        _fator = _painel_datas_com_carga / _soma_batida
         for r in records:
             r["REALIZADO_DIA"] *= _fator
+
+    # Lançamentos do painel diário em datas sem NENHUMA carga cadastrada no mês (ex.:
+    # 02/07-04/07 em Julho/2026 — confirmado com o usuário em 13/07/2026 que não foram
+    # previstos em lugar nenhum, nem no mês anterior). Não têm semana pra entrar, mas o
+    # dinheiro é real — gera um registro "Não alocado" por lançamento em vez de
+    # descartar silenciosamente, para aparecer à parte na quebra semanal (soma sempre
+    # bate: mensal exato + semanas normais + não alocado).
+    for (_data_orfa, _cliente_orfa), _v_orfa in day_realized.items():
+        if _data_orfa in _datas_com_carga:
+            continue
+        records.append({
+            "MES":            mes_nome,
+            "MES_NUM":        mes_num,
+            "ANO":            ano,
+            "SEMANA":         "NAO_ALOCADO",
+            "DATA":           _data_orfa,
+            "DESTINO":        "SEM PREVISAO",
+            "LOCAL":          "",
+            "VEICULO":        "",
+            "TIPO_VEICULO":   "",
+            "VALOR_FRETE":    0.0,
+            "CLIENTE":        _cliente_orfa,
+            "PREVISAO":       0.0,
+            "REALIZADO":      0.0,
+            "REALIZADO_DIA":  _v_orfa,
+            "DIFERENCA":      0.0,
+            "OBS":            "Realizado do painel diário sem carga cadastrada no mês",
+            "STATUS":         "NAO_ALOCADO",
+        })
 
     # Registro único de REALIZADO e PREVISTO mensal (da linha de resumo da planilha)
     if realizado_mensal > 0 or previsto_mensal > 0:
@@ -743,6 +898,9 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
+    # "NAO_ALOCADO" é um registro sintético (Realizado do painel diário sem carga
+    # cadastrada no mês) — não é uma carga real, não deve aparecer como opção de filtro.
+    _df_filtro_opcoes = df_raw[df_raw["STATUS"] != "NAO_ALOCADO"]
     st.markdown("**📅 Meses**")
     meses_disp = df_raw["MES"].unique().tolist()
     sel_meses = st.multiselect(
@@ -752,20 +910,20 @@ with st.sidebar:
         sel_meses = meses_disp
 
     st.markdown("**🏢 Destino / Cliente**")
-    destinos_disp = sorted(df_raw["DESTINO_NORM"].unique())
+    destinos_disp = sorted(_df_filtro_opcoes["DESTINO_NORM"].unique())
     sel_destinos = st.multiselect(
         "Destino", destinos_disp, placeholder="Todos", key="sel_dest_carga"
     )
 
     st.markdown("**📍 Local de Carregamento**")
-    locais_disp = sorted(df_raw["LOCAL"].unique())
+    locais_disp = sorted(_df_filtro_opcoes["LOCAL"].unique())
     sel_locais = st.multiselect(
         "Origem", locais_disp, placeholder="Todas", key="sel_local_carga"
     )
 
     st.markdown("**🚦 Status da Carga**")
-    # Exclui "SEMANA_TOTAL" da lista visível — é interno ao parser, não um status de carga
-    status_disp = sorted(s for s in df_raw["STATUS"].unique() if s not in ("SEMANA_TOTAL", "CARGO_REAL"))
+    # Exclui "SEMANA_TOTAL"/"NAO_ALOCADO" da lista visível — são internos ao parser, não um status de carga
+    status_disp = sorted(s for s in _df_filtro_opcoes["STATUS"].unique() if s not in ("SEMANA_TOTAL", "CARGO_REAL"))
     sel_status = st.multiselect(
         "Status", status_disp, default=status_disp,
         placeholder="Todos", key="sel_status_carga"
@@ -781,11 +939,14 @@ with st.sidebar:
 
 
 # ── Aplicar filtros ───────────────────────────────────────────────────────────
-# Linhas CARGO_REAL (tabela lateral de realizado) são preservadas sem filtro de
-# destino/local/status para que o KPI de realizado seja sempre o total real do mês.
+# Linhas CARGO_REAL (tabela lateral de realizado) e NAO_ALOCADO (Realizado do painel
+# diário sem carga cadastrada no mês) são preservadas sem filtro de destino/local/
+# status — são registros sintéticos, não cargas reais, e o Realizado/KPI do mês
+# tem que continuar batendo mesmo que o usuário filtre por destino/local/status.
 _df_mes = df_raw[df_raw["MES"].isin(sel_meses)]
-df_real_fixo  = _df_mes[_df_mes["STATUS"] == "CARGO_REAL"].copy()
-df_cargo_filt = _df_mes[_df_mes["STATUS"] != "CARGO_REAL"].copy()
+df_real_fixo    = _df_mes[_df_mes["STATUS"] == "CARGO_REAL"].copy()
+df_naoaloc_fixo = _df_mes[_df_mes["STATUS"] == "NAO_ALOCADO"].copy()
+df_cargo_filt   = _df_mes[~_df_mes["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])].copy()
 
 if sel_destinos:
     df_cargo_filt = df_cargo_filt[df_cargo_filt["DESTINO_NORM"].isin(sel_destinos)]
@@ -801,7 +962,7 @@ if not mostrar_sem_real:
         df_cargo_filt["MES_NUM"].isin(_meses_com_prev_ofic)
     ]
 
-df = pd.concat([df_real_fixo, df_cargo_filt], ignore_index=True)
+df = pd.concat([df_real_fixo, df_naoaloc_fixo, df_cargo_filt], ignore_index=True)
 
 if df.empty:
     st.warning("⚠️ Nenhum registro encontrado com os filtros selecionados.")
@@ -874,6 +1035,36 @@ for col, label, value, delta, color in kpis:
         )
 
 st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+
+# ── Projeção de Fechamento do Mês Atual ───────────────────────────────────────
+_estim = _estimativa_mes_atual(df_raw)
+if _estim is not None:
+    st.markdown("<div class='sec-title'>📈 Projeção de Fechamento do Mês Atual</div>", unsafe_allow_html=True)
+    st.caption(
+        f"Previsto Projetado = Previsto lançado ÷ {_estim['dias_corridos']} dias cobertos pelos "
+        f"lançamentos × {_estim['dias_totais']} dias do mês. Realizado Estimado = Previsto Projetado × Aderência "
+        f"Média dos {_estim['n_meses_base']} últimos meses fechados. Estimativa, não substitui o "
+        f"Realizado oficial."
+    )
+    col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+    estim_kpis = [
+        (col_e1, "📋 Previsto Lançado", _fmt(_estim["previsto_lancado"]), "", "neu"),
+        (col_e2, "📐 Previsto Projetado", _fmt(_estim["previsto_projetado"]), "run-rate do mês", "neu"),
+        (col_e3, "🎯 Aderência Base", f"{_estim['aderencia_media']*100:.1f}%".replace(".", ","),
+         "média últimos meses fechados", "neu"),
+        (col_e4, "🔮 Realizado Estimado", _fmt(_estim["realizado_estimado"]), "projeção de fechamento", "neu"),
+    ]
+    for col, label, value, delta, color in estim_kpis:
+        with col:
+            delta_html = f"<div class='kpi-delta kpi-{color}'>{delta}</div>" if delta else ""
+            st.markdown(
+                f"<div class='kpi-card'>"
+                f"<div class='kpi-label'>{label}</div>"
+                f"<div class='kpi-value'>{value}</div>"
+                f"{delta_html}</div>",
+                unsafe_allow_html=True,
+            )
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
 # ── Previsão vs Realizado por Mês ─────────────────────────────────────────────
 st.markdown("<div class='sec-title'>📊 Previsão vs. Realizado por Mês</div>", unsafe_allow_html=True)
@@ -1039,21 +1230,37 @@ with col_g4:
     # inteiro da quebra semanal, que não tem um "oficial" equivalente por semana.
     # Agrupa pela SEMANA da própria planilha (cabeçalho "SEMANA DD/MM A DD/MM"),
     # não por semana ISO — evita datas de corte que não batem com o que está na planilha.
-    df_week = (
-        df[df["TEM_REALIZADO"] & (df["VALOR_FRETE"] > 0)]
+    # Previsão/N só olham cargas com frete (VALOR_FRETE > 0) — cargas de Armazenagem
+    # ou frete subcontratado (ex.: "FRETE GALICE") não entram na previsão de custo.
+    # Realizado, porém, precisa somar TODAS as cargas da semana (inclusive as de
+    # frete zero): o painel diário atribui o Realizado por (data, cliente), e um
+    # cliente pode ter uma carga de Armazenagem e uma carga normal no mesmo dia —
+    # se o Realizado só somasse as cargas com frete, a parte dividida para a carga
+    # de frete zero desaparecia da semana (ex.: Julho 06/07-11/07 mostrava
+    # R$ 803.070 quando a planilha soma R$ 848.057 para o mesmo período; bug
+    # relatado pelo usuário em 13/07/2026).
+    _semana_base = df[df["TEM_REALIZADO"]]
+    df_week_prev = (
+        _semana_base[_semana_base["VALOR_FRETE"] > 0]
         .groupby(["MES", "MES_NUM", "SEMANA"])
-        .agg(
-            PREVISAO=("VALOR_FRETE", "sum"),
-            REALIZADO=("REALIZADO_DIA", "sum"),
-            N=("DATA", "count"),
-            INICIO=("DATA", "min"),
-            FIM=("DATA", "max"),
-        )
+        .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DATA", "count"))
         .reset_index()
-        .sort_values("INICIO")
     )
+    df_week_real = (
+        _semana_base
+        .groupby(["MES", "MES_NUM", "SEMANA"])
+        .agg(REALIZADO=("REALIZADO_DIA", "sum"), INICIO=("DATA", "min"), FIM=("DATA", "max"))
+        .reset_index()
+    )
+    df_week = df_week_prev.merge(
+        df_week_real, on=["MES", "MES_NUM", "SEMANA"], how="outer"
+    )
+    df_week[["PREVISAO", "N"]] = df_week[["PREVISAO", "N"]].fillna(0)
+    df_week = df_week.sort_values("INICIO")
 
     def _semana_label(row) -> str:
+        if row["SEMANA"] == "NAO_ALOCADO":
+            return f"{row['INICIO'].strftime('%d/%m')} a {row['FIM'].strftime('%d/%m')} (sem previsão)"
         m = re.search(r"(\d{2}/\d{2})\s*A\s*(\d{2}/\d{2})", _norm(row["SEMANA"]))
         if m:
             return f"{m.group(1)} a {m.group(2)}"
@@ -1062,9 +1269,14 @@ with col_g4:
 
     df_week["LABEL"] = df_week.apply(_semana_label, axis=1)
 
+    # Gráfico de evolução semanal é uma linha de tendência semana-a-semana — a linha
+    # "Não alocado" (dias sem nenhuma previsão) quebraria essa leitura com um ponto de
+    # Previsão zerada fora de sequência. Ela continua aparecendo na tabela abaixo.
+    df_week_chart = df_week[df_week["SEMANA"] != "NAO_ALOCADO"]
+
     fig_week = go.Figure()
     fig_week.add_scatter(
-        x=df_week["LABEL"], y=df_week["PREVISAO"],
+        x=df_week_chart["LABEL"], y=df_week_chart["PREVISAO"],
         name="Previsão", mode="lines+markers+text",
         line=dict(color=CORES["previsao"], width=2.5),
         marker=dict(size=7),
@@ -1072,7 +1284,7 @@ with col_g4:
         textposition="top center", textfont=dict(size=9, color=CORES["previsao"]),
     )
     fig_week.add_scatter(
-        x=df_week["LABEL"], y=df_week["REALIZADO"],
+        x=df_week_chart["LABEL"], y=df_week_chart["REALIZADO"],
         name="Realizado", mode="lines+markers",
         line=dict(color=CORES["realizado"], width=2, dash="dot"),
         marker=dict(size=6),
@@ -1098,7 +1310,7 @@ st.caption(
 df_week_tab = df_week.copy()
 df_week_tab["DIFERENCA"] = df_week_tab["REALIZADO"] - df_week_tab["PREVISAO"]
 df_week_tab["ADERENCIA"] = df_week_tab.apply(
-    lambda r: r["REALIZADO"] / r["PREVISAO"] * 100 if r["PREVISAO"] > 0 else 0, axis=1
+    lambda r: r["REALIZADO"] / r["PREVISAO"] * 100 if r["PREVISAO"] > 0 else None, axis=1
 )
 
 df_week_show = df_week_tab[
@@ -1106,7 +1318,11 @@ df_week_show = df_week_tab[
 ].copy()
 for _col in ["PREVISAO", "REALIZADO", "DIFERENCA"]:
     df_week_show[_col] = df_week_show[_col].apply(_fmt)
-df_week_show["ADERENCIA"] = df_week_show["ADERENCIA"].apply(lambda v: f"{v:.1f}%".replace(".", ","))
+# Sem previsão (linha "Não alocado") não tem meta pra comparar — "0,0%" pareceria meta
+# perdida quando na verdade não existe meta. Mostra "—" nesse caso.
+df_week_show["ADERENCIA"] = df_week_show["ADERENCIA"].apply(
+    lambda v: "—" if pd.isna(v) else f"{v:.1f}%".replace(".", ",")
+)
 df_week_show.columns = ["Mês", "Semana", "Cargas", "Previsão", "Realizado", "Diferença", "Aderência"]
 st.dataframe(df_week_show, use_container_width=True, hide_index=True)
 
@@ -1116,7 +1332,7 @@ col_g5, col_g6 = st.columns(2)
 
 with col_g5:
     df_veic = (
-        df[(df["STATUS"] != "CARGO_REAL") & (df["TIPO_VEICULO"] != "Outro")]
+        df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"]) & (df["TIPO_VEICULO"] != "Outro")]
         .groupby("TIPO_VEICULO")
         .agg(N=("DATA", "count"), PREVISAO=("VALOR_FRETE", "sum"))
         .reset_index()
@@ -1149,7 +1365,7 @@ with col_g5:
 
 with col_g6:
     df_tl = (
-        df[df["STATUS"] != "CARGO_REAL"]
+        df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])]
         .groupby(["DATA", "STATUS"])
         .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DESTINO", "count"))
         .reset_index()

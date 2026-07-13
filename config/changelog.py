@@ -6,6 +6,183 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Resumo por OP sumia com cortes parciais em Controle de Programação",
+        "description": (
+            "utils/controle_op.py::_valido(): no pandas 3.x, Series.astype(str) não converte "
+            "mais NaN em texto 'nan' (mantém NaN real) — sem fillna('') antes, células "
+            "genuinamente vazias eram tratadas como 'válidas', deixando linhas quase em branco "
+            "(só CLIENTE preenchido, sem OP/produto/qtd. programada) entrarem com _CHAVE = NaN. "
+            "Essas linhas casavam com cortes reais e apareciam na aba Detalhe Completo como "
+            "'Parcial' com peças cortadas, mas o groupby() do Resumo por OP descarta chaves NaN "
+            "silenciosamente — por isso sumiam de lá (ex.: Semana 27, 3 linhas/~13.700 peças). "
+            "Corrigido com fillna('') antes do astype(str). Afeta pages/4_Controladoria_"
+            "Programacao.py, pages/10_Relatorios.py e pages/11_Controle_de_OP.py (todos usam "
+            "essa mesma função). Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "novo",
+        "title": "Linha \"Não alocado\" para Realizado sem previsão em Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py: confirmado com o usuário que os dias 02/07 a 05/07 de "
+            "Julho/2026 não têm carga cadastrada em nenhum mês (só 01/07 estava previsto, dentro "
+            "da última semana de Junho) — o painel diário já tinha Realizado lançado pra esses "
+            "dias, mas sem nenhuma semana pra entrar. Antes esse valor era só descartado da quebra "
+            "semanal (contava apenas no Realizado mensal do topo). Agora _parse_month gera um "
+            "registro 'NAO_ALOCADO' por lançamento órfão, e a tabela 'Detalhamento por Semana' "
+            "mostra uma linha à parte (ex.: '01/07 a 04/07 (sem previsão)') com esse Realizado — "
+            "soma sempre bate com o mensal oficial (semanas normais + não alocado). Esse registro "
+            "sintético foi excluído do gráfico de evolução semanal (quebraria a linha de tendência), "
+            "dos filtros da sidebar, dos gráficos de frota/timeline/ocorrências e do cálculo de "
+            "'dias cobertos' da projeção de fechamento do mês — aparece só na tabela de "
+            "detalhamento e na listagem de registros."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Realizado semanal descartava cargas de frete zero em Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py: a tabela 'Detalhamento por Semana' filtrava Previsão E "
+            "Realizado pelas mesmas cargas com VALOR_FRETE > 0. Isso descartava o Realizado de "
+            "cargas de Armazenagem/frete subcontratado (frete = 0): o painel diário atribui o "
+            "Realizado por (data, cliente) dividido entre todas as cargas daquele cliente no dia — "
+            "quando uma delas tinha frete zero, a parte dela desaparecia da semana ao invés de ser "
+            "só excluída do Previsto. Na semana 06/07-11/07 de Julho isso descontava R$ 44.986,70 "
+            "(mostrava R$ 803.070 quando a planilha soma R$ 848.057 para o mesmo período — "
+            "confirmado pelo usuário em 13/07/2026). Corrigido separando os dois agrupamentos: "
+            "Previsão continua só com cargas de frete > 0, Realizado agora soma todas as cargas da "
+            "semana."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Previsto da última semana inflado (frete vazando do painel diário)",
+        "description": (
+            "pages/8_Previsao_Cargas.py::_first_frete: a varredura de frete (cols 5-9) não parava "
+            "antes da coluna-base do painel diário — em cargas com a própria célula de frete vazia "
+            "(Armazenagem, ou 'FRETE GALICE'/frete subcontratado), continuava buscando e acabava "
+            "lendo o Previsto de OUTRO cliente no painel diário do mesmo dia como se fosse o frete "
+            "daquela carga. Na semana 06/07-11/07 de Julho isso inflou o Previsto de R$ 845.000 "
+            "(valor real, que bate com o subtotal 'R$ 845.000,00' já calculado na própria planilha) "
+            "para R$ 915.000 (R$ 70 mil vazados: R$ 40 mil do Previsto de SULTAN 06/07 + R$ 30 mil "
+            "do Previsto de MARCELINO 10/07). Corrigido para a varredura nunca passar da "
+            "coluna-base do painel diário (_find_painel_col). Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Realizado da última semana inflado em Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py: a semana 06/07-11/07 de Julho aparecia com 133% de "
+            "aderência. Duas causas: (1) _extract_day_realized lia a linha 'TOTAL GERAL (01 A "
+            "11/07)' do painel diário como se fosse mais um cliente, dobrando o total lido do "
+            "painel — corrigido ignorando linhas com 'TOTAL'/'GERAL' no nome do cliente; (2) o "
+            "fator de reconciliação semanal (linha ~755) escalava o Realizado casado até bater "
+            "com o Realizado oficial do MÊS INTEIRO — como os dias 01/07 a 04/07 têm lançamento "
+            "no painel diário mas nenhuma carga cadastrada na aba ainda, todo esse valor "
+            "(~R$ 489 mil) caía inteiro na única semana existente. Corrigido para reconciliar "
+            "apenas contra o painel diário DAS DATAS que já têm carga cadastrada — o Realizado "
+            "mensal usado nos KPIs continua exato, só a quebra semanal deixou de ser inflada. "
+            "Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Datas em mm/dd em dois gráficos de Produção Geral",
+        "description": (
+            "pages/2_Producao_Geral.py: os gráficos 'Evolução Diária — Top Produtos' (linha "
+            "~1409, aba de facções) e '📈 Quantidade por Dia' (linha ~2060, dashboard de "
+            "colaboradores) usavam a coluna DATA (datetime) direto no eixo x sem "
+            "xaxis=dict(tickformat=\"%d/%m/%Y\") — diferente de todos os outros gráficos da "
+            "página, que já tinham esse override. Sem ele, o Plotly aplica o formato automático "
+            "de data (padrão mm/dd, estilo EUA). Corrigido adicionando o tickformat nos dois. "
+            "Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Previsto mensal de Previsão de Cargas ignorava o valor oficial da linha 'GERAL'",
+        "description": (
+            "pages/8_Previsao_Cargas.py::_find_resumo_mensal (estratégia 2, linha com 'GERAL'): "
+            "só lia o Realizado (col[GERAL+2]) e sempre zerava o Previsto, mesmo quando o valor "
+            "oficial estava ao lado (col[GERAL+1]) — ex.: linha 'Total geral (01 a 11/07)' de "
+            "Julho tinha Previsto R$ 905.000 na planilha, mas o dashboard mostrava R$ 915.000 "
+            "porque caía no fallback de somar o frete individual de cada carga (aproximado, sem "
+            "bater com o oficial). Corrigido para ler também col[GERAL+1] quando presente. Mesmo "
+            "ajuste corrige Janeiro (linha 'GERAL janeiro'), que tinha o mesmo problema. "
+            "Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "novo",
+        "title": "Projeção de fechamento do mês atual em Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py: nova seção 'Projeção de Fechamento do Mês Atual' com "
+            "4 KPIs (Previsto Lançado, Previsto Projetado, Aderência Base, Realizado Estimado). "
+            "Cálculo: Previsto Projetado = Previsto lançado ÷ dias cobertos pelos lançamentos "
+            "× dias totais do mês (run-rate); Realizado Estimado = Previsto Projetado × aderência "
+            "média (Realizado/Previsto) dos 2 últimos meses fechados. 'Dias cobertos' usa o "
+            "intervalo real entre a primeira e a última carga lançada no mês — não os dias "
+            "corridos do calendário — porque a planilha é preenchida em blocos semanais; dividir "
+            "por dias corridos diluía a projeção pela metade (ajustado após feedback do usuário "
+            "13/07/2026). Também corrigido bug onde o Realizado do mês corrente ficava travado "
+            "em zero quando a linha de resumo da planilha ainda não existia (fallback agora usa "
+            "a soma do painel diário)."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Override manual do Realizado de Junho removido em Previsão de Cargas",
+        "description": (
+            "pages/8_Previsao_Cargas.py (REALIZADO_MENSAL_OVERRIDE): usuário preencheu os dias "
+            "que faltavam na planilha de Junho/2026, então o valor hardcoded (4.124.995,84, "
+            "adicionado em 10/07/2026 porque o lançamento diário estava incompleto) foi "
+            "removido — Junho volta a ler o Realizado direto da linha de resumo da planilha "
+            "(_find_resumo_mensal), igual todo mês fora desse dict. Maio continua com override "
+            "(não foi mencionado como corrigido)."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas não reconhecia o mês atual sozinho",
+        "description": (
+            "Usuário perguntou por que julho não aparecia automaticamente em Previsão de "
+            "Cargas. Causa: pages/8_Previsao_Cargas.py::MESES_DISPONIVEIS era uma lista fixa "
+            "de tuplas (JANEIRO a JUNHO/2026) que precisava ser editada manualmente todo mês "
+            "— o loop que baixa/parseia os dados (linha ~699) só processa os meses que estão "
+            "nessa lista, então julho nunca era buscado, mesmo com dado disponível na "
+            "planilha. Trocado por _meses_disponiveis(), que gera a lista de Janeiro/2026 até "
+            "o mês corrente automaticamente (date.today()) — não precisa mais editar esse "
+            "arquivo todo início de mês."
+        ),
+    },
+    {
+        "date": "10/07/2026",
+        "tag": "novo",
+        "title": "Central de Relatórios ganhou aba para Colaboradores Internos",
+        "description": (
+            "Faltava gerar PDF individual de produção para colaboradores internos "
+            "(LITTEX/GGTTEX) na Central de Relatórios — só existia esse relatório "
+            "no código (utils/pdf_report.py::gerar_pdf_colaborador), sem nenhuma tela "
+            "que chamasse ele. Adicionada aba '👥 Colaboradores Internos' em "
+            "pages/10_Relatorios.py: escolhe unidade (LITTEX/GGTTEX Jogos/Fronha/Cortina), "
+            "colaborador e período, e gera o mesmo PDF (produção por setor, por empresa e "
+            "detalhamento diário) que já existia no dashboard 'Por Colaborador → Interno'. "
+            "Testado ao vivo gerando o PDF de um colaborador da LITTEX."
+        ),
+    },
+    {
         "date": "10/07/2026",
         "tag": "correção",
         "title": "Tela de Produção Interna quebrava com TypeError ao listar colaboradores",

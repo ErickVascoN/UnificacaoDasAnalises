@@ -1413,6 +1413,7 @@ def _faccao_tab_comparacao(df_periodo: pd.DataFrame):
                 title=f"Evolução Diária — Top {len(top_n)} Produtos",
             )
             fig_evol_p.update_layout(**DARK_LAYOUT)
+            fig_evol_p.update_layout(xaxis=dict(tickformat="%d/%m/%Y"))
             st.plotly_chart(fig_evol_p, width="stretch")
 
 
@@ -2061,6 +2062,7 @@ def _render_interno_tab(chave: str, cfg: dict):
         fig_dia.update_layout(height=380, xaxis_title="Dia", yaxis_title="Quantidade",
                               legend=dict(orientation="h", yanchor="bottom", y=1.02,
                                           xanchor="right", x=1), **DARK_LAYOUT)
+        fig_dia.update_layout(xaxis=dict(tickformat="%d/%m/%Y"))
         st.plotly_chart(fig_dia, use_container_width=True)
 
         # 2) Consistência (Regularidade + Assiduidade)

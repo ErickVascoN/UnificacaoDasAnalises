@@ -80,7 +80,16 @@ def load_programacao() -> pd.DataFrame:
     invalidos = {"", "NAN", "NONE", "N/A"}
 
     def _valido(serie: pd.Series) -> pd.Series:
-        s = serie.astype(str).str.strip()
+        # fillna ANTES do astype(str): no pandas 3.x, Series.astype(str) não
+        # converte NaN/None em texto "nan" — mantém NaN real. Sem o fillna,
+        # células genuinamente vazias (NaN) passavam nesse check como
+        # "válidas" (NaN != "" e NaN not in invalidos), deixando linhas
+        # praticamente em branco (só CLIENTE preenchido) entrarem com
+        # _CHAVE = NaN — que o groupby() do Resumo descarta silenciosamente,
+        # enquanto a aba Detalhe (sem groupby) continuava mostrando essas
+        # linhas com cortes reais casados. Bug relatado pelo usuário
+        # 13/07/2026 (Semana 27: cortes parciais sumindo do Resumo).
+        s = serie.fillna("").astype(str).str.strip()
         return s.ne("") & ~s.str.upper().isin(invalidos)
 
     # Fallback de OP: quando NÃO existe a OP (PED. CLIENTE), a OP INTERNA ocupa o lugar
