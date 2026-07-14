@@ -1,0 +1,8 @@
+Produção Interna - GGTTEX Fronha
+
+Link: https://docs.google.com/spreadsheets/d/1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv/edit#gid=671875370
+
+ID:  1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv (mesmo arquivo do GGTTEX Jogos, aba diferente)
+GID: 671875370
+
+Usado em: config/settings.py (PRODUCAO_INTERNO_SHEETS["GGTTEX_FRONHA"])

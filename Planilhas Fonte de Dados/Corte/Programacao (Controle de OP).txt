@@ -1,0 +1,8 @@
+Corte - Programação (Controle de OP)
+
+Link: https://docs.google.com/spreadsheets/d/1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA/edit#gid=708887209
+
+ID:  1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA
+GID: 708887209
+
+Usado em: utils/controle_op.py (PROG_ID), pages/10_Relatorios.py (_PROG_ID)

@@ -87,12 +87,17 @@ def calcular_meta_faccoes(
 
     total_geral = int(df_periodo["QUANTIDADE"].sum()) if not df_periodo.empty else 0
 
-    # Dias distintos com produção por facção (fallback: du_mes)
+    # Dias distintos com produção por facção (fallback: du_mes). Só conta dias
+    # com QUANTIDADE > 0 — linhas de QUANTIDADE=0 com Observação (ex.: "máquina
+    # quebrou", contextualização de um dia sem produção) não devem inflar o
+    # número de dias considerados na meta/média, senão a meta cresce e a % cai
+    # sem produção real ter caído (feedback do usuário 14/07/2026).
     _dias_fac: dict[str, int] = {}
     _ultima_data_fac: dict[str, date] = {}
     if not df_periodo.empty:
+        _df_com_producao = df_periodo[df_periodo["QUANTIDADE"] > 0]
         _dias_fac = (
-            df_periodo.groupby("FACCAO_N")["DATA"]
+            _df_com_producao.groupby("FACCAO_N")["DATA"]
             .apply(lambda s: s.dt.date.nunique())
             .to_dict()
         )

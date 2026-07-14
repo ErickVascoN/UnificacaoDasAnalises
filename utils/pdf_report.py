@@ -21,12 +21,12 @@ import numpy as np
 import pandas as pd
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm, mm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, PageTemplate,
+    BaseDocTemplate, Frame, PageTemplate, NextPageTemplate,
     Paragraph, Spacer, Table, TableStyle,
     Image, HRFlowable, KeepTogether, PageBreak,
 )
@@ -63,7 +63,21 @@ MP_TEXT     = '#1C2833'
 MP_FERIADO  = '#D4860A'
 
 PAGE_W, PAGE_H = A4
+PAGE_W_L, PAGE_H_L = landscape(A4)  # páginas de gráfico usam paisagem — em retrato os
+# gráficos com muitas barras/legendas ficavam pequenos demais pra ler os números
+# (feedback do usuário 13/07/2026).
 MARGIN = 1.8 * cm
+# Largura padrão (em cm) de imagem numa página em paisagem — A4 paisagem tem
+# 29.7cm, menos 2x margem de 1.8cm.
+LARGURA_GRAFICO_PAISAGEM = 25.5
+# Altura máxima (cm) de imagem em página paisagem — A4 paisagem só tem ~21cm de
+# altura (menos que retrato!), então largar a imagem em LARGURA_GRAFICO_PAISAGEM
+# sem teto de altura estoura a página quando o gráfico tem aspecto vertical
+# (ex.: barras horizontais com muitas categorias). ALTURA_GRAFICO_PAISAGEM_SOLO
+# é pra quando o gráfico é o único da página; _DUPLO quando dois dividem a
+# mesma página empilhados.
+ALTURA_GRAFICO_PAISAGEM_SOLO = 14.0
+ALTURA_GRAFICO_PAISAGEM_DUPLO = 8.5
 
 
 # ─── Estilos de parágrafo ─────────────────────────────────────────────────────
@@ -592,14 +606,24 @@ def _tabela_generica(
     return t
 
 
-def _imagem_de_buf(buf: io.BytesIO, largura_cm: float = 15.0) -> Image:
-    """Converte BytesIO de imagem em Flowable Image do ReportLab."""
+def _imagem_de_buf(buf: io.BytesIO, largura_cm: float = 15.0,
+                   altura_max_cm: float | None = None) -> Image:
+    """Converte BytesIO de imagem em Flowable Image do ReportLab.
+
+    altura_max_cm, se informado, recalcula a largura pra baixo quando a altura
+    resultante de largura_cm ultrapassaria esse teto — evita LayoutError em
+    páginas de altura menor (ex.: paisagem) com gráficos de aspecto muito
+    vertical (ex.: barras horizontais com muitas categorias).
+    """
     from PIL import Image as PILImage
     buf.seek(0)
     pil = PILImage.open(buf)
     w_px, h_px = pil.size
     largura = largura_cm * cm
     altura = largura * h_px / w_px
+    if altura_max_cm is not None and altura > altura_max_cm * cm:
+        altura = altura_max_cm * cm
+        largura = altura * w_px / h_px
     return Image(buf, width=largura, height=altura)
 
 
@@ -740,6 +764,15 @@ class _RelatorioDoc(BaseDocTemplate):
             PAGE_W - 2 * MARGIN, PAGE_H - 3.2 * cm,
             id='normal_f',
         )
+        # Frame em paisagem — usado só nas páginas de gráfico (ver _ir_paisagem /
+        # _ir_retrato), que trocam de template via NextPageTemplate. O onPage é o
+        # mesmo _header_footer_normal: ele lê o tamanho da página direto do canvas,
+        # então desenha corretamente nas duas orientações.
+        frame_landscape = Frame(
+            MARGIN, 1.6 * cm,
+            PAGE_W_L - 2 * MARGIN, PAGE_H_L - 3.2 * cm,
+            id='landscape_f',
+        )
 
         def on_page(canvas_obj, doc):
             if self._is_capa:
@@ -755,20 +788,25 @@ class _RelatorioDoc(BaseDocTemplate):
 
         self.addPageTemplates([
             PageTemplate(id='main', frames=[frame_normal], onPage=on_page),
+            PageTemplate(id='landscape', frames=[frame_landscape], onPage=on_page,
+                         pagesize=landscape(A4)),
         ])
 
 
 def _header_footer_normal(canvas_obj, doc, titulo_relatorio: str, periodo: str):
     canvas_obj.saveState()
-    w = PAGE_W
+    # Lê o tamanho real da página ativa (retrato ou paisagem) em vez de assumir
+    # PAGE_W/PAGE_H fixos — permite que o mesmo cabeçalho/rodapé sirva as páginas
+    # de gráfico em paisagem (ver PageTemplate 'landscape' em _RelatorioDoc).
+    w, h = canvas_obj._pagesize
 
     canvas_obj.setFillColor(C_NAVY)
-    canvas_obj.rect(0, PAGE_H - 1.35 * cm, w, 1.35 * cm, fill=1, stroke=0)
+    canvas_obj.rect(0, h - 1.35 * cm, w, 1.35 * cm, fill=1, stroke=0)
     canvas_obj.setFillColor(C_WHITE)
     canvas_obj.setFont('Helvetica-Bold', 9.5)
-    canvas_obj.drawString(MARGIN, PAGE_H - 0.88 * cm, titulo_relatorio)
+    canvas_obj.drawString(MARGIN, h - 0.88 * cm, titulo_relatorio)
     canvas_obj.setFont('Helvetica', 8)
-    canvas_obj.drawRightString(w - MARGIN, PAGE_H - 0.88 * cm, periodo)
+    canvas_obj.drawRightString(w - MARGIN, h - 0.88 * cm, periodo)
 
     canvas_obj.setFillColor(C_GRAY_BG)
     canvas_obj.rect(0, 0, w, 1.15 * cm, fill=1, stroke=0)
@@ -779,6 +817,18 @@ def _header_footer_normal(canvas_obj, doc, titulo_relatorio: str, periodo: str):
     canvas_obj.drawRightString(w - MARGIN, 0.42 * cm, f"Página {doc.page}")
 
     canvas_obj.restoreState()
+
+
+def _ir_paisagem() -> list:
+    """Troca pra página em paisagem — usar antes de gráficos grandes (muitas
+    barras/legendas ficam pequenos demais em retrato; feedback do usuário
+    13/07/2026). Sempre junto de _ir_retrato() depois do conteúdo em paisagem."""
+    return [NextPageTemplate('landscape'), PageBreak()]
+
+
+def _ir_retrato() -> list:
+    """Volta pra retrato — usar logo após o conteúdo aberto com _ir_paisagem()."""
+    return [NextPageTemplate('main'), PageBreak()]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -913,9 +963,9 @@ def gerar_pdf_arealva_manta(
     if obs_parts:
         story.append(Paragraph('<br/>'.join(obs_parts), e['nota']))
 
-    story.append(PageBreak())
-
-    # ── Página 3: Produção Diária ────────────────────────────────────────────
+    # ── Página 3: Produção Diária (gráfico em paisagem — em retrato ficava
+    # pequeno demais pra ler os números; feedback do usuário 13/07/2026) ──────
+    story.extend(_ir_paisagem())
     story.append(Paragraph('Produção Diária', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -924,10 +974,12 @@ def gerar_pdf_arealva_manta(
         buf_chart = _chart_producao_diaria(
             prod_diaria, meta_total,
             titulo=f'Produção Diária — Arealva Manta  |  Meta: {_fmt(meta_total)} pç/dia',
-            largura=17.0, altura=6.5,
+            largura=24.0, altura=9.0,
         )
-        story.append(_imagem_de_buf(buf_chart, largura_cm=17.0))
+        story.append(_imagem_de_buf(buf_chart, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
         story.append(Spacer(1, 0.5 * cm))
+    story.extend(_ir_retrato())
 
     # Tabela de produção diária
     story.append(Paragraph('Detalhamento Diário', e['subtitulo_secao']))
@@ -965,13 +1017,13 @@ def gerar_pdf_arealva_manta(
         except Exception:
             pass
     story.append(t_dd)
-    story.append(PageBreak())
 
-    # ── Página 4: Distribuição & Top Cores ─────────────────────────────────
-    story.append(Paragraph('Distribuição por Estação e Cores', e['titulo_secao']))
+    # ── Página 4: Distribuição por Estação, depois Top Cores — 1 gráfico por
+    # página, em paisagem e grande (feedback do usuário 13/07/2026). ────────
+    story.extend(_ir_paisagem())
+    story.append(Paragraph('Distribuição por Estação de Corte', e['titulo_secao']))
     story.append(_linha_divisoria())
 
-    # Gráficos lado a lado
     dist_estacao = df.groupby('ESTACAO')['QUANTIDADE'].sum().reset_index()
     prod_cor = df.groupby('COR')['QUANTIDADE'].sum().reset_index()
 
@@ -979,20 +1031,22 @@ def gerar_pdf_arealva_manta(
         buf_pizza = _chart_pizza_estacao(
             dist_estacao, 'ESTACAO', 'QUANTIDADE', 'Distribuição por Estação de Corte',
         )
-        buf_cores = _chart_barras_h(
-            prod_cor, 'COR', 'QUANTIDADE', 'Top 15 Cores Mais Cortadas', top_n=15,
-        )
-        # Pizza centralizada
-        img_pizza = _imagem_de_buf(buf_pizza, largura_cm=11.0)
-        t_centro_p = Table([[img_pizza]], colWidths=[PAGE_W - 2 * MARGIN])
+        img_pizza = _imagem_de_buf(buf_pizza, largura_cm=20.0,
+                                   altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO)
+        t_centro_p = Table([[img_pizza]], colWidths=[PAGE_W_L - 2 * MARGIN])
         t_centro_p.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
                                         ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
         story.append(t_centro_p)
-        story.append(Spacer(1, 0.5 * cm))
+        story.append(PageBreak())
 
-        # Top cores em largura total
-        story.append(_imagem_de_buf(buf_cores, largura_cm=17.0))
-        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph('Top 15 Cores Mais Cortadas', e['titulo_secao']))
+        story.append(_linha_divisoria())
+        buf_cores = _chart_barras_h(
+            prod_cor, 'COR', 'QUANTIDADE', 'Top 15 Cores Mais Cortadas', top_n=15,
+        )
+        story.append(_imagem_de_buf(buf_cores, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+    story.extend(_ir_retrato())
 
     # Top 20 cores em tabela
     story.append(Paragraph('Top 20 Cores por Volume', e['subtitulo_secao']))
@@ -1234,9 +1288,8 @@ def gerar_pdf_iacanga_manta(
     cw_tr = [3*cm, 3*cm, 3*cm, 3*cm, 3*cm]
     story.append(_tabela_generica(tam_ref_cabec, tam_ref_linhas, e, cw_tr))
 
-    story.append(PageBreak())
-
-    # ── Produção Diária ──────────────────────────────────────────────────────
+    # ── Produção Diária (gráfico em paisagem — feedback do usuário 13/07/2026) ─
+    story.extend(_ir_paisagem())
     story.append(Paragraph('Produção Diária', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -1245,10 +1298,12 @@ def gerar_pdf_iacanga_manta(
         buf_chart = _chart_producao_diaria(
             prod_diaria, meta_total,
             titulo=f'Produção Diária — Iacanga Manta  |  Meta: {_fmt(meta_total)} pç/dia',
-            largura=17.0, altura=6.5,
+            largura=24.0, altura=9.0,
         )
-        story.append(_imagem_de_buf(buf_chart, largura_cm=17.0))
+        story.append(_imagem_de_buf(buf_chart, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
         story.append(Spacer(1, 0.4*cm))
+    story.extend(_ir_retrato())
 
     # Tabela diária
     cabec_dd = ['Data', 'Dia', 'Peças', 'vs Meta', '% Meta']
@@ -1279,41 +1334,44 @@ def gerar_pdf_iacanga_manta(
         except Exception:
             pass
     story.append(t_dd)
-    story.append(PageBreak())
 
     # ── Análise por Tamanho ──────────────────────────────────────────────────
+    tam_validos = pd.DataFrame()
     if 'TAMANHO' in df.columns:
         tam_validos = df[
             df['TAMANHO'].notna() &
             (df['TAMANHO'].astype(str).str.strip() != '') &
             (df['TAMANHO'].astype(str).str.lower() != 'nan')
         ]
-        if not tam_validos.empty:
-            story.append(Paragraph('Análise por Tamanho', e['titulo_secao']))
-            story.append(_linha_divisoria())
+    if not tam_validos.empty:
+        story.extend(_ir_paisagem())
+        story.append(Paragraph('Análise por Tamanho', e['titulo_secao']))
+        story.append(_linha_divisoria())
 
-            buf_tam = _chart_barras_h(
-                tam_validos.groupby('TAMANHO')['QUANTIDADE'].sum().reset_index(),
-                'TAMANHO', 'QUANTIDADE', 'Volume por Tamanho de Manta', top_n=10, cor='#D4860A',
-            )
-            story.append(_imagem_de_buf(buf_tam, largura_cm=17.0))
-            story.append(Spacer(1, 0.4*cm))
+        buf_tam = _chart_barras_h(
+            tam_validos.groupby('TAMANHO')['QUANTIDADE'].sum().reset_index(),
+            'TAMANHO', 'QUANTIDADE', 'Volume por Tamanho de Manta', top_n=10, cor='#D4860A',
+        )
+        story.append(_imagem_de_buf(buf_tam, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+        story.append(Spacer(1, 0.4*cm))
+        story.extend(_ir_retrato())
 
-            # Tabela est × tamanho
-            story.append(Paragraph('Estação × Tamanho', e['subtitulo_secao']))
-            tam_est = (tam_validos.groupby(['ESTACAO', 'TAMANHO'])['QUANTIDADE']
-                       .sum().reset_index().sort_values('QUANTIDADE', ascending=False))
-            tam_total = tam_validos['QUANTIDADE'].sum()
-            cabec_et = ['Estação', 'Tamanho', 'Peças', '% Total']
-            linhas_et = [
-                [row['ESTACAO'][:20], row['TAMANHO'],
-                 _fmt(row['QUANTIDADE']),
-                 f"{row['QUANTIDADE'] / tam_total * 100:.1f}%"]
-                for _, row in tam_est.iterrows()
-            ]
-            cw_et = [3.5*cm, 3.5*cm, 3*cm, 2.5*cm]
-            story.append(_tabela_generica(cabec_et, linhas_et, e, cw_et))
-            story.append(PageBreak())
+        # Tabela est × tamanho
+        story.append(Paragraph('Estação × Tamanho', e['subtitulo_secao']))
+        tam_est = (tam_validos.groupby(['ESTACAO', 'TAMANHO'])['QUANTIDADE']
+                   .sum().reset_index().sort_values('QUANTIDADE', ascending=False))
+        tam_total = tam_validos['QUANTIDADE'].sum()
+        cabec_et = ['Estação', 'Tamanho', 'Peças', '% Total']
+        linhas_et = [
+            [row['ESTACAO'][:20], row['TAMANHO'],
+             _fmt(row['QUANTIDADE']),
+             f"{row['QUANTIDADE'] / tam_total * 100:.1f}%"]
+            for _, row in tam_est.iterrows()
+        ]
+        cw_et = [3.5*cm, 3.5*cm, 3*cm, 2.5*cm]
+        story.append(_tabela_generica(cabec_et, linhas_et, e, cw_et))
+    story.append(PageBreak())
 
     # ── OPs ──────────────────────────────────────────────────────────────────
     story.append(Paragraph('Análise por Ordem de Produção (OP)', e['titulo_secao']))
@@ -1468,15 +1526,19 @@ def gerar_pdf_itaju(
     story.append(_bloco_kpis(kpis, e, colunas=4))
     story.append(Spacer(1, 0.5 * cm))
 
-    # Gráfico diário (sem meta configurada para Itaju — só evolução)
+    # Gráfico diário (sem meta configurada para Itaju — só evolução), em
+    # paisagem — feedback do usuário 13/07/2026.
+    story.extend(_ir_paisagem())
     try:
         prod_dia = df.groupby('DATA')['QUANTIDADE'].sum().reset_index().sort_values('DATA')
         buf_c = _chart_producao_diaria(prod_dia, 0, titulo='Produção Diária — Itaju',
-                                       largura=16.0, altura=4.5)
-        story.append(_imagem_de_buf(buf_c, largura_cm=16.5))
+                                       largura=22.0, altura=7.0)
+        story.append(_imagem_de_buf(buf_c, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
         story.append(Spacer(1, 0.4 * cm))
     except Exception as _ex:
         logger.warning('gerar_pdf_itaju: chart diario: %s', _ex)
+    story.extend(_ir_retrato())
 
     # Tabela por Produto
     story.append(Paragraph('Produção por Produto', e['subtitulo_secao']))
@@ -1721,9 +1783,9 @@ def gerar_pdf_lencol(
         ]
         cw_pr = [3.5*cm, 2.0*cm, 1.8*cm, 2.8*cm, 1.2*cm, 2.0*cm, 2.2*cm]
         story.append(_tabela_generica(cabec_pr, linhas_pr, e, cw_pr))
-    story.append(PageBreak())
 
-    # ── Página 3: Produção Diária ────────────────────────────────────────────
+    # ── Página 3: Produção Diária (paisagem — feedback do usuário 13/07/2026) ─
+    story.extend(_ir_paisagem())
     story.append(Paragraph('Análise Visual — Produção Diária', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -1733,13 +1795,15 @@ def gerar_pdf_lencol(
         buf_dia = _chart_producao_diaria(
             prod_dia, 0,
             titulo='Produção Diária — Lençol',
-            largura=17.0, altura=6.5,
+            largura=24.0, altura=9.0,
         )
-        story.append(_imagem_de_buf(buf_dia, largura_cm=17.0))
+        story.append(_imagem_de_buf(buf_dia, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
     story.append(PageBreak())
 
-    # ── Página 4: Distribuição — Prestadores e Empresas ──────────────────────
-    story.append(Paragraph('Análise Visual — Prestadores e Empresas', e['titulo_secao']))
+    # ── Página 4: Prestadores, depois Empresas — 1 gráfico por página (segue
+    # em paisagem; feedback do usuário 13/07/2026). ──────────────────────────
+    story.append(Paragraph('Análise Visual — Prestadores', e['titulo_secao']))
     story.append(_linha_divisoria())
 
     if 'EMPRESA' in df.columns and 'PRESTADOR' in df.columns:
@@ -1748,20 +1812,25 @@ def gerar_pdf_lencol(
             Peças=('QUANT', 'sum'), Valor=('VALOR_RECEBER', 'sum')
         ).reset_index()
         buf_prest = _chart_lencol_prestador_valor(df_prest2)
-        story.append(_imagem_de_buf(buf_prest, largura_cm=17.0))
-        story.append(Spacer(1, 0.6 * cm))
+        story.append(_imagem_de_buf(buf_prest, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+        story.append(PageBreak())
+
+        story.append(Paragraph('Análise Visual — Distribuição por Empresa', e['titulo_secao']))
+        story.append(_linha_divisoria())
 
         # Pizza de empresas (centralizada, tamanho generoso)
         dist_emp = df.groupby('EMPRESA')['QUANT'].sum().reset_index()
         buf_emp = _chart_pizza_estacao(dist_emp, 'EMPRESA', 'QUANT', 'Distribuição por Empresa')
-        img_emp = _imagem_de_buf(buf_emp, largura_cm=11.0)
-        t_centro = Table([[img_emp]], colWidths=[PAGE_W - 2 * MARGIN])
+        img_emp = _imagem_de_buf(buf_emp, largura_cm=20.0,
+                                 altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO)
+        t_centro = Table([[img_emp]], colWidths=[PAGE_W_L - 2 * MARGIN])
         t_centro.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
                                       ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
         story.append(t_centro)
     story.append(PageBreak())
 
-    # ── Página 4: Categorias ─────────────────────────────────────────────────
+    # ── Página 4: Categorias (gráfico segue em paisagem, tabela volta a retrato)
     story.append(Paragraph('Análise por Categoria', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -1772,9 +1841,12 @@ def gerar_pdf_lencol(
         df_cat['%'] = (df_cat['QUANT'] / df_cat['QUANT'].sum() * 100).round(1)
 
         buf_cat = _chart_barras_h(df_cat, cat_col, 'QUANT', 'Peças por Categoria', top_n=12)
-        story.append(_imagem_de_buf(buf_cat, largura_cm=17.0))
+        story.append(_imagem_de_buf(buf_cat, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
         story.append(Spacer(1, 0.4*cm))
+    story.extend(_ir_retrato())
 
+    if cat_col in df.columns:
         cabec_cat = ['Categoria', 'Peças', '% Total', 'Valor (R$)']
         if 'VALOR_RECEBER' in df.columns:
             df_cat_v = df.groupby(cat_col).agg(
@@ -2130,30 +2202,38 @@ def gerar_pdf_producao_geral(
                 ('FONTNAME', (6, ri), (6, ri), 'Helvetica-Bold'),
             ]))
     story.append(t_res)
-    story.append(PageBreak())
 
-    # ── Página 3: Gráfico comparativo ───────────────────────────────────────
-    story.append(Paragraph('Análise Comparativa', e['titulo_secao']))
+    # ── Página 3: Comparativo entre Empresas, depois Evolução Mensal — 1
+    # gráfico por página, em paisagem e grande (feedback do usuário 13/07/2026)
+    story.extend(_ir_paisagem())
+    story.append(Paragraph('Análise Comparativa entre Empresas', e['titulo_secao']))
     story.append(_linha_divisoria())
 
     buf_emp_chart = _chart_empresas_comparativo(filtered_data)
-    story.append(_imagem_de_buf(buf_emp_chart, largura_cm=16.5))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(_imagem_de_buf(buf_emp_chart, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+    story.append(PageBreak())
 
     # Gráfico de evolução mensal
+    story.append(Paragraph('Evolução Mensal por Empresa', e['titulo_secao']))
+    story.append(_linha_divisoria())
     MESES_NOME_PT = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
                      7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
     try:
         buf_mensal = _chart_producao_mensal_empresas(
             list(filtered_data.items()), MESES_NOME_PT
         )
-        story.append(_imagem_de_buf(buf_mensal, largura_cm=16.5))
+        story.append(_imagem_de_buf(buf_mensal, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
     except Exception as ex_m:
         logger.warning(f"Chart mensal: {ex_m}")
     story.append(PageBreak())
 
-    # ── Páginas por empresa ──────────────────────────────────────────────────
-    for emp, df_emp in filtered_data.items():
+    # ── Páginas por empresa (seguem em paisagem — cada empresa já tem página
+    # própria, então a troca de orientação não interrompe nada; dá mais espaço
+    # tanto pro gráfico diário quanto pra tabela facção/produto). ─────────────
+    _emp_items = list(filtered_data.items())
+    for _idx_emp, (emp, df_emp) in enumerate(_emp_items):
         story.append(Paragraph(f'Empresa: {emp}', e['titulo_secao']))
         story.append(_linha_divisoria(cor=C_TEAL))
 
@@ -2205,9 +2285,10 @@ def gerar_pdf_producao_geral(
             buf_e = _chart_producao_diaria(
                 prod_dia_e, meta_e,
                 titulo=f'Produção Diária — {emp}',
-                largura=13.0, altura=4.0,
+                largura=20.0, altura=6.0,
             )
-            story.append(_imagem_de_buf(buf_e, largura_cm=14.5))
+            story.append(_imagem_de_buf(buf_e, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                        altura_max_cm=ALTURA_GRAFICO_PAISAGEM_DUPLO))
         except Exception as ex_e:
             logger.warning(f"Chart {emp}: {ex_e}")
 
@@ -2273,6 +2354,11 @@ def gerar_pdf_producao_geral(
 
             story.append(t_fp)
 
+        # Na última empresa, agenda a volta pro retrato pra ANTES da quebra de
+        # página que já ia acontecer aqui — evita uma página em branco extra
+        # que apareceria se a troca de template disparasse outra quebra depois.
+        if _idx_emp == len(_emp_items) - 1:
+            story.append(NextPageTemplate('main'))
         story.append(PageBreak())
 
     # ── Conclusão ────────────────────────────────────────────────────────────
@@ -2508,26 +2594,31 @@ def gerar_pdf_previsao_cargas(
                 ('FONTNAME',  (4, ri), (4, ri), 'Helvetica-Bold'),
             ]))
     story.append(t_mes)
-    story.append(PageBreak())
 
-    # ── Gráfico Previsão vs Realizado ────────────────────────────────────────
-    story.append(Paragraph('Análise Gráfica', e['titulo_secao']))
+    # ── Previsão vs Realizado, depois Destino — 1 gráfico por página, em
+    # paisagem e grande (feedback do usuário 13/07/2026). ────────────────────
+    story.extend(_ir_paisagem())
+    story.append(Paragraph('Previsão vs. Realizado por Mês', e['titulo_secao']))
     story.append(_linha_divisoria())
 
     try:
         buf_grafico = _chart_cargas_mensal(df_mes)
-        story.append(_imagem_de_buf(buf_grafico, largura_cm=16.0))
-        story.append(Spacer(1, 0.5 * cm))
+        story.append(_imagem_de_buf(buf_grafico, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
     except Exception as ex_g:
         logger.warning(f'Chart cargas mensal: {ex_g}')
+    story.append(PageBreak())
 
+    story.append(Paragraph('Previsão por Destino', e['titulo_secao']))
+    story.append(_linha_divisoria())
     try:
         buf_dest = _chart_cargas_destino(df_cargos)
-        story.append(_imagem_de_buf(buf_dest, largura_cm=14.0))
+        story.append(_imagem_de_buf(buf_dest, largura_cm=22.0,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
     except Exception as ex_d:
         logger.warning(f'Chart cargas destino: {ex_d}')
 
-    story.append(PageBreak())
+    story.extend(_ir_retrato())
 
     # ── Detalhe de Registros ─────────────────────────────────────────────────
     story.append(Paragraph('Detalhe de Registros', e['titulo_secao']))
@@ -2763,8 +2854,9 @@ def gerar_pdf_carteira_pedidos(
 
     Parameters
     ----------
-    df            : DataFrame filtrado (ANO_MES, MES_LABEL, CATEGORIA,
-                    CLIENTE_CURTO, DESCRICAO, PEDIDO, QUANTIDADE, VALOR_TOTAL)
+    df            : DataFrame filtrado (ANO_MES, CATEGORIA, CLIENTE_CURTO, DESCRICAO,
+                    PEDIDO, NOTA, DATA, QUANTIDADE, VALOR_TOTAL) — usado tanto para os
+                    resumos agregados quanto para o detalhamento pedido a pedido
     total_valor   : soma de VALOR_TOTAL
     total_pecas   : soma de QUANTIDADE
     n_pedidos     : pedidos únicos
@@ -2810,7 +2902,7 @@ def gerar_pdf_carteira_pedidos(
     df_cat_det = (
         df.groupby('CATEGORIA')
         .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
-        .reset_index().sort_values('VALOR', ascending=False)
+        .reset_index().sort_values('PECAS', ascending=False)
     )
     df_cli = (
         df.groupby('CLIENTE_CURTO')
@@ -2820,8 +2912,9 @@ def gerar_pdf_carteira_pedidos(
     )
     df_prod = (
         df.groupby('DESCRICAO')
-        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
-        .reset_index().sort_values('VALOR', ascending=False)
+        .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'),
+             PEDIDOS=('PEDIDO', 'nunique'), CATEGORIA=('CATEGORIA', 'first'))
+        .reset_index().sort_values('PECAS', ascending=False)
     )
 
     # ── Documento ─────────────────────────────────────────────────────────────
@@ -2852,17 +2945,18 @@ def gerar_pdf_carteira_pedidos(
     story.append(_bloco_kpis(kpis, e, colunas=3))
     story.append(Spacer(1, 0.7 * cm))
 
-    # ── Tabela categorias ─────────────────────────────────────────────────────
+    # ── Tabela categorias — ordenada por Peças (o que pesa mais na produção),
+    # não por Valor. ────────────────────────────────────────────────────────
     story.append(Paragraph('Distribuição por Categoria', e['subtitulo_secao']))
     linhas_cat = [
-        [row['CATEGORIA'], _r(row['VALOR']),
-         f"{row['VALOR'] / total_valor * 100:.1f}%" if total_valor > 0 else '—',
-         _fmt(row['PECAS'])]
+        [row['CATEGORIA'], _fmt(row['PECAS']),
+         f"{row['PECAS'] / total_pecas * 100:.1f}%" if total_pecas > 0 else '—',
+         _r(row['VALOR'])]
         for _, row in df_cat_det.iterrows()
     ]
-    cw_cat = [5.5 * cm, 4.0 * cm, 3.0 * cm, 3.0 * cm]
+    cw_cat = [5.5 * cm, 3.5 * cm, 3.0 * cm, 4.0 * cm]
     story.append(_tabela_generica(
-        ['Categoria', 'Valor Total (R$)', '% Carteira', 'Peças'],
+        ['Categoria', 'Peças', '% Peças', 'Valor Total (R$)'],
         linhas_cat, e, cw_cat,
     ))
 
@@ -2872,7 +2966,7 @@ def gerar_pdf_carteira_pedidos(
         .groupby('DESCRICAO')
         .agg(VALOR=('VALOR_TOTAL', 'sum'), PECAS=('QUANTIDADE', 'sum'))
         .reset_index()
-        .sort_values('VALOR', ascending=False)
+        .sort_values('PECAS', ascending=False)
     )
     if not df_outros.empty:
         story.append(Spacer(1, 0.4 * cm))
@@ -2881,62 +2975,178 @@ def gerar_pdf_carteira_pedidos(
             e['nota'],
         ))
         linhas_outros = [
-            [row['DESCRICAO'][:55], _r(row['VALOR']),
-             f"{row['VALOR'] / total_valor * 100:.2f}%", _fmt(row['PECAS'])]
+            [row['DESCRICAO'][:55], _fmt(row['PECAS']),
+             f"{row['PECAS'] / total_pecas * 100:.2f}%" if total_pecas > 0 else '—',
+             _r(row['VALOR'])]
             for _, row in df_outros.iterrows()
         ]
-        cw_out = [8.5 * cm, 3.5 * cm, 2.5 * cm, 2.5 * cm]
+        cw_out = [8.5 * cm, 3.0 * cm, 3.0 * cm, 3.5 * cm]
         story.append(_tabela_generica(
-            ['Produto', 'Valor (R$)', '% Carteira', 'Peças'],
+            ['Produto', 'Peças', '% Peças', 'Valor (R$)'],
             linhas_outros, e, cw_out,
             cor_header=C_GRAY_TEXT,
         ))
 
     story.append(PageBreak())
 
-    # ── Gráficos: evolução + pizza ────────────────────────────────────────────
-    story.append(Paragraph('Análise Gráfica', e['titulo_secao']))
+    # ── Resumo por Produto (SKU) — TODOS os produtos, não só um top-N, pois
+    # este relatório serve de referência de "o que ainda falta produzir"
+    # (pedido do usuário 13/07/2026). Ordenado por Peças (prioridade de
+    # produção), com cabeçalho repetido a cada página (repeatRows=1).
+    story.append(Paragraph('Resumo por Produto — Peças em Aberto', e['titulo_secao']))
     story.append(_linha_divisoria())
-    try:
-        story.append(_imagem_de_buf(_chart_carteira_mensal(df_mes), largura_cm=16.5))
-        story.append(Spacer(1, 0.5 * cm))
-    except Exception as ex:
-        logger.warning(f'Chart carteira mensal: {ex}')
-
-    story.append(Paragraph('Distribuição por Categoria', e['subtitulo_secao']))
-    try:
-        story.append(_imagem_de_buf(
-            _chart_carteira_pizza_categoria(df_cat), largura_cm=14.0))
-    except Exception as ex:
-        logger.warning(f'Chart carteira pizza: {ex}')
+    story.append(Paragraph(
+        f'Todos os {len(df_prod)} produtos com pedido em aberto no período, ordenados '
+        f'pela quantidade de peças pendentes.',
+        e['nota'],
+    ))
+    linhas_prod_full = [
+        [row['DESCRICAO'][:48], row['CATEGORIA'], _fmt(row['PECAS']),
+         _fmt(row['PEDIDOS']), _r(row['VALOR']),
+         f"{row['PECAS'] / total_pecas * 100:.1f}%" if total_pecas > 0 else '—']
+        for _, row in df_prod.iterrows()
+    ]
+    cw_prod_full = [6.0 * cm, 3.0 * cm, 2.2 * cm, 2.0 * cm, 3.0 * cm, 2.3 * cm]
+    story.append(_tabela_generica(
+        ['Produto', 'Categoria', 'Peças', 'Pedidos', 'Valor Total (R$)', '% Peças'],
+        linhas_prod_full, e, cw_prod_full,
+    ))
 
     story.append(PageBreak())
 
-    # ── Gráficos: clientes + produtos ─────────────────────────────────────────
-    story.append(Paragraph('Análise por Cliente e Produto', e['titulo_secao']))
+    # ── Detalhamento Completo — O Que Produzir ────────────────────────────────
+    # Todo pedido em aberto, agrupado por Categoria e depois por Produto (cada
+    # produto com um cabeçalho mostrando o total pendente, seguido da lista de
+    # pedidos individuais que compõem esse total) — é a seção que a fábrica usa
+    # pra saber exatamente o que e quanto falta produzir, pedido por pedido.
+    # Ordenado por Peças (maior demanda primeiro), não alfabético, pra
+    # priorizar visualmente o que pesa mais na produção. Logo após o Resumo
+    # por Produto (pedido do usuário 13/07/2026), pra quem quer o detalhe
+    # já encontrar na sequência do resumo agregado.
+    story.append(Paragraph('Detalhamento Completo — O Que Produzir', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    story.append(Paragraph(
+        'Todos os pedidos em aberto no período, agrupados por categoria e produto — '
+        'quantidade total pendente e os pedidos individuais que a compõem.',
+        e['nota'],
+    ))
+    story.append(Spacer(1, 0.2 * cm))
+
+    cab_det_prod = ['Pedido', 'Nota', 'Cliente', 'Data', 'Peças', 'Valor (R$)']
+    cw_det_prod = [2.3 * cm, 1.8 * cm, 4.7 * cm, 2.2 * cm, 2.2 * cm, 3.3 * cm]
+
+    categorias_ordenadas = df_cat_det['CATEGORIA'].tolist()
+    for categoria in categorias_ordenadas:
+        df_cat_grp = df[df['CATEGORIA'] == categoria]
+        total_cat_pecas = int(df_cat_grp['QUANTIDADE'].sum())
+
+        _t_hdr_cat = Table([[Paragraph(
+            f"{categoria}  —  Total: {_fmt(total_cat_pecas)} peças",
+            ParagraphStyle('_cat_hdr_cp', parent=e['subtitulo_secao'],
+                           textColor=C_WHITE, fontName='Helvetica-Bold',
+                           fontSize=10.5, spaceBefore=0, spaceAfter=0),
+        )]], colWidths=[PAGE_W - 2 * MARGIN])
+        _t_hdr_cat.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), C_TEAL),
+            ('TOPPADDING', (0, 0), (-1, -1), 7),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(Spacer(1, 0.35 * cm))
+        story.append(_t_hdr_cat)
+        story.append(Spacer(1, 0.15 * cm))
+
+        produtos_cat = (
+            df_cat_grp.groupby('DESCRICAO')['QUANTIDADE'].sum()
+            .sort_values(ascending=False).index.tolist()
+        )
+        for produto in produtos_cat:
+            df_p = df_cat_grp[df_cat_grp['DESCRICAO'] == produto]
+            total_p_pecas = int(df_p['QUANTIDADE'].sum())
+            n_pedidos_p = df_p['PEDIDO'].nunique()
+
+            header_txt = (
+                f"{produto}  -  Total: {_fmt(total_p_pecas)} peças  |  "
+                f"{n_pedidos_p} pedido(s)"
+            )
+            _t_hdr_prod = Table([[Paragraph(
+                header_txt,
+                ParagraphStyle('_prod_hdr_cp', parent=e['subtitulo_secao'],
+                               textColor=C_WHITE, fontName='Helvetica-Bold',
+                               fontSize=9, spaceBefore=0, spaceAfter=0),
+            )]], colWidths=[PAGE_W - 2 * MARGIN])
+            _t_hdr_prod.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(_t_hdr_prod)
+
+            det_p = df_p.sort_values('DATA')
+            linhas_det_prod = [
+                [str(r['PEDIDO']), str(r.get('NOTA', '')), str(r['CLIENTE_CURTO'])[:32],
+                 pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'),
+                 _fmt(r['QUANTIDADE']), _r(r['VALOR_TOTAL'])]
+                for _, r in det_p.iterrows()
+            ]
+            story.append(_tabela_generica(cab_det_prod, linhas_det_prod, e, cw_det_prod,
+                                          cor_header=colors.HexColor('#2A6496')))
+            story.append(Spacer(1, 0.25 * cm))
+
+    # ── Gráficos: 1 análise por página, em paisagem e grande (feedback do
+    # usuário 13/07/2026: em retrato ficavam pequenos demais pra ler os
+    # números; depois, 2 gráficos empilhados na mesma página ainda ficavam
+    # pequenos — cada gráfico agora tem a página inteira pra si). ────────────
+    story.extend(_ir_paisagem())
+    story.append(Paragraph('Análise Gráfica', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    try:
+        story.append(_imagem_de_buf(_chart_carteira_mensal(df_mes), largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+    except Exception as ex:
+        logger.warning(f'Chart carteira mensal: {ex}')
+    story.append(PageBreak())
+
+    story.append(Paragraph('Distribuição por Categoria', e['titulo_secao']))
+    story.append(_linha_divisoria())
+    try:
+        story.append(_imagem_de_buf(
+            _chart_carteira_pizza_categoria(df_cat), largura_cm=20.0,
+            altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+    except Exception as ex:
+        logger.warning(f'Chart carteira pizza: {ex}')
+    story.append(PageBreak())
+
+    story.append(Paragraph('Top Clientes — Valor Total', e['titulo_secao']))
     story.append(_linha_divisoria())
     try:
         story.append(_imagem_de_buf(
             _chart_barras_h(df_cli, 'CLIENTE_CURTO', 'VALOR',
                             'Top Clientes — Valor Total (R$)', top_n=10, cor='#45B7D1'),
-            largura_cm=16.5,
+            largura_cm=LARGURA_GRAFICO_PAISAGEM,
+            altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO,
         ))
-        story.append(Spacer(1, 0.5 * cm))
     except Exception as ex:
         logger.warning(f'Chart carteira clientes: {ex}')
+    story.append(PageBreak())
 
+    story.append(Paragraph('Top Produtos — Peças em Aberto', e['titulo_secao']))
+    story.append(_linha_divisoria())
     try:
         story.append(_imagem_de_buf(
-            _chart_barras_h(df_prod, 'DESCRICAO', 'VALOR',
-                            'Top 15 Produtos — Valor Total (R$)', top_n=15, cor='#2AA89A'),
-            largura_cm=16.5,
+            _chart_barras_h(df_prod, 'DESCRICAO', 'PECAS',
+                            'Top 15 Produtos — Peças em Aberto', top_n=15, cor='#2AA89A'),
+            largura_cm=LARGURA_GRAFICO_PAISAGEM,
+            altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO,
         ))
     except Exception as ex:
         logger.warning(f'Chart carteira produtos: {ex}')
 
-    story.append(PageBreak())
+    story.extend(_ir_retrato())
 
-    # ── Tabela por cliente ────────────────────────────────────────────────────
+    # ── Tabela por cliente — TODOS os clientes, sem cortar top-N (mesmo
+    # motivo do Resumo por Produto acima). ──────────────────────────────────
     story.append(Paragraph('Resumo por Cliente', e['titulo_secao']))
     story.append(_linha_divisoria())
     df_cli['PCT']    = (df_cli['VALOR'] / total_valor * 100).round(1) if total_valor > 0 else 0
@@ -2944,7 +3154,7 @@ def gerar_pdf_carteira_pedidos(
     linhas_cli = [
         [row['CLIENTE_CURTO'][:30], _fmt(row['PEDIDOS']), _fmt(row['PECAS']),
          _r(row['VALOR']), _r(row['TICKET']), f"{row['PCT']:.1f}%"]
-        for _, row in df_cli.head(30).iterrows()
+        for _, row in df_cli.iterrows()
     ]
     cw_cli = [4.5 * cm, 2.0 * cm, 2.5 * cm, 3.5 * cm, 3.5 * cm, 2.5 * cm]
     story.append(_tabela_generica(
@@ -2953,25 +3163,28 @@ def gerar_pdf_carteira_pedidos(
     ))
 
     # ── Conclusão ─────────────────────────────────────────────────────────────
-    story.append(PageBreak())
+    story.append(Spacer(1, 0.4 * cm))
     story.append(Paragraph('Conclusão', e['titulo_secao']))
     story.append(_linha_divisoria())
 
     top_cat     = df_cat_det.iloc[0]['CATEGORIA'] if not df_cat_det.empty else 'N/D'
     top_cli     = df_cli.iloc[0]['CLIENTE_CURTO'] if not df_cli.empty else 'N/D'
-    top_pct_cat = (df_cat_det.iloc[0]['VALOR'] / total_valor * 100
-                   if not df_cat_det.empty and total_valor > 0 else 0)
+    top_prod    = df_prod.iloc[0]['DESCRICAO'] if not df_prod.empty else 'N/D'
+    top_pct_cat = (df_cat_det.iloc[0]['PECAS'] / total_pecas * 100
+                   if not df_cat_det.empty and total_pecas > 0 else 0)
 
     conclusao_html = (
         f'A carteira de pedidos no período <b>{periodo_str}</b> totaliza '
         f'<b>{_rk(total_valor)}</b> em <b>{_fmt(n_pedidos)} pedidos</b>, '
-        f'representando <b>{_fmt(total_pecas)} peças</b> para <b>{n_clientes} clientes</b>. '
+        f'representando <b>{_fmt(total_pecas)} peças</b> para <b>{n_clientes} clientes</b> '
+        f'e <b>{n_produtos} produtos</b> distintos ainda em aberto. '
         f'O ticket médio por pedido é de <b>{_rk(ticket_medio)}</b>. '
-        f'A categoria predominante é <b>{top_cat}</b> ({top_pct_cat:.1f}% do valor total) '
+        f'A categoria que mais pesa em peças é <b>{top_cat}</b> ({top_pct_cat:.1f}% do total), '
+        f'o produto com maior demanda é <b>{top_prod}</b> '
         f'e o cliente com maior volume é <b>{top_cli}</b>.'
     )
     story.append(Paragraph(conclusao_html, e['corpo']))
-    story.append(Spacer(1, 1.2 * cm))
+    story.append(Spacer(1, 0.8 * cm))
     story.append(Paragraph(
         f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
         f'Carteira de Pedidos',
@@ -3259,68 +3472,10 @@ def gerar_pdf_faccoes(
 
         story.append(PageBreak())
 
-    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção,
-    # com o detalhe diário já embutido (junção das duas tabelas que existiam
-    # antes — confirmado com o usuário 07/07/2026). A meta é da facção como
-    # um todo (soma ponderada de todos os produtos e clientes que ela
-    # atende) — não existe uma meta por produto isolado. Por isso ela
-    # aparece uma vez, no cabeçalho de cada facção, seguida do detalhe dia a
-    # dia do que ela produziu no período.
-    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    meta_fac_map = {}
-    if rank_df is not None and not rank_df.empty:
-        for _, rr in rank_df.iterrows():
-            meta_fac_map[str(rr['FACCAO'])] = rr
-
-    cab_dp = ['Data', 'Produto', 'Empresa', 'Produzido']
-    cw_dp = [2.4*cm, 5.6*cm, 5.0*cm, 3.0*cm]
-
-    if not df_mes.empty:
-        for faccao in sorted(df_mes['FACCAO'].unique()):
-            df_f = df_mes[df_mes['FACCAO'] == faccao]
-            total_fac = int(df_f['QUANTIDADE'].sum())
-            det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'])['QUANTIDADE']
-                   .sum().reset_index().sort_values('DATA'))
-
-            rr = meta_fac_map.get(faccao)
-            if rr is not None and rr['META_MES'] > 0:
-                header_txt = (
-                    f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
-                    f"Meta Diária: {_fmt(rr['META_DIA'])}  |  "
-                    f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
-                )
-            else:
-                header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
-
-            _t_hdr_dp = Table([[Paragraph(
-                header_txt,
-                ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
-                               textColor=C_WHITE, fontName='Helvetica-Bold',
-                               fontSize=9, spaceBefore=0, spaceAfter=0),
-            )]], colWidths=[PAGE_W - 2 * MARGIN])
-            _t_hdr_dp.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-                ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ]))
-            story.append(_t_hdr_dp)
-
-            linhas_dp = [
-                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), _txt(r['PRODUTO']),
-                 _txt(r['CLIENTE']), _fmt(r['QUANTIDADE'])]
-                for _, r in det.iterrows()
-            ]
-            story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
-                                          cor_header=colors.HexColor('#2A6496')))
-            story.append(Spacer(1, 0.3 * cm))
-
-    story.append(PageBreak())
-
     # ── Resumo por Facção — uma linha por facção, com os tipos de produto
     # que ela faz e a meta (que é dela, não do produto — daí ficar 1 linha).
+    # Movido pra logo após a tabela de totais / painel de alertas e antes do
+    # detalhamento diário — pedido do usuário 13/07/2026.
     story.append(Paragraph('Resumo por Facção', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -3379,63 +3534,108 @@ def gerar_pdf_faccoes(
     story.append(Spacer(1, 0.4 * cm))
     story.append(PageBreak())
 
-    # ── Facção x Meta — gráfico (alertas já exibidos logo após os KPIs) ──────
+    # ── Detalhamento por Produto / Empresa / Facção, agrupado por facção,
+    # com o detalhe diário já embutido (junção das duas tabelas que existiam
+    # antes — confirmado com o usuário 07/07/2026). A meta é da facção como
+    # um todo (soma ponderada de todos os produtos e clientes que ela
+    # atende) — não existe uma meta por produto isolado. Por isso ela
+    # aparece uma vez, no cabeçalho de cada facção, seguida do detalhe dia a
+    # dia do que ela produziu no período.
+    story.append(Paragraph('Detalhamento por Produto / Empresa / Faccao', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    meta_fac_map = {}
     if rank_df is not None and not rank_df.empty:
-        rk = rank_df.sort_values(
-            ['PCT', 'QUANTIDADE'], ascending=[False, False], na_position='last'
-        ).reset_index(drop=True)
+        for _, rr in rank_df.iterrows():
+            meta_fac_map[str(rr['FACCAO'])] = rr
 
-        story.append(Paragraph('Facção x Meta', e['titulo_secao']))
-        story.append(_linha_divisoria())
-        story.append(Paragraph(
-            'Meta mensal de cada facção = meta diária × dias em que a facção realmente '
-            'produziu no período (ou dias úteis do mês, para facções sem produção no período). '
-            'O último dado lançado de cada facção é usado para separar quem está atrasado no '
-            'envio de quem realmente produziu menos.',
-            nota_fac,
-        ))
-        story.append(Spacer(1, 0.2 * cm))
+    cab_dp = ['Data', 'Produto', 'Empresa', 'Produzido', 'Observações']
+    cw_dp = [2.1*cm, 4.6*cm, 4.0*cm, 2.3*cm, 3.9*cm]
 
-        try:
-            buf_fm = _chart_faccao_vs_meta(rk)
-            story.append(_imagem_de_buf(buf_fm, largura_cm=16.5))
-        except Exception as _ex:
-            logger.warning('gerar_pdf_faccoes: chart faccao x meta: %s', _ex)
+    def _join_unique_obs(s: pd.Series) -> str:
+        """Junta Observações não-vazias e únicas com ' / ' quando o groupby
+        abaixo colapsa mais de uma linha original na mesma (Data, Produto,
+        Cliente) — mesmo padrão de utils/controle_op.py::agregar_por_op."""
+        vals = sorted({str(v).strip() for v in s if str(v).strip() not in ('', 'nan', 'NAN', 'None')})
+        return ' / '.join(vals)
 
-        story.append(PageBreak())
+    if not df_mes.empty:
+        for faccao in sorted(df_mes['FACCAO'].unique()):
+            df_f = df_mes[df_mes['FACCAO'] == faccao]
+            total_fac = int(df_f['QUANTIDADE'].sum())
+            _agg_dp = {'QUANTIDADE': ('QUANTIDADE', 'sum')}
+            if 'OBSERVACAO' in df_f.columns:
+                _agg_dp['OBSERVACAO'] = ('OBSERVACAO', _join_unique_obs)
+            det = (df_f.groupby(['DATA', 'PRODUTO', 'CLIENTE'], as_index=False)
+                   .agg(**_agg_dp).sort_values('DATA'))
 
-    # ── Gráfico produção diária ──────────────────────────────────────────────
+            rr = meta_fac_map.get(faccao)
+            if rr is not None and rr['META_MES'] > 0:
+                header_txt = (
+                    f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  "
+                    f"Meta Diária: {_fmt(rr['META_DIA'])}  |  "
+                    f"Meta Período: {_fmt(rr['META_MES'])}  |  % Meta: {rr['PCT']:.1f}%"
+                )
+            else:
+                header_txt = f"{faccao}  -  Produzido: {_fmt(total_fac)}  |  sem meta cadastrada"
+
+            _t_hdr_dp = Table([[Paragraph(
+                header_txt,
+                ParagraphStyle('_fh_dp', parent=e['subtitulo_secao'],
+                               textColor=C_WHITE, fontName='Helvetica-Bold',
+                               fontSize=9, spaceBefore=0, spaceAfter=0),
+            )]], colWidths=[PAGE_W - 2 * MARGIN])
+            _t_hdr_dp.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), C_NAVY),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            story.append(_t_hdr_dp)
+
+            linhas_dp = [
+                [pd.Timestamp(r['DATA']).strftime('%d/%m/%Y'), _txt(r['PRODUTO']),
+                 _txt(r['CLIENTE']), _fmt(r['QUANTIDADE']),
+                 str(r.get('OBSERVACAO', ''))[:40]]
+                for _, r in det.iterrows()
+            ]
+            story.append(_tabela_generica(cab_dp, linhas_dp, e, cw_dp,
+                                          cor_header=colors.HexColor('#2A6496')))
+            story.append(Spacer(1, 0.3 * cm))
+
+    # ── Produção diária, depois Mix de produtos — 1 gráfico por página, em
+    # paisagem e grande (feedback do usuário 13/07/2026). ────────────────────
+    story.extend(_ir_paisagem())
     if not df_mes.empty:
         prod_diaria = (
             df_mes.groupby('DATA')['QUANTIDADE'].sum()
             .reset_index().sort_values('DATA')
         )
         try:
+            story.append(Paragraph('Produção Diária', e['titulo_secao']))
+            story.append(_linha_divisoria())
             buf_chart = _chart_producao_diaria(
                 prod_diaria, meta_dia_total,
                 titulo=f'Producao Diaria — Faccoes  |  Meta/dia: {_fmt(meta_dia_total)} pc',
-                largura=16.0, altura=5.0,
+                largura=24.0, altura=7.5,
             )
-            story.append(_imagem_de_buf(buf_chart, largura_cm=16.5))
-            story.append(Spacer(1, 0.4 * cm))
+            story.append(_imagem_de_buf(buf_chart, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                        altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
+            story.append(PageBreak())
         except Exception as _ex:
             logger.warning('gerar_pdf_faccoes: chart diario: %s', _ex)
 
     # ── Mix de produtos por facção ────────────────────────────────────────────
     if not df_mes.empty:
         try:
+            story.append(Paragraph('Mix de Produtos por Facção', e['titulo_secao']))
+            story.append(_linha_divisoria())
             buf_mix = _chart_mix_produtos_faccao(df_mes, top_n_produtos=6)
-            story.append(_imagem_de_buf(buf_mix, largura_cm=16.5))
+            story.append(_imagem_de_buf(buf_mix, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                        altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
             story.append(Spacer(1, 0.4 * cm))
         except Exception as _ex:
             logger.warning('gerar_pdf_faccoes: chart mix produtos: %s', _ex)
-
-    story.append(Spacer(1, 0.8 * cm))
-    story.append(Paragraph(
-        f'Relatorio gerado automaticamente pelo Sistema de Gestao Industrial<br/>'
-        f'Producao por Faccao',
-        ParagraphStyle('ass_fac', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
-    ))
 
     doc.build(story)
     return buf.getvalue()
@@ -3445,60 +3645,23 @@ def gerar_pdf_faccoes(
 # GERADOR — PRODUÇÃO POR COLABORADOR INTERNO (LITTEX / GGTTEX)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def gerar_pdf_colaborador(
-    df_colab: pd.DataFrame,
-    colaborador: str,
-    unidade_label: str,
-    data_ini: date,
-    data_fim: date,
-    filtros_texto: str = '',
-) -> bytes:
-    """
-    Relatório PDF de Produção de um Colaborador Interno (LITTEX / GGTTEX).
+_MESES_PT_COLAB = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
+                   7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
 
-    Parameters
-    ----------
-    df_colab      : DataFrame já filtrado pelo colaborador e pelo período —
-                     colunas DATA, COLABORADOR, QUANTIDADE, SETOR, CLIENTE
-                     (ver utils/producao_interno_loader.py — PRODUTO fica
-                     vazio em algumas unidades, como GGTTEX Cortina, onde
-                     SETOR é quem carrega o tipo de operação/produção).
-    colaborador   : nome do colaborador (já em maiúsculas).
-    unidade_label : rótulo da unidade (ex.: "GGTTEX Cortina").
-    data_ini/fim  : período selecionado.
-    filtros_texto : string descritiva de filtros adicionais.
-    """
-    e = _estilos()
-    periodo_str = (
-        f"{data_ini.strftime('%d/%m/%Y')}  até  {data_fim.strftime('%d/%m/%Y')}"
-        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
-    )
-    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
 
-    buf = io.BytesIO()
-    doc = _RelatorioDoc(
-        buf,
-        titulo_rel=f'Relatório de Produção · {colaborador.title()}',
-        subtitulo_rel=f'{unidade_label} — Colaborador Interno',
-        periodo=periodo_str,
-        gerado_em=gerado_em,
-        filtros=filtros_texto,
-        capa=False,
-    )
-
+def _bloco_colaborador(df_colab: pd.DataFrame, colaborador: str, mes_ref: int, e: dict) -> list:
+    """Monta o bloco de conteúdo (título + 3 tabelas) de UM colaborador —
+    extraído pra ser reaproveitado tanto no relatório individual
+    (gerar_pdf_colaborador) quanto no relatório de todos juntos
+    (gerar_pdf_colaboradores_todos), evitando duas cópias da mesma lógica."""
     total_prod = int(df_colab['QUANTIDADE'].sum()) if not df_colab.empty else 0
 
-    meses_pt = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
-                7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
-    titulo_txt = f'Relatório de Produção — {colaborador.title()} — {meses_pt.get(data_ini.month, "")}'
+    titulo_txt = f'Relatório de Produção — {colaborador.title()} — {_MESES_PT_COLAB.get(mes_ref, "")}'
     titulo_estilo = ParagraphStyle(
         'titulo_relatorio_colab', parent=e['titulo_secao'],
         fontSize=18, alignment=TA_CENTER, spaceBefore=0, spaceAfter=18,
     )
 
-    # ── Bloco de conteúdo (título + tabelas) — medido pra poder centralizar
-    # verticalmente na página, já que o relatório é curto e sobrava muito
-    # espaço em branco embaixo (confirmado com o usuário 08/07/2026).
     bloco: list = [Paragraph(titulo_txt, titulo_estilo)]
 
     bloco.append(Paragraph('Produção por Setor / Tipo', e['titulo_secao']))
@@ -3566,6 +3729,54 @@ def gerar_pdf_colaborador(
         f'Produção — Colaborador Interno',
         ParagraphStyle('ass_colab', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
     ))
+    return bloco
+
+
+def gerar_pdf_colaborador(
+    df_colab: pd.DataFrame,
+    colaborador: str,
+    unidade_label: str,
+    data_ini: date,
+    data_fim: date,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Produção de um Colaborador Interno (LITTEX / GGTTEX).
+
+    Parameters
+    ----------
+    df_colab      : DataFrame já filtrado pelo colaborador e pelo período —
+                     colunas DATA, COLABORADOR, QUANTIDADE, SETOR, CLIENTE
+                     (ver utils/producao_interno_loader.py — PRODUTO fica
+                     vazio em algumas unidades, como GGTTEX Cortina, onde
+                     SETOR é quem carrega o tipo de operação/produção).
+    colaborador   : nome do colaborador (já em maiúsculas).
+    unidade_label : rótulo da unidade (ex.: "GGTTEX Cortina").
+    data_ini/fim  : período selecionado.
+    filtros_texto : string descritiva de filtros adicionais.
+    """
+    e = _estilos()
+    periodo_str = (
+        f"{data_ini.strftime('%d/%m/%Y')}  até  {data_fim.strftime('%d/%m/%Y')}"
+        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
+    )
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel=f'Relatório de Produção · {colaborador.title()}',
+        subtitulo_rel=f'{unidade_label} — Colaborador Interno',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+        capa=False,
+    )
+
+    # ── Bloco de conteúdo (título + tabelas) — medido pra poder centralizar
+    # verticalmente na página, já que o relatório é curto e sobrava muito
+    # espaço em branco embaixo (confirmado com o usuário 08/07/2026).
+    bloco = _bloco_colaborador(df_colab, colaborador, data_ini.month, e)
 
     frame_w = PAGE_W - 2 * MARGIN
     frame_h = PAGE_H - 3.2 * cm
@@ -3573,6 +3784,96 @@ def gerar_pdf_colaborador(
     espaco_topo = max(0.0, (frame_h - altura_bloco) / 2)
 
     story = [Spacer(1, espaco_topo), *bloco]
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def gerar_pdf_colaboradores_todos(
+    df_unidade: pd.DataFrame,
+    colaboradores: list[str],
+    unidade_label: str,
+    data_ini: date,
+    data_fim: date,
+    filtros_texto: str = '',
+) -> bytes:
+    """
+    Relatório PDF de Produção de TODOS os colaboradores de uma unidade juntos
+    — mesmo conteúdo do relatório individual (gerar_pdf_colaborador), um
+    colaborador por página, precedido de um resumo geral. Pedido do usuário
+    13/07/2026: antes só dava pra gerar um colaborador de cada vez.
+
+    Parameters
+    ----------
+    df_unidade    : DataFrame já filtrado pelo período (todos os colaboradores
+                     da unidade) — mesmas colunas de gerar_pdf_colaborador.
+    colaboradores : lista de colaboradores a incluir, na ordem desejada
+                     (normalmente por produção total, decrescente).
+    unidade_label : rótulo da unidade (ex.: "GGTTEX Cortina").
+    data_ini/fim  : período selecionado.
+    filtros_texto : string descritiva de filtros adicionais.
+    """
+    e = _estilos()
+    periodo_str = (
+        f"{data_ini.strftime('%d/%m/%Y')}  até  {data_fim.strftime('%d/%m/%Y')}"
+        if data_ini != data_fim else data_ini.strftime('%d/%m/%Y')
+    )
+    gerado_em = datetime.now().strftime('%d/%m/%Y  %H:%M')
+
+    buf = io.BytesIO()
+    doc = _RelatorioDoc(
+        buf,
+        titulo_rel=f'Relatório de Produção · {unidade_label}',
+        subtitulo_rel=f'{unidade_label} — Todos os Colaboradores',
+        periodo=periodo_str,
+        gerado_em=gerado_em,
+        filtros=filtros_texto,
+    )
+
+    story = [PageBreak()]
+
+    # ── Resumo Geral ─────────────────────────────────────────────────────────
+    story.append(Paragraph('Resumo Geral', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    total_geral = int(df_unidade['QUANTIDADE'].sum()) if not df_unidade.empty else 0
+    n_colabs = len(colaboradores)
+    kpis = [
+        {'label': '📦 Total Produzido', 'valor': _fmt(total_geral), 'cor': C_TEAL_LT},
+        {'label': '👥 Colaboradores',   'valor': str(n_colabs),      'cor': C_GRAY_BG},
+    ]
+    story.append(_bloco_kpis(kpis, e, colunas=2))
+    story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph('Produção por Colaborador', e['subtitulo_secao']))
+    resumo_grp = (
+        df_unidade.groupby('COLABORADOR', as_index=False)['QUANTIDADE'].sum()
+        .sort_values('QUANTIDADE', ascending=False)
+    ) if not df_unidade.empty else pd.DataFrame(columns=['COLABORADOR', 'QUANTIDADE'])
+    cab_rg = ['Colaborador', 'Produzido', '% do Total']
+    cw_rg = [8.0 * cm, 4.0 * cm, 4.0 * cm]
+    linhas_rg = []
+    for _, r in resumo_grp.iterrows():
+        pct = r['QUANTIDADE'] / total_geral * 100 if total_geral else 0
+        linhas_rg.append([str(r['COLABORADOR']).title(), _fmt(r['QUANTIDADE']), f"{pct:.1f}%"])
+    story.append(_tabela_generica(cab_rg, linhas_rg, e, cw_rg, cor_header=C_NAVY))
+    story.append(PageBreak())
+
+    # ── Um colaborador por página, mesmo bloco do relatório individual ───────
+    frame_w = PAGE_W - 2 * MARGIN
+    frame_h = PAGE_H - 3.2 * cm
+    for idx, colaborador in enumerate(colaboradores):
+        df_colab = (
+            df_unidade[df_unidade['COLABORADOR'] == colaborador]
+            if not df_unidade.empty else df_unidade
+        )
+        bloco = _bloco_colaborador(df_colab, colaborador, data_ini.month, e)
+        altura_bloco = sum(f.wrap(frame_w, frame_h)[1] for f in bloco)
+        espaco_topo = max(0.0, (frame_h - altura_bloco) / 2)
+        story.append(Spacer(1, espaco_topo))
+        story.extend(bloco)
+        if idx < len(colaboradores) - 1:
+            story.append(PageBreak())
 
     doc.build(story)
     return buf.getvalue()
@@ -3639,6 +3940,9 @@ def gerar_pdf_programacao(
     story.append(Spacer(1, 0.6 * cm))
 
     # ── Gráfico Programado vs Cortado por Semana ──────────────────────────────
+    # Página em paisagem — gráfico com muitas semanas fica ilegível em retrato
+    # (feedback do usuário 13/07/2026).
+    story.extend(_ir_paisagem())
     if not df_agg.empty and 'SEMANA' in df_agg.columns:
         try:
             semanas = sorted(df_agg['SEMANA'].dropna().unique())
@@ -3652,7 +3956,7 @@ def gerar_pdf_programacao(
             ]
             df_sem = pd.DataFrame(sem_data)
 
-            fig_sem, ax_sem = plt.subplots(figsize=(14, 4.5))
+            fig_sem, ax_sem = plt.subplots(figsize=(20, 6.5))
             fig_sem.patch.set_facecolor(MP_BG)
             ax_sem.set_facecolor(MP_BG)
             x = range(len(df_sem))
@@ -3676,12 +3980,13 @@ def gerar_pdf_programacao(
                             bbox_inches='tight', facecolor=MP_BG)
             plt.close(fig_sem)
             buf_sem.seek(0)
-            story.append(_imagem_de_buf(buf_sem, largura_cm=16.5))
+            story.append(_imagem_de_buf(buf_sem, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                        altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
             story.append(Spacer(1, 0.4 * cm))
         except Exception as _ex:
             logger.warning('gerar_pdf_programacao: chart semanas: %s', _ex)
 
-    story.append(PageBreak())
+    story.extend(_ir_retrato())
 
     # ── Tabela de OPs ────────────────────────────────────────────────────────
     story.append(Paragraph('Resumo por Ordem de Producao (OP)', e['titulo_secao']))
@@ -3798,6 +4103,9 @@ def gerar_pdf_fechamento_op(
     story.append(Spacer(1, 0.6 * cm))
 
     # ── Gráfico OPs concluídas por semana ─────────────────────────────────────
+    # Página em paisagem — gráfico com muitas semanas fica ilegível em retrato
+    # (feedback do usuário 13/07/2026).
+    story.extend(_ir_paisagem())
     _df_concl = df_agg[df_agg['STATUS_CORTE'] == 'Concluído'].copy() if not df_agg.empty else df_agg
     if not _df_concl.empty and 'DATA_CONCLUSAO' in _df_concl.columns and _df_concl['DATA_CONCLUSAO'].notna().any():
         try:
@@ -3806,7 +4114,7 @@ def gerar_pdf_fechamento_op(
             _por_semana = _dc.groupby('SEMANA_CONCLUSAO').size().reset_index(name='OPS')
             _por_semana = _por_semana.sort_values('SEMANA_CONCLUSAO')
 
-            fig_sem, ax_sem = plt.subplots(figsize=(14, 4.5))
+            fig_sem, ax_sem = plt.subplots(figsize=(20, 6.5))
             fig_sem.patch.set_facecolor(MP_BG)
             ax_sem.set_facecolor(MP_BG)
             ax_sem.bar(range(len(_por_semana)), _por_semana['OPS'], color=MP_BAR_OK, alpha=0.85)
@@ -3823,12 +4131,13 @@ def gerar_pdf_fechamento_op(
             fig_sem.savefig(buf_sem, format='png', dpi=150, bbox_inches='tight', facecolor=MP_BG)
             plt.close(fig_sem)
             buf_sem.seek(0)
-            story.append(_imagem_de_buf(buf_sem, largura_cm=16.5))
+            story.append(_imagem_de_buf(buf_sem, largura_cm=LARGURA_GRAFICO_PAISAGEM,
+                                        altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
             story.append(Spacer(1, 0.4 * cm))
         except Exception as _ex:
             logger.warning('gerar_pdf_fechamento_op: chart semanas: %s', _ex)
 
-    story.append(PageBreak())
+    story.extend(_ir_retrato())
 
     # ── Tabela de OPs ────────────────────────────────────────────────────────
     story.append(Paragraph('Histórico de OPs', e['titulo_secao']))

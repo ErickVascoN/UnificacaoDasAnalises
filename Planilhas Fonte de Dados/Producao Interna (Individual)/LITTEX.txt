@@ -1,0 +1,8 @@
+Produção Interna - LITTEX
+
+Link: https://docs.google.com/spreadsheets/d/1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p/edit#gid=1697720285
+
+ID:  1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p
+GID: 1697720285
+
+Usado em: config/settings.py (PRODUCAO_INTERNO_SHEETS["LITTEX"])

@@ -606,6 +606,50 @@ def _build_producao_real(centros: list[str]) -> pd.DataFrame:
 # ─
 # CÁLCULO DE INDICADORES
 # ─
+def _producao_matched(
+    df_real: pd.DataFrame,
+    resp: str, emp: str,
+    mes: int, ano: int,
+    base_prod: str,
+) -> pd.DataFrame:
+    """
+    Filtra df_real pela produção que corresponde a um prestador/empresa/produto
+    de uma linha de meta, usando 3 estratégias em cascata (a mais específica que
+    encontrar dados vence). Compartilhado por _calcular_indicadores (indicador
+    mensal) e _construir_semanal (quebra semanal) — antes cada um tinha sua
+    própria cópia dessa lógica.
+    """
+    mes_mask = df_real["DATA"].apply(lambda d: d.month == mes and d.year == ano)
+    has_prod = "PRODUTO" in df_real.columns
+
+    def _prod_filter(df_in: pd.DataFrame) -> pd.DataFrame:
+        if df_in.empty or not base_prod or not has_prod:
+            return df_in
+        sub_p = df_in[df_in["PRODUTO"].apply(
+            lambda p: bool(p) and _base_produto(p) == base_prod
+        )]
+        return sub_p if not sub_p.empty else df_in
+
+    # Estratégia 1 — worker individual + empresa (match parcial)
+    df_g = _prod_filter(df_real[
+        mes_mask &
+        (df_real["PRESTADOR"] == resp) &
+        df_real["EMPRESA"].apply(lambda e: _empresa_match(e, emp))
+    ])
+    # Estratégia 2 — worker individual, qualquer empresa
+    if df_g.empty:
+        df_g = _prod_filter(df_real[mes_mask & (df_real["PRESTADOR"] == resp)])
+    # Estratégia 3 — nível unidade (RESPONSAVEL == nome do centro de custo)
+    if df_g.empty and resp in CENTRO_CUSTO_PARA_LANCAMENTO:
+        df_unit = df_real[
+            mes_mask &
+            df_real["EMPRESA"].apply(lambda e: _empresa_match(e, emp))
+        ]
+        df_g = _prod_filter(df_unit)
+
+    return df_g
+
+
 def _calcular_indicadores(
     df_prev: pd.DataFrame,
     df_real: pd.DataFrame,
@@ -614,7 +658,8 @@ def _calcular_indicadores(
 ) -> pd.DataFrame:
     """
     Para cada linha PREVISTO, une com produção real e calcula:
-    realizado, % atingido, média diária, projeção, custos projetados.
+    realizado, % atingido, média diária, projeção, custos projetados,
+    capacidade disponível (Meta Mês − Realizado, nunca negativa).
 
     nome_resolver: dict nome_meta→nome_prod gerado por _build_nome_resolver().
                    Se None, usa apenas match exato.
@@ -636,33 +681,8 @@ def _calcular_indicadores(
 
         prod_norm  = meta["PRODUTO"]   # já _norm'd
         base_prod  = _base_produto(prod_norm)
-        mes_mask   = df_real["DATA"].apply(lambda d: d.month == mes and d.year == ano)
-        has_prod   = "PRODUTO" in df_real.columns
 
-        def _prod_filter(df_in: pd.DataFrame) -> pd.DataFrame:
-            if df_in.empty or not base_prod or not has_prod:
-                return df_in
-            sub_p = df_in[df_in["PRODUTO"].apply(
-                lambda p: bool(p) and _base_produto(p) == base_prod
-            )]
-            return sub_p if not sub_p.empty else df_in
-
-        # Estratégia 1 — worker individual + empresa (match parcial)
-        df_g = _prod_filter(df_real[
-            mes_mask &
-            (df_real["PRESTADOR"] == resp) &
-            df_real["EMPRESA"].apply(lambda e: _empresa_match(e, emp))
-        ])
-        # Estratégia 2 — worker individual, qualquer empresa
-        if df_g.empty:
-            df_g = _prod_filter(df_real[mes_mask & (df_real["PRESTADOR"] == resp)])
-        # Estratégia 3 — nível unidade (RESPONSAVEL == nome do centro de custo)
-        if df_g.empty and resp in CENTRO_CUSTO_PARA_LANCAMENTO:
-            df_unit = df_real[
-                mes_mask &
-                df_real["EMPRESA"].apply(lambda e: _empresa_match(e, emp))
-            ]
-            df_g = _prod_filter(df_unit)
+        df_g = _producao_matched(df_real, resp, emp, mes, ano, base_prod)
 
         realizado = float(df_g["QUANTIDADE"].sum()) if not df_g.empty else 0.0
         datas_unicas = df_g["DATA"].nunique() if not df_g.empty else 0
@@ -696,9 +716,22 @@ def _calcular_indicadores(
 
         pct_meta = (realizado / meta_mes * 100) if (not np.isnan(meta_mes) and meta_mes > 0) else float("nan")
 
-        # Financeiro
+        # Capacidade disponível — quanto da meta já comprometida (Meta Mês, que
+        # é a própria capacidade contratada dessa combinação prestador×cliente×
+        # produto) ainda não foi produzido neste mês. Nunca negativa: se o
+        # realizado já passou a meta, não sobra capacidade a distribuir aqui.
+        capacidade_disp = max(0.0, meta_mes - realizado) if not np.isnan(meta_mes) else float("nan")
+        capacidade_disp_receita = capacidade_disp * vlr_unit if not np.isnan(vlr_unit) and not np.isnan(capacidade_disp) else float("nan")
+
+        # Financeiro — Previsto (fixo, pela Meta) x Realizado (varia com a
+        # produção real todo dia) x Projetado (Realizado + estimativa do resto
+        # do mês). Sem o Realizado, a "previsão de custo" ficava presa no valor
+        # da meta e nunca refletia o que já foi de fato produzido.
         receita_prev  = meta_mes * vlr_unit  if (not np.isnan(meta_mes) and not np.isnan(vlr_unit)) else float("nan")
         custo_prev    = meta_mes * custo_unit if (not np.isnan(meta_mes) and not np.isnan(custo_unit)) else float("nan")
+        receita_real  = realizado * vlr_unit  if not np.isnan(vlr_unit) else float("nan")
+        custo_real    = realizado * custo_unit if not np.isnan(custo_unit) else float("nan")
+        margem_real   = receita_real - custo_real if (not np.isnan(receita_real) and not np.isnan(custo_real)) else float("nan")
         receita_proj  = projecao * vlr_unit   if not np.isnan(vlr_unit) else float("nan")
         custo_proj    = projecao * custo_unit  if not np.isnan(custo_unit) else float("nan")
         margem_proj   = receita_proj - custo_proj if (not np.isnan(receita_proj) and not np.isnan(custo_proj)) else float("nan")
@@ -724,8 +757,13 @@ def _calcular_indicadores(
             "DIAS_TRABALHADOS": datas_unicas,
             "DIAS_RESTANTES": dias_restantes,
             "PCT_RITMO": pct_ritmo,
+            "CAPACIDADE_DISPONIVEL": capacidade_disp,
+            "CAPACIDADE_DISPONIVEL_RECEITA": capacidade_disp_receita,
             "RECEITA_PREV": receita_prev,
             "CUSTO_PREV": custo_prev,
+            "RECEITA_REAL": receita_real,
+            "CUSTO_REAL": custo_real,
+            "MARGEM_REAL": margem_real,
             "RECEITA_PROJ": receita_proj,
             "CUSTO_PROJ": custo_proj,
             "MARGEM_PROJ": margem_proj,
@@ -734,6 +772,7 @@ def _calcular_indicadores(
             "STATUS_ICON": status,
             "_RESP_NORM": resp,
             "_EMP_NORM": emp,
+            "_BASE_PROD": base_prod,
             "_ANO": ano,
             "_MES": mes,
         })
@@ -771,24 +810,35 @@ def _serie_diaria(
         date(ano, mes, d) for d in range(1, n_dias + 1)
         if eh_dia_util(date(ano, mes, d))
     ]
+    # `corte` é o ponto a partir de onde a projeção começa: o último dia com
+    # produção real, ou "hoje" quando ainda não há nenhum dado no mês. Antes o
+    # comprimento de y_fut (baseado em "hoje") e de datas_futuras (baseado no
+    # último dia real) podiam divergir — ex.: ao olhar um mês PASSADO (hoje já
+    # é de outro mês, então "dias após hoje" = 0 dias úteis), mas ainda restava
+    # produção do mês a projetar a partir do último dia real, gerando arrays de
+    # tamanhos diferentes e um ValueError ao montar o DataFrame (bug detectado
+    # em 14/07/2026 ao abrir a Evolução Diária de um mês fechado). Agora os
+    # dois usam exatamente o mesmo `corte` e o mesmo tamanho `n_fut`.
     datas_real = sorted(daily["DATA"].tolist())
-    if len(datas_real) >= 2:
+    corte = datas_real[-1] if datas_real else hoje
+    datas_futuras = [d for d in dias_uteis if d > corte]
+    n_fut = len(datas_futuras)
+
+    if n_fut == 0:
+        y_fut = np.array([])
+    elif len(datas_real) >= 2:
         x = np.arange(len(datas_real), dtype=float)
         y = daily["ACUMULADO"].to_numpy(dtype=float)
-        slope, intercept = np.polyfit(x, y, 1)
-        n_tot = len(dias_uteis)
-        x_fut = np.arange(len(datas_real), n_tot, dtype=float)
-        y_fut = np.maximum(0, slope * x_fut + intercept)
+        slope, _intercept = np.polyfit(x, y, 1)
         last_acc = float(daily["ACUMULADO"].iloc[-1])
-        # Garante monotonia
-        y_fut = np.maximum(last_acc, last_acc + slope * np.arange(1, len(x_fut) + 1))
+        # Garante monotonia (nunca projeta queda)
+        y_fut = np.maximum(last_acc, last_acc + slope * np.arange(1, n_fut + 1))
     else:
         media = float(daily["QTD_DIA"].mean()) if not daily.empty else 0
-        n_restantes = len([d for d in dias_uteis if d > hoje])
-        y_fut = np.cumsum(np.full(n_restantes, media)) + (float(daily["ACUMULADO"].iloc[-1]) if not daily.empty else 0)
+        last_acc = float(daily["ACUMULADO"].iloc[-1]) if not daily.empty else 0
+        y_fut = np.cumsum(np.full(n_fut, media)) + last_acc
 
-    datas_futuras = [d for d in dias_uteis if d > (datas_real[-1] if datas_real else hoje)]
-    proj = pd.DataFrame({"DATA": datas_futuras, "ACUMULADO_PROJ": y_fut[:len(datas_futuras)]})
+    proj = pd.DataFrame({"DATA": datas_futuras, "ACUMULADO_PROJ": y_fut})
 
     # Rampa meta
     meta_diaria_val = meta_diaria if (not np.isnan(meta_diaria)) else 0
@@ -806,6 +856,85 @@ def _serie_diaria(
     real_full = pd.merge(real_full, meta_ramp, on="DATA", how="left")
     real_full = pd.merge(real_full, proj, on="DATA", how="left")
     return daily, real_full
+
+# ─
+# QUEBRA SEMANAL (Previsto x Realizado)
+# ─
+def _dias_uteis_periodo(d_ini: date, d_fim: date) -> int:
+    """Conta dias úteis no intervalo fechado [d_ini, d_fim]."""
+    if d_fim < d_ini:
+        return 0
+    return sum(
+        1 for n in range((d_fim - d_ini).days + 1)
+        if eh_dia_util(d_ini + pd.Timedelta(days=n))
+    )
+
+def _construir_semanal(
+    df_prev: pd.DataFrame,
+    df_real: pd.DataFrame,
+    nome_resolver: dict[str, str],
+    ano: int, mes: int,
+) -> pd.DataFrame:
+    """
+    Agrega, para o mês selecionado, Meta e Realizado por SEMANA (segunda a
+    domingo, recortada nos limites do mês) — somando todas as combinações
+    prestador×cliente×produto do df_prev filtrado.
+
+    Meta semana    = META_DIARIA da linha × dias úteis daquela semana dentro do mês.
+    Realizado semana = produção real (mesmo match de _producao_matched) daquela
+                       linha, somada apenas nos dias que caem dentro da semana.
+    """
+    _, n_dias = calendar.monthrange(ano, mes)
+    primeiro_dia = date(ano, mes, 1)
+    ultimo_dia = date(ano, mes, n_dias)
+
+    # Semanas seg-dom que tocam o mês, recortadas nos limites do mês
+    semanas = []
+    cursor = primeiro_dia - pd.Timedelta(days=primeiro_dia.weekday())
+    while cursor <= ultimo_dia:
+        fim_semana = cursor + pd.Timedelta(days=6)
+        ini_rec = max(cursor, primeiro_dia)
+        fim_rec = min(fim_semana, ultimo_dia)
+        semanas.append((ini_rec, fim_rec))
+        cursor = cursor + pd.Timedelta(days=7)
+
+    acumulado = {i: {"META": 0.0, "REALIZADO": 0.0} for i in range(len(semanas))}
+
+    for _, meta in df_prev.iterrows():
+        if meta["DATA_BASE"].month != mes or meta["DATA_BASE"].year != ano:
+            continue
+        resp_orig = meta["RESPONSAVEL"]
+        resp = nome_resolver.get(resp_orig, resp_orig)
+        emp = meta["CLIENTE"]
+        meta_diaria = meta["META_DIARIA"]
+        if np.isnan(meta_diaria):
+            meta_diaria = 0.0
+        base_prod = _base_produto(meta["PRODUTO"])
+
+        df_g = _producao_matched(df_real, resp, emp, mes, ano, base_prod)
+
+        for i, (ini, fim) in enumerate(semanas):
+            dias_uteis_sem = _dias_uteis_periodo(ini, fim)
+            acumulado[i]["META"] += meta_diaria * dias_uteis_sem
+            if not df_g.empty:
+                mask_sem = (df_g["DATA"] >= ini) & (df_g["DATA"] <= fim)
+                acumulado[i]["REALIZADO"] += float(df_g.loc[mask_sem, "QUANTIDADE"].sum())
+
+    out_rows = []
+    for i, (ini, fim) in enumerate(semanas):
+        out_rows.append({
+            "SEMANA": f"Semana {i + 1}",
+            "LABEL": f"{ini.strftime('%d/%m')} a {fim.strftime('%d/%m')}",
+            "INICIO": ini,
+            "FIM": fim,
+            "META": acumulado[i]["META"],
+            "REALIZADO": acumulado[i]["REALIZADO"],
+        })
+    df_sem = pd.DataFrame(out_rows)
+    df_sem["ADERENCIA"] = df_sem.apply(
+        lambda r: r["REALIZADO"] / r["META"] * 100 if r["META"] > 0 else float("nan"), axis=1
+    )
+    return df_sem
 
 # ─
 # GERADOR DE PLANO DO PRÓXIMO MÊS
@@ -891,8 +1020,13 @@ def main():
     hoje = date.today()
 
     # cabeçalho
-    st.markdown("<h1 style='color:#FFF;font-size:2rem;margin-bottom:4px;'>🎯 Plano de Metas / Previsão de Custos</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color:#A0A0A0;margin-bottom:20px;'>Acompanhamento automático vs. metas — produção real, projeções e análise de custos</p>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color:#FFF;font-size:2rem;margin-bottom:4px;'>🎯 Painel de Metas</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<p style='color:#A0A0A0;margin-bottom:20px;'>Distribuição de demanda e análise da capacidade disponível — "
+        "Capacidade Disponível · Metas por Cliente/Prestador/Centro de Custo/Produto · "
+        "Previsto x Realizado (semanal e mensal) · Previsão de Custos</p>",
+        unsafe_allow_html=True,
+    )
     render_filtros_btn()
 
     # carrega metas
@@ -995,149 +1129,373 @@ def main():
     nomes_prod = set(df_prod["PRESTADOR"].unique()) if not df_prod.empty else set()
     nome_resolver, auto_matches, sem_match_list = _build_nome_resolver(nomes_meta, nomes_prod)
 
+    # Facções da meta sem NENHUMA produção diária cadastrada em nenhuma fonte
+    # (xlsx Produção Geral, facções externas ou lançamentos por unidade) — sem
+    # isso, entrariam no cálculo como 0% atingido, o que é enganoso: não é que
+    # a facção não produziu, é que não temos como medir. Desconsideradas do
+    # cálculo de indicadores/KPIs e reportadas à parte.
+    if sem_match_list:
+        df_sem_dado = df_prev[df_prev["RESPONSAVEL"].isin(sem_match_list)]
+        st.warning(
+            "⚠️ **Sem produção diária cadastrada** — as facções abaixo têm meta na "
+            "planilha mas nenhuma fonte de produção correspondente, e foram "
+            "desconsideradas dos indicadores: "
+            + ", ".join(sorted(df_sem_dado["_RAW_RESPONSAVEL"].str.strip().unique()))
+        )
+        df_prev = df_prev[~df_prev["RESPONSAVEL"].isin(sem_match_list)]
+
+    if df_prev.empty:
+        st.warning("Nenhuma meta com produção diária correspondente para os filtros selecionados.")
+        st.stop()
+
     df_ind = _calcular_indicadores(df_prev, df_prod, hoje, nome_resolver)
 
-    # kpi row
-    meta_total     = df_prev["META_MES"].sum(skipna=True)
-    real_total     = df_ind["REALIZADO"].sum() if not df_ind.empty else 0.0
-    proj_total     = df_ind["PROJECAO"].sum() if not df_ind.empty else 0.0
-    pct_atingido   = (real_total / meta_total * 100) if meta_total > 0 else 0.0
+    # ── KPIs — Produção ───────────────────────────────────────────────────────
+    meta_total       = df_prev["META_MES"].sum(skipna=True)
+    real_total       = df_ind["REALIZADO"].sum() if not df_ind.empty else 0.0
+    proj_total       = df_ind["PROJECAO"].sum() if not df_ind.empty else 0.0
+    capacidade_total = df_ind["CAPACIDADE_DISPONIVEL"].sum() if not df_ind.empty else 0.0
+    pct_atingido     = (real_total / meta_total * 100) if meta_total > 0 else 0.0
 
-    c1, c2, c3 = st.columns(3)
+    st.markdown("<div class='sec-header'>📦 Visão Geral do Mês — Produção</div>", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Meta Total do Mês", _fmt_br(meta_total))
     c2.metric("Realizado Acumulado", _fmt_br(real_total),
               delta=f"{pct_atingido:.1f}% da meta")
-    c3.metric("Projeção Fim do Mês", _fmt_br(proj_total),
+    c3.metric("Capacidade Disponível", _fmt_br(capacidade_total),
+              delta="ainda não produzido dentro da meta já contratada")
+    c4.metric("Projeção Fim do Mês", _fmt_br(proj_total),
               delta=f"{(proj_total/meta_total*100 if meta_total > 0 else 0):.1f}% da meta")
+
+    # ── KPIs — Financeiro (Previsto x Realizado x Projetado) ─────────────────
+    # Previsto vem da Meta (fixo). Realizado vem do que já foi de fato
+    # produzido até hoje (Realizado × Valor Unitário/Custo) — varia dia a dia
+    # conforme a produção real entra, ao contrário do Previsto. Projetado usa a
+    # Projeção de Fechamento (Realizado + estimativa do resto do mês) no lugar
+    # da Meta.
+    receita_prev_total = df_ind["RECEITA_PREV"].sum() if not df_ind.empty else 0.0
+    custo_prev_total   = df_ind["CUSTO_PREV"].sum() if not df_ind.empty else 0.0
+    receita_real_total = df_ind["RECEITA_REAL"].sum() if not df_ind.empty else 0.0
+    custo_real_total   = df_ind["CUSTO_REAL"].sum() if not df_ind.empty else 0.0
+    receita_proj_total = df_ind["RECEITA_PROJ"].sum() if not df_ind.empty else 0.0
+    custo_proj_total   = df_ind["CUSTO_PROJ"].sum() if not df_ind.empty else 0.0
+    margem_prev_total  = receita_prev_total - custo_prev_total
+    margem_real_total  = receita_real_total - custo_real_total
+    margem_proj_total  = receita_proj_total - custo_proj_total
+
+    st.markdown("<div class='sec-header'>💰 Visão Geral do Mês — Previsão de Custos</div>", unsafe_allow_html=True)
+    st.caption(
+        "Previsto = Meta Mês × Valor Unitário/Custo (fixo). Realizado = produção já "
+        "produzida até hoje × Valor Unitário/Custo (varia conforme a produção real "
+        "entra). Projetado = Projeção de Fechamento do mês × Valor Unitário/Custo."
+    )
+    df_fin_kpi = pd.DataFrame({
+        "": ["Receita", "Custo", "Margem"],
+        "Previsto (Meta)": [receita_prev_total, custo_prev_total, margem_prev_total],
+        "Realizado (até hoje)": [receita_real_total, custo_real_total, margem_real_total],
+        "Projetado (fim do mês)": [receita_proj_total, custo_proj_total, margem_proj_total],
+    })
+    for col in ["Previsto (Meta)", "Realizado (até hoje)", "Projetado (fim do mês)"]:
+        df_fin_kpi[col] = df_fin_kpi[col].apply(_fmt_reais)
+    st.dataframe(df_fin_kpi, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
-    # seção 2 — tabela de progresso
-    st.markdown("<div class='sec-header'>📋 Progresso por Prestador × Produto</div>", unsafe_allow_html=True)
-
+    # ── Capacidade Disponível — por Prestador ─────────────────────────────────
+    st.markdown("<div class='sec-header'>🎯 Capacidade Disponível — por Prestador</div>", unsafe_allow_html=True)
+    st.caption(
+        "Capacidade Disponível = Meta Mês − Realizado (nunca negativa), somada por "
+        "prestador em todos os clientes/produtos que ele atende. Mostra quanto da meta "
+        "já contratada ainda não foi produzido — usar para decidir quem ainda comporta "
+        "mais demanda neste mês."
+    )
     if not df_ind.empty:
-        tbl = df_ind[[
-            "STATUS_ICON", "CENTRO_CUSTO", "RESPONSAVEL", "CLIENTE", "PRODUTO",
-            "META_MES", "REALIZADO", "PCT_META", "META_DIARIA", "MEDIA_DIARIA_REAL",
-            "PROJECAO",
-        ]].copy()
-        tbl = tbl.sort_values(["CENTRO_CUSTO", "RESPONSAVEL"])
-        tbl["PCT_META"] = tbl["PCT_META"].apply(lambda v: f"{v:.1f}%" if not np.isnan(v) else "—")
-        for col in ["META_MES", "REALIZADO", "META_DIARIA", "MEDIA_DIARIA_REAL", "PROJECAO"]:
-            tbl[col] = tbl[col].apply(lambda v: _fmt_br(v) if not np.isnan(v) else "—")
-        tbl.columns = [
-            "⬤", "Centro Custo", "Prestador", "Cliente", "Produto",
-            "Meta Mês", "Realizado", "% Meta", "Meta Diária", "Média Diária",
-            "Projeção",
-        ]
-        st.dataframe(tbl, use_container_width=True, hide_index=True)
+        df_cap = df_ind.groupby("RESPONSAVEL", as_index=False).agg(
+            META_MES=("META_MES", "sum"),
+            REALIZADO=("REALIZADO", "sum"),
+            CAPACIDADE_DISPONIVEL=("CAPACIDADE_DISPONIVEL", "sum"),
+            CAPACIDADE_DISPONIVEL_RECEITA=("CAPACIDADE_DISPONIVEL_RECEITA", "sum"),
+        )
+        df_cap_plot = df_cap.sort_values("CAPACIDADE_DISPONIVEL", ascending=True)
+
+        fig_cap = go.Figure(go.Bar(
+            y=df_cap_plot["RESPONSAVEL"], x=df_cap_plot["CAPACIDADE_DISPONIVEL"],
+            orientation="h", marker_color="#FFA726",
+            text=[_fmt_br(v) for v in df_cap_plot["CAPACIDADE_DISPONIVEL"]],
+            textposition="outside",
+        ))
+        fig_cap.update_layout(
+            height=max(320, 28 * len(df_cap_plot)),
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#CBD5E0"), xaxis=dict(gridcolor="#2D3748", title="Peças"),
+            yaxis=dict(gridcolor="#2D3748"), margin=dict(l=10, r=10, t=10, b=10),
+            separators=",.",
+        )
+        st.plotly_chart(fig_cap, use_container_width=True)
+
+        tbl_cap = df_cap.sort_values("CAPACIDADE_DISPONIVEL", ascending=False).copy()
+        tbl_cap["PCT_OCUPADO"] = tbl_cap.apply(
+            lambda r: f"{(r['REALIZADO']/r['META_MES']*100):.1f}%" if r["META_MES"] > 0 else "—", axis=1
+        )
+        tbl_cap["CAPACIDADE_DISPONIVEL_RECEITA"] = tbl_cap["CAPACIDADE_DISPONIVEL_RECEITA"].apply(_fmt_reais)
+        for col in ["META_MES", "REALIZADO", "CAPACIDADE_DISPONIVEL"]:
+            tbl_cap[col] = tbl_cap[col].apply(_fmt_br)
+        tbl_cap = tbl_cap[["RESPONSAVEL", "META_MES", "REALIZADO", "CAPACIDADE_DISPONIVEL",
+                           "CAPACIDADE_DISPONIVEL_RECEITA", "PCT_OCUPADO"]]
+        tbl_cap.columns = ["Prestador", "Meta Mês", "Realizado", "Capacidade Disponível",
+                            "Capacidade Disponível (R$)", "% Já Ocupado"]
+        st.dataframe(tbl_cap, use_container_width=True, hide_index=True)
     else:
         st.info("Sem dados de indicadores calculados.")
 
     st.markdown("---")
 
-    # seção 3 — série temporal por prestador
-    st.markdown("<div class='sec-header'>📈 Evolução Diária — Meta vs Realizado vs Projeção</div>", unsafe_allow_html=True)
+    # ── Metas — Cliente × Prestador × Centro de Custo × Produto ──────────────
+    st.markdown("<div class='sec-header'>📋 Metas — por Cliente, Prestador, Centro de Custo e Produto</div>", unsafe_allow_html=True)
 
-    if not df_ind.empty:
-        prestadores_unicos = df_ind["RESPONSAVEL"].unique().tolist()
-        col_sel1, col_sel2 = st.columns([2, 1])
-        with col_sel1:
-            resp_graf = st.selectbox("Prestador", prestadores_unicos)
-        with col_sel2:
-            ano_graf = mes_sel.year
-            mes_graf = mes_sel.month
-            _resp_norm_raw  = _norm(resp_graf)
-            resp_norm_graf  = nome_resolver.get(_resp_norm_raw, _resp_norm_raw)
-            emp_norm_graf  = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["_EMP_NORM"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else ""
-            meta_d_graf = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["META_DIARIA"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else float("nan")
-
-        _, serie = _serie_diaria(df_prod, resp_norm_graf, emp_norm_graf, ano_graf, mes_graf, meta_d_graf, hoje)
-
-        if not serie.empty:
-            fig = go.Figure()
-            # Realizado acumulado
-            mask_real = serie["ACUMULADO"].notna()
-            fig.add_trace(go.Scatter(
-                x=serie.loc[mask_real, "DATA"].astype(str),
-                y=serie.loc[mask_real, "ACUMULADO"],
-                name="Realizado",
-                line=dict(color="#4ECDC4", width=2.5),
-                mode="lines+markers",
-                marker=dict(size=5),
-            ))
-            # Rampa meta
-            fig.add_trace(go.Scatter(
-                x=serie["DATA"].astype(str),
-                y=serie["META_ACC"],
-                name="Rampa Meta",
-                line=dict(color="#A0A0A0", width=1.5, dash="dash"),
-                mode="lines",
-            ))
-            # Projeção
-            mask_proj = serie["ACUMULADO_PROJ"].notna()
-            fig.add_trace(go.Scatter(
-                x=serie.loc[mask_proj, "DATA"].astype(str),
-                y=serie.loc[mask_proj, "ACUMULADO_PROJ"],
-                name="Projeção",
-                line=dict(color="#FFA726", width=2, dash="dot"),
-                mode="lines",
-            ))
-            # Meta Mês (linha horizontal)
-            row_meta = df_ind[df_ind["RESPONSAVEL"] == resp_graf]
-            if not row_meta.empty:
-                meta_mes_val = row_meta.iloc[0]["META_MES"]
-                if not np.isnan(meta_mes_val):
-                    fig.add_hline(
-                        y=meta_mes_val, line_dash="dash", line_color="#F87171",
-                        annotation_text=f"Meta Mês: {_fmt_br(meta_mes_val)}",
-                        annotation_position="right",
-                    )
-            fig.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#CBD5E0"),
-                xaxis=dict(gridcolor="#2D3748", title="Data"),
-                yaxis=dict(gridcolor="#2D3748", title="Peças (acumulado)"),
-                legend=dict(bgcolor="rgba(0,0,0,0)"),
-                height=380, margin=dict(l=20, r=20, t=20, b=20),
-                separators=",.",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Sem dados diários disponíveis para este prestador no mês selecionado.")
-
-    st.markdown("---")
-
-    # seção 4 — produção por centro de custo
-    st.markdown("<div class='sec-header'>📊 Produção por Centro de Custo</div>", unsafe_allow_html=True)
-
-    if not df_ind.empty:
-        df_cc = df_ind.groupby("CENTRO_CUSTO", as_index=False).agg(
+    def _render_quebra(dim_col: str) -> None:
+        if df_ind.empty:
+            st.info("Sem dados de indicadores calculados.")
+            return
+        df_g = df_ind.groupby(dim_col, as_index=False).agg(
             META_MES=("META_MES", "sum"),
             REALIZADO=("REALIZADO", "sum"),
             PROJECAO=("PROJECAO", "sum"),
+            CAPACIDADE_DISPONIVEL=("CAPACIDADE_DISPONIVEL", "sum"),
+        ).sort_values("META_MES", ascending=False)
+        df_g["PCT_META"] = df_g.apply(
+            lambda r: r["REALIZADO"] / r["META_MES"] * 100 if r["META_MES"] > 0 else float("nan"), axis=1
         )
 
-        # Gráfico barras: produção
-        fig_prod = go.Figure()
-        fig_prod.add_trace(go.Bar(name="Meta Mês", x=df_cc["CENTRO_CUSTO"], y=df_cc["META_MES"], marker_color="#5C677D"))
-        fig_prod.add_trace(go.Bar(name="Realizado", x=df_cc["CENTRO_CUSTO"], y=df_cc["REALIZADO"], marker_color="#4ECDC4"))
-        fig_prod.add_trace(go.Bar(name="Projeção", x=df_cc["CENTRO_CUSTO"], y=df_cc["PROJECAO"], marker_color="#FFA726", opacity=0.7))
-        fig_prod.update_layout(
-            barmode="group", height=320,
+        fig = go.Figure()
+        fig.add_bar(name="Meta Mês", x=df_g[dim_col], y=df_g["META_MES"], marker_color="#5C677D")
+        fig.add_bar(name="Realizado", x=df_g[dim_col], y=df_g["REALIZADO"], marker_color="#4ECDC4")
+        fig.add_bar(name="Projeção", x=df_g[dim_col], y=df_g["PROJECAO"], marker_color="#FFA726", opacity=0.7)
+        fig.update_layout(
+            barmode="group", height=340,
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#CBD5E0"), xaxis=dict(gridcolor="#2D3748"),
             yaxis=dict(gridcolor="#2D3748", title="Peças"),
-            legend=dict(bgcolor="rgba(0,0,0,0)"), margin=dict(l=10,r=10,t=10,b=10),
-            separators=",.",
+            legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.2),
+            margin=dict(l=10, r=10, t=10, b=10), separators=",.",
         )
-        st.plotly_chart(fig_prod, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
-        tbl_cc = df_cc.copy()
-        for col in ["META_MES", "REALIZADO", "PROJECAO"]:
-            tbl_cc[col] = tbl_cc[col].apply(lambda v: _fmt_br(v))
-        tbl_cc.columns = ["Centro Custo", "Meta Mês", "Realizado", "Projeção"]
-        st.dataframe(tbl_cc, use_container_width=True, hide_index=True)
+        tbl = df_g.copy()
+        tbl["PCT_META"] = tbl["PCT_META"].apply(lambda v: f"{v:.1f}%" if not np.isnan(v) else "—")
+        for col in ["META_MES", "REALIZADO", "PROJECAO", "CAPACIDADE_DISPONIVEL"]:
+            tbl[col] = tbl[col].apply(lambda v: _fmt_br(v) if not np.isnan(v) else "—")
+        tbl.columns = [dim_col, "Meta Mês", "Realizado", "Projeção", "Capacidade Disponível", "% Meta"]
+        st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+    tab_cli, tab_resp, tab_cc, tab_prod, tab_det = st.tabs(
+        ["👤 Por Cliente", "🧵 Por Prestador", "🏭 Por Centro de Custo", "📦 Por Produto", "🔍 Detalhado"]
+    )
+    with tab_cli:
+        _render_quebra("CLIENTE")
+    with tab_resp:
+        _render_quebra("RESPONSAVEL")
+    with tab_cc:
+        _render_quebra("CENTRO_CUSTO")
+    with tab_prod:
+        _render_quebra("PRODUTO")
+    with tab_det:
+        if not df_ind.empty:
+            tbl_det = df_ind[[
+                "STATUS_ICON", "CENTRO_CUSTO", "RESPONSAVEL", "CLIENTE", "PRODUTO",
+                "META_MES", "REALIZADO", "PCT_META", "CAPACIDADE_DISPONIVEL",
+                "META_DIARIA", "MEDIA_DIARIA_REAL", "PROJECAO",
+            ]].copy()
+            tbl_det = tbl_det.sort_values(["CENTRO_CUSTO", "RESPONSAVEL"])
+            tbl_det["PCT_META"] = tbl_det["PCT_META"].apply(lambda v: f"{v:.1f}%" if not np.isnan(v) else "—")
+            for col in ["META_MES", "REALIZADO", "CAPACIDADE_DISPONIVEL", "META_DIARIA", "MEDIA_DIARIA_REAL", "PROJECAO"]:
+                tbl_det[col] = tbl_det[col].apply(lambda v: _fmt_br(v) if not np.isnan(v) else "—")
+            tbl_det.columns = [
+                "⬤", "Centro Custo", "Prestador", "Cliente", "Produto",
+                "Meta Mês", "Realizado", "% Meta", "Capacidade Disponível",
+                "Meta Diária", "Média Diária", "Projeção",
+            ]
+            st.dataframe(tbl_det, use_container_width=True, hide_index=True)
+        else:
+            st.info("Sem dados de indicadores calculados.")
+
+    st.markdown("---")
+
+    # ── Previsto x Realizado — Semanal e Diário ───────────────────────────────
+    st.markdown("<div class='sec-header'>📆 Previsto x Realizado — Semanal e Diário</div>", unsafe_allow_html=True)
+    tab_sem, tab_dia = st.tabs(["📅 Semanal", "📈 Evolução Diária por Prestador"])
+
+    with tab_sem:
+        df_sem = _construir_semanal(df_prev, df_prod, nome_resolver, mes_sel.year, mes_sel.month)
+        if df_sem.empty or df_sem["META"].sum() == 0:
+            st.info("Sem dados suficientes para a quebra semanal deste mês.")
+        else:
+            fig_sem = go.Figure()
+            fig_sem.add_bar(
+                x=df_sem["LABEL"], y=df_sem["META"], name="Meta", marker_color="#5C677D",
+                text=[_fmt_br(v) for v in df_sem["META"]], textposition="outside",
+            )
+            fig_sem.add_bar(
+                x=df_sem["LABEL"], y=df_sem["REALIZADO"], name="Realizado", marker_color="#4ECDC4",
+                text=[_fmt_br(v) for v in df_sem["REALIZADO"]], textposition="outside",
+            )
+            fig_sem.add_scatter(
+                x=df_sem["LABEL"], y=df_sem["ADERENCIA"], name="Aderência %",
+                mode="lines+markers", yaxis="y2",
+                line=dict(color="#FFA726", width=2.5), marker=dict(size=8),
+            )
+            fig_sem.update_layout(
+                barmode="group", height=360,
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#CBD5E0"),
+                xaxis=dict(gridcolor="#2D3748", title="Semana"),
+                yaxis=dict(gridcolor="#2D3748", title="Peças"),
+                yaxis2=dict(overlaying="y", side="right", showgrid=False, ticksuffix="%", range=[0, 160]),
+                legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.2),
+                margin=dict(l=10, r=10, t=20, b=10), separators=",.",
+            )
+            st.plotly_chart(fig_sem, use_container_width=True)
+
+            tbl_sem = df_sem[["SEMANA", "LABEL", "META", "REALIZADO", "ADERENCIA"]].copy()
+            tbl_sem["DIFERENCA"] = tbl_sem["REALIZADO"] - tbl_sem["META"]
+            for col in ["META", "REALIZADO", "DIFERENCA"]:
+                tbl_sem[col] = tbl_sem[col].apply(_fmt_br)
+            tbl_sem["ADERENCIA"] = tbl_sem["ADERENCIA"].apply(
+                lambda v: "—" if pd.isna(v) else f"{v:.1f}%".replace(".", ",")
+            )
+            tbl_sem.columns = ["Semana", "Período", "Meta", "Realizado", "Aderência", "Diferença"]
+            st.dataframe(tbl_sem, use_container_width=True, hide_index=True)
+
+    with tab_dia:
+        if not df_ind.empty:
+            prestadores_unicos = df_ind["RESPONSAVEL"].unique().tolist()
+            col_sel1, col_sel2 = st.columns([2, 1])
+            with col_sel1:
+                resp_graf = st.selectbox("Prestador", prestadores_unicos)
+            with col_sel2:
+                ano_graf = mes_sel.year
+                mes_graf = mes_sel.month
+                _resp_norm_raw  = _norm(resp_graf)
+                resp_norm_graf  = nome_resolver.get(_resp_norm_raw, _resp_norm_raw)
+                emp_norm_graf  = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["_EMP_NORM"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else ""
+                meta_d_graf = df_ind[df_ind["RESPONSAVEL"] == resp_graf]["META_DIARIA"].iloc[0] if len(df_ind[df_ind["RESPONSAVEL"] == resp_graf]) > 0 else float("nan")
+
+            _, serie = _serie_diaria(df_prod, resp_norm_graf, emp_norm_graf, ano_graf, mes_graf, meta_d_graf, hoje)
+
+            if not serie.empty:
+                fig = go.Figure()
+                # Realizado acumulado
+                mask_real = serie["ACUMULADO"].notna()
+                fig.add_trace(go.Scatter(
+                    x=serie.loc[mask_real, "DATA"].astype(str),
+                    y=serie.loc[mask_real, "ACUMULADO"],
+                    name="Realizado",
+                    line=dict(color="#4ECDC4", width=2.5),
+                    mode="lines+markers",
+                    marker=dict(size=5),
+                ))
+                # Rampa meta
+                fig.add_trace(go.Scatter(
+                    x=serie["DATA"].astype(str),
+                    y=serie["META_ACC"],
+                    name="Rampa Meta",
+                    line=dict(color="#A0A0A0", width=1.5, dash="dash"),
+                    mode="lines",
+                ))
+                # Projeção
+                mask_proj = serie["ACUMULADO_PROJ"].notna()
+                fig.add_trace(go.Scatter(
+                    x=serie.loc[mask_proj, "DATA"].astype(str),
+                    y=serie.loc[mask_proj, "ACUMULADO_PROJ"],
+                    name="Projeção",
+                    line=dict(color="#FFA726", width=2, dash="dot"),
+                    mode="lines",
+                ))
+                # Meta Mês (linha horizontal)
+                row_meta = df_ind[df_ind["RESPONSAVEL"] == resp_graf]
+                if not row_meta.empty:
+                    meta_mes_val = row_meta.iloc[0]["META_MES"]
+                    if not np.isnan(meta_mes_val):
+                        fig.add_hline(
+                            y=meta_mes_val, line_dash="dash", line_color="#F87171",
+                            annotation_text=f"Meta Mês: {_fmt_br(meta_mes_val)}",
+                            annotation_position="right",
+                        )
+                fig.update_layout(
+                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#CBD5E0"),
+                    xaxis=dict(gridcolor="#2D3748", title="Data"),
+                    yaxis=dict(gridcolor="#2D3748", title="Peças (acumulado)"),
+                    legend=dict(bgcolor="rgba(0,0,0,0)"),
+                    height=380, margin=dict(l=20, r=20, t=20, b=20),
+                    separators=",.",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Sem dados diários disponíveis para este prestador no mês selecionado.")
+        else:
+            st.info("Sem dados de indicadores calculados.")
+
+    st.markdown("---")
+
+    # ── Previsão de Custos — Detalhamento por Cliente ─────────────────────────
+    st.markdown("<div class='sec-header'>💰 Previsão de Custos — Detalhamento por Cliente</div>", unsafe_allow_html=True)
+    st.caption(
+        "Receita/Custo Realizado usam a produção já registrada até hoje (variam "
+        "dia a dia); Previsto usa a Meta (fixo); Projetado usa a Projeção de "
+        "Fechamento do mês."
+    )
+    if not df_ind.empty:
+        df_fin = df_ind.groupby("CLIENTE", as_index=False).agg(
+            RECEITA_PREV=("RECEITA_PREV", "sum"),
+            CUSTO_PREV=("CUSTO_PREV", "sum"),
+            RECEITA_REAL=("RECEITA_REAL", "sum"),
+            CUSTO_REAL=("CUSTO_REAL", "sum"),
+            RECEITA_PROJ=("RECEITA_PROJ", "sum"),
+            CUSTO_PROJ=("CUSTO_PROJ", "sum"),
+        )
+        df_fin["MARGEM_PREV"] = df_fin["RECEITA_PREV"] - df_fin["CUSTO_PREV"]
+        df_fin["MARGEM_REAL"] = df_fin["RECEITA_REAL"] - df_fin["CUSTO_REAL"]
+        df_fin["MARGEM_PROJ"] = df_fin["RECEITA_PROJ"] - df_fin["CUSTO_PROJ"]
+        df_fin = df_fin.sort_values("RECEITA_PREV", ascending=False)
+
+        # Gráfico foca no Realizado (o que de fato já variou com a produção
+        # real) com a Receita Prevista como referência do alvo.
+        fig_fin = go.Figure()
+        fig_fin.add_bar(name="Receita Prevista", x=df_fin["CLIENTE"], y=df_fin["RECEITA_PREV"],
+                        marker_color="#4ECDC4", opacity=0.4)
+        fig_fin.add_bar(name="Receita Realizada", x=df_fin["CLIENTE"], y=df_fin["RECEITA_REAL"], marker_color="#4ECDC4")
+        fig_fin.add_bar(name="Custo Realizado", x=df_fin["CLIENTE"], y=df_fin["CUSTO_REAL"], marker_color="#F87171")
+        fig_fin.add_scatter(
+            name="Margem Realizada", x=df_fin["CLIENTE"], y=df_fin["MARGEM_REAL"],
+            mode="lines+markers", line=dict(color="#FFA726", width=2.5),
+        )
+        fig_fin.update_layout(
+            barmode="group", height=360,
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#CBD5E0"), xaxis=dict(gridcolor="#2D3748"),
+            yaxis=dict(gridcolor="#2D3748", title="R$", tickprefix="R$ "),
+            legend=dict(bgcolor="rgba(0,0,0,0)", orientation="h", y=-0.2),
+            margin=dict(l=10, r=10, t=10, b=10), separators=",.",
+        )
+        st.plotly_chart(fig_fin, use_container_width=True)
+
+        tbl_fin = df_fin[[
+            "CLIENTE", "RECEITA_PREV", "CUSTO_PREV", "MARGEM_PREV",
+            "RECEITA_REAL", "CUSTO_REAL", "MARGEM_REAL",
+            "RECEITA_PROJ", "CUSTO_PROJ", "MARGEM_PROJ",
+        ]].copy()
+        for col in tbl_fin.columns[1:]:
+            tbl_fin[col] = tbl_fin[col].apply(_fmt_reais)
+        tbl_fin.columns = [
+            "Cliente",
+            "Receita Prevista", "Custo Previsto", "Margem Prevista",
+            "Receita Realizada", "Custo Realizado", "Margem Realizada",
+            "Receita Projetada", "Custo Projetado", "Margem Projetada",
+        ]
+        st.dataframe(tbl_fin, use_container_width=True, hide_index=True)
+    else:
+        st.info("Sem dados de indicadores calculados.")
 
     st.markdown("---")
 

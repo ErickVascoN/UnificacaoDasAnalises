@@ -1,0 +1,8 @@
+Facções Externas - Metas (planilha legada, fonte secundária/fallback)
+
+Link: https://docs.google.com/spreadsheets/d/1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh/edit#gid=1593003426
+
+ID:  1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh
+GID: 1593003426
+
+Usado em: config/settings.py (SHEET_ID_METAS / GID_METAS — usada apenas se a planilha principal de facções estiver indisponível)

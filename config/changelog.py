@@ -6,6 +6,280 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Meta Diária/Período no Relatório de Corte Consolidado",
+        "description": (
+            "scripts/relatorio_diario_corte.py::gerar_pdf_consolidado: novo bloco 'Meta x "
+            "Realizado' (Manta Arealva e Manta Iacanga) logo após os KPIs de total, antes das "
+            "tabelas de Estação/Top OPs, nas 3 seções (Dia/Período, Mês Atual, Histórico 2 "
+            "Meses) — Meta Diária, Meta do Período (meta diária × dias úteis da seção) e % "
+            "atingido, colorido (verde ≥100%, amarelo 80-99%, vermelho <80%). Pedido do "
+            "usuário: CEO quer informação clara e direta primeiro, detalhe depois. Metas "
+            "vêm como parâmetro opcional (meta_diaria_arealva/meta_diaria_iacanga, default "
+            "11.000/19.000) — pages/10_Relatorios.py passa as constantes reais "
+            "(_METAS_AREALVA_META_TOTAL / CASAL de _METAS_IACANGA); o e-mail automático "
+            "diário (scripts/relatorio_diario_corte.py, roda isolado no GitHub Actions sem "
+            "o pacote utils/) usa os defaults sem precisar de mudança. Dias úteis calculados "
+            "localmente (seg-sex, sem feriados) para não depender de utils/feriados.py, que "
+            "puxa Streamlit — script isolado continua funcionando. Testado: PDF gerado com "
+            "sucesso nos dois caminhos (com e sem parâmetros de meta), números batem com o "
+            "cálculo manual."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Painel de Metas: Previsão de Custos agora tem um Realizado que varia com a produção",
+        "description": (
+            "As previsões de custo/receita antes só existiam em dois estados: "
+            "Previsto (fixo, pela Meta) e Projetado (Realizado + estimativa do "
+            "resto do mês) — não havia um valor que refletisse puramente o que "
+            "já foi de fato produzido até hoje. Adicionadas RECEITA_REAL/"
+            "CUSTO_REAL/MARGEM_REAL em _calcular_indicadores "
+            "(pages/7_Plano_de_Metas.py) = Realizado (peças) × Valor Unitário/"
+            "Custo — variam dia a dia junto com a produção real, ao contrário "
+            "do Previsto. O KPI 'Visão Geral — Previsão de Custos' virou uma "
+            "tabela comparativa Previsto × Realizado × Projetado (Receita/"
+            "Custo/Margem) e o detalhamento por cliente ganhou as mesmas 3 "
+            "colunas, com o gráfico priorizando Receita/Custo Realizado."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "novo",
+        "title": "Painel de Metas redesenhado — Capacidade Disponível, quebras e semanal",
+        "description": (
+            "pages/7_Plano_de_Metas.py reorganizado em seções claras: KPIs de "
+            "Produção e de Previsão de Custos separados; nova seção 'Capacidade "
+            "Disponível por Prestador' (Meta Mês − Realizado, nunca negativa — "
+            "quanto da meta já contratada ainda cabe distribuir); 'Metas' agora "
+            "em abas Por Cliente / Por Prestador / Por Centro de Custo / Por "
+            "Produto / Detalhado (antes só uma tabela plana); nova quebra "
+            "Semanal de Previsto x Realizado (meta semana = Meta Diária × dias "
+            "úteis da semana dentro do mês, recortada nos limites do mês) ao "
+            "lado da Evolução Diária existente; nova seção 'Previsão de Custos' "
+            "por cliente (Receita/Custo Previsto e Projetado, Margem). Lógica de "
+            "match prestador↔produção extraída para _producao_matched() "
+            "(compartilhada entre o cálculo mensal e o semanal). Corrigido de "
+            "quebra um bug pré-existente em _serie_diaria: ao abrir a Evolução "
+            "Diária de um mês fechado (não o mês corrente), o tamanho do array "
+            "de projeção podia divergir do array de datas futuras "
+            "(ValueError: All arrays must be of the same length) — agora os "
+            "dois usam o mesmo ponto de corte."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Plano de Metas: facções sem produção diária identificadas e desconsideradas",
+        "description": (
+            "A planilha BD PLANO DE METAS (fonte de pages/7_Plano_de_Metas.py) foi "
+            "atualizada pelo usuário com as facções reais (27 responsáveis, antes eram "
+            "12). Conferido cada nome contra as 3 fontes de produção diária (xlsx "
+            "Produção Geral, facções externas e lançamentos por unidade): 3 delas "
+            "(BOCA, CARLINE, JOSIANE STEFANI CARDOSO DOS SANTOS AMENDOLA) já tinham "
+            "produção real sob um nome mais curto e só precisavam de alias — "
+            "adicionadas em NOME_EQUIVALENCIAS (config/settings.py), junto com ANGELA "
+            "BANDEIRANTE que antes só casava via detecção automática por similaridade. "
+            "As outras 3 (ELIZANGELA, GISELE (IACANGA), VANESSA APARECIDA DA SILVA) não "
+            "têm nenhuma produção diária cadastrada em lugar nenhum — antes entrariam "
+            "no cálculo como 0% de meta atingida (enganoso, pois não é que não "
+            "produziram, é que não temos como medir); agora pages/7_Plano_de_Metas.py "
+            "reporta essas facções num aviso visível e as remove do cálculo de "
+            "indicadores/KPIs."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Linhas com QUANTIDADE=0 + Observação agora aparecem no dashboard/relatório",
+        "description": (
+            "utils/faccao_loader.py: o filtro de linhas válidas exigia QUANTIDADE > 0, "
+            "então dias sem produção que o usuário contextualiza com uma Observação (ex.: "
+            "'máquina quebrou', 'emprestou colaboradores') eram descartados e não apareciam "
+            "em lugar nenhum — nem no dashboard, nem no relatório PDF. Agora uma linha com "
+            "QUANTIDADE=0 é mantida quando tem Observação preenchida. Para essas linhas não "
+            "inflarem a meta/derrubarem a média (0 produzido não deve contar como 'dia "
+            "trabalhado'), todo cálculo de 'dias com produção' que alimenta meta/média foi "
+            "ajustado para considerar só QUANTIDADE > 0: utils/faccoes_metas_calc.py "
+            "(_dias_fac, usado tanto pelo dashboard quanto pelo relatório), "
+            "pages/5_Producao_Faccoes.py (cálculo duplicado de dias por facção, 'Dias com "
+            "produção'/'Média diária' do mês e da semana) e pages/2_Producao_Geral.py "
+            "('Média / Dia' da tela de facção). Testado com dados reais: Meta Período e % "
+            "Meta de uma facção com 2 dias zerados+observação ficaram idênticos a antes "
+            "(98,3%), e a observação passou a aparecer no PDF. Reportado pelo usuário "
+            "14/07/2026."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "novo",
+        "title": "Coluna 'Observações' da planilha de facções no dashboard e no relatório",
+        "description": (
+            "utils/faccao_loader.py: nova coluna opcional OBSERVACAO (detecta cabeçalho "
+            "'OBS'/'OBSERVAÇÃO'/'OBSERVAÇÕES', mesmo padrão de PRESTADOR — abas sem essa "
+            "coluna continuam funcionando, valor fica vazio). Propagada pelo dataset "
+            "unificado (utils/producao_unificada.py: _COLUNAS_UNIFICADAS, "
+            "_achatar_legado com '' pra planilha antiga que não tem a coluna, "
+            "_preparar_faccoes). Exibida em pages/5_Producao_Faccoes.py (detalhe do dia) "
+            "e pages/2_Producao_Geral.py (Detalhe por Facção/Produto/Empresa e aba Base "
+            "Filtrada), e no relatório PDF (utils/pdf_report.py::gerar_pdf_faccoes, seção "
+            "Detalhamento por Produto/Empresa/Facção). Quando a tabela agrupa mais de uma "
+            "linha na mesma célula (mesmo dia/produto/cliente), as observações são "
+            "juntadas com ' / ' em vez de perder alguma. Testado com dados reais "
+            "(injeção de observação de teste + geração do PDF, valor confirmado nas "
+            "páginas certas). Pedido do usuário 14/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "novo",
+        "title": "Relatório de Colaboradores Internos: opção de gerar todos juntos",
+        "description": (
+            "pages/10_Relatorios.py (aba Colaboradores Internos): antes só dava pra "
+            "gerar o PDF de um colaborador de cada vez. Adicionado um seletor 'Gerar "
+            "relatório para: Um colaborador / Todos os colaboradores' — no modo 'Todos', "
+            "escolhe quais colaboradores incluir (multiselect, todos por padrão) e gera "
+            "um único PDF com um Resumo Geral (total produzido + ranking por "
+            "colaborador) seguido de uma página por colaborador, no mesmo formato do "
+            "relatório individual. utils/pdf_report.py: lógica de montagem do bloco de "
+            "cada colaborador extraída para _bloco_colaborador() e reaproveitada pela "
+            "nova gerar_pdf_colaboradores_todos(), pra não duplicar as 3 tabelas "
+            "(Setor/Tipo, Empresa, Detalhado por Dia) entre os dois relatórios. Pedido "
+            "do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Relatório de Cargas mostrava Previsto zerado ao filtrar um único mês",
+        "description": (
+            "pages/10_Relatorios.py (aba Cargas): a tabela 'Resumo por Mês' do PDF calculava "
+            "o Previsto de cada mês excluindo a linha CARGO_REAL (resumo oficial da planilha), "
+            "somando só as cargas individuais. Em meses com resumo oficial (a maioria, "
+            "incluindo o mês corrente), o Previsto de cada carga individual já vem zerado de "
+            "propósito — o total mora na linha CARGO_REAL — então a tabela mostrava Previsto "
+            "R$ 0 mesmo com Realizado alto. Havia um fallback, mas só disparava quando a linha "
+            "CARGO_REAL não existia, o caso raro. Corrigido para somar todas as linhas do mês "
+            "(cargas + CARGO_REAL), igual o dashboard (pages/8_Previsao_Cargas.py) já fazia. "
+            "Mais visível filtrando um único mês (ex.: só Julho, uma linha só na tabela), mas "
+            "afetava qualquer mês com resumo oficial. Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "melhoria",
+        "title": "'Jogos Duplos' renomeado para 'Jogos' no Caseamento (Controle de Corte)",
+        "description": (
+            "pages/3_Controle_de_Corte.py: título, KPIs, coluna de tabela e textos da seção "
+            "'Caseamento Jogo Duplo × Fundo' (Lençol Arealva, visão geral e por OP) — 'Duplo' é "
+            "só um dos tipos de jogo, então o rótulo ficava impreciso. Sem mudança de cálculo, "
+            "só de texto exibido. Pedido do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "melhoria",
+        "title": "Páginas de gráfico dos relatórios PDF agora em paisagem",
+        "description": (
+            "utils/pdf_report.py: em todos os relatórios PDF, as páginas que só têm "
+            "gráfico (evolução mensal, pizza de categoria, barras horizontais de top "
+            "clientes/produtos/cores, produção diária, etc.) passaram de retrato pra "
+            "paisagem — em retrato os gráficos com muitas barras/legendas/categorias "
+            "ficavam pequenos demais pra ler os números. Implementado com um segundo "
+            "PageTemplate em paisagem no _RelatorioDoc (troca via NextPageTemplate nos "
+            "pontos _ir_paisagem()/_ir_retrato()); tabelas continuam em retrato normal. "
+            "_imagem_de_buf ganhou um teto de altura (altura_max_cm) pra gráficos de "
+            "aspecto muito vertical (ex.: 'Top 15 Produtos') não estourarem a página — "
+            "paisagem tem menos altura que retrato. Ajuste seguinte (mesmo dia): páginas "
+            "que tinham 2 gráficos empilhados (ex.: Evolução Mensal + Distribuição por "
+            "Categoria, ou Top Clientes + Top Produtos) foram separadas — cada gráfico "
+            "agora tem sua própria página em paisagem, ocupando o espaço inteiro, em vez "
+            "de dividir a altura com outro. Não alterado em gerar_pdf_corte_consolidado "
+            "(formato compacto pra e-mail, não se aplica). Pedido do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "melhoria",
+        "title": "PDF de Carteira de Pedidos completo — todos os pedidos, não só um resumo",
+        "description": (
+            "utils/pdf_report.py::gerar_pdf_carteira_pedidos: o relatório estava muito "
+            "simples (só resumo por categoria e top-30 clientes) e sobrava muito espaço em "
+            "branco. Agora traz: 'Resumo por Produto' com TODOS os SKUs em aberto (não só "
+            "top-N), 'Resumo por Cliente' sem cortar em 30, e uma nova seção 'Detalhamento "
+            "Completo — O Que Produzir' que lista cada pedido individual (nota, cliente, "
+            "data, peças, valor) agrupado por categoria e produto, com o total pendente no "
+            "cabeçalho de cada grupo — serve de referência direta do que falta produzir. "
+            "Tabelas reordenadas por Peças (não Valor), já que peça é o que importa pra "
+            "produção. Página de conclusão deixou de forçar quebra em branco. Ordem final: "
+            "Resumo Executivo → Categoria → Resumo por Produto → Detalhamento Completo (logo "
+            "em seguida, pedido do usuário) → gráficos → Resumo por Cliente → Conclusão. "
+            "Pedido do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "Niazittex e Seven apareciam fundidos como 'Niazittex / Seven' nos relatórios",
+        "description": (
+            "São clientes diferentes e separados, mas o relatório de Produção mostrava tudo "
+            "sob o rótulo único 'Niazittex / Seven'. Causa: utils/producao_unificada.py::"
+            "_achatar_legado() sempre usava o nome da aba/empresa como CLIENTE, ignorando a "
+            "coluna 'Cliente' de cada linha — que já vinha certa (Niazittex e Seven são "
+            "carregados juntos de uma única aba, LITEX_GERAL, mas distinguidos por linha). "
+            "Corrigido para usar a coluna da linha quando ela existe. Também corrigido "
+            "CLIENTE_ALIAS (mesmo arquivo) e pages/2_Producao_Geral.py::_norm_cli_label, que "
+            "mapeavam os dois pro mesmo rótulo combinado. Testado ao vivo: agora aparecem "
+            "separados, com totais independentes. Reportado pelo usuário em 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "novo",
+        "title": "Novos filtros no Relatório de Carteira de Pedidos",
+        "description": (
+            "pages/10_Relatorios.py (aba Carteira de Pedidos): além de Ano/Mês, agora dá pra "
+            "filtrar por Cliente, Categoria, Produto, Vendedor e Estado (UF) antes de gerar o "
+            "PDF — todos combináveis entre si. Um contador de registros mostra quantas linhas "
+            "restaram com os filtros atuais, e os filtros ativos aparecem na capa do PDF (campo "
+            "'Filtros ativos', antes sempre vazio nesse relatório). Pedido do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "correção",
+        "title": "PDF de Previsão de Cargas ficava desatualizado em relação ao dashboard",
+        "description": (
+            "pages/10_Relatorios.py (aba Cargas) tinha sua própria cópia da lógica de "
+            "carregamento de Previsão de Cargas, presa numa lista fixa de meses (parava em "
+            "Junho/2026) e sem as correções de bugs feitas em pages/8_Previsao_Cargas.py "
+            "(limite da coluna do painel diário, filtro de linha TOTAL/GERAL, reconciliação "
+            "só pelos dias com carga cadastrada, override de Maio) — o PDF gerado divergia "
+            "do dashboard e não incluía Julho. Extraída lógica compartilhada para "
+            "utils/cargas_loader.py (load_cargas, meses dinâmicos, parsing) e as duas "
+            "páginas passaram a importar dela; uma correção feita ali agora vale para o "
+            "dashboard e o PDF ao mesmo tempo. Pedido do usuário 13/07/2026."
+        ),
+    },
+    {
+        "date": "13/07/2026",
+        "tag": "melhoria",
+        "title": "Reorganização do PDF de Relatório de Produção (Facções/Produção Geral)",
+        "description": (
+            "utils/pdf_report.py::gerar_pdf_faccoes (usado pela aba Produção Geral de "
+            "Relatórios): seção 'Resumo por Facção' movida pra logo após a tabela de totais "
+            "(Visão Geral) e o Painel de Alertas, antes do Detalhamento diário por "
+            "produto/empresa/facção — antes vinha depois. Removida a seção 'Facção x Meta' "
+            "(gráfico não estava renderizando pro período do usuário, gerando uma página quase "
+            "em branco só com título e texto) e a página final de assinatura isolada (só 2 "
+            "linhas de texto sozinhas numa página) — o relatório caiu de 16 para 13 páginas no "
+            "teste com dados reais (01/07 a 13/07/2026), sem nenhuma página vazia. Pedido do "
+            "usuário 13/07/2026."
+        ),
+    },
+    {
         "date": "13/07/2026",
         "tag": "correção",
         "title": "Resumo por OP sumia com cortes parciais em Controle de Programação",

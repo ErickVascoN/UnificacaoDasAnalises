@@ -1,0 +1,8 @@
+Corte - Lençol Arealva
+
+Link: https://docs.google.com/spreadsheets/d/1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa/edit#gid=1396046910
+
+ID:  1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa
+GID: 1396046910
+
+Usado em: pages/3_Controle_de_Corte.py (LENCOL_SPREADSHEET_ID), utils/lencol_loader_smart.py, utils/controle_op.py (LENCOL_ID), pages/10_Relatorios.py (_LENCOL_PROG_ID)

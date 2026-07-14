@@ -1,0 +1,8 @@
+Produção Interna - GGTTEX Jogos
+
+Link: https://docs.google.com/spreadsheets/d/1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv/edit#gid=410924690
+
+ID:  1b8gCNUqZagkINAN1egnA7Va6g6Bv4esv
+GID: 410924690
+
+Usado em: config/settings.py (PRODUCAO_INTERNO_SHEETS["GGTTEX_JOGOS"])

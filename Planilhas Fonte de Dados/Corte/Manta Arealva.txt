@@ -1,0 +1,8 @@
+Corte - Manta Arealva (Máquina + Mesa 1)
+
+Link: https://docs.google.com/spreadsheets/d/1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB/edit#gid=1544210185
+
+ID:  1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB
+GID: 1544210185
+
+Usado em: config/settings.py (CORTE_SHEETS_ID), pages/3_Controle_de_Corte.py, utils/controle_op.py (MANTA_ID)

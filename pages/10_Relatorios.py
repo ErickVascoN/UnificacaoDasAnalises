@@ -11,7 +11,6 @@ import unicodedata
 import urllib.parse
 import urllib.request
 from calendar import monthrange
-from collections import Counter
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -38,6 +37,7 @@ from config.settings import (
 )
 
 from utils.lencol_caseamento import lencol_tipos_tams as _lencol_tipos_tams, lencol_caseamento
+from utils.cargas_loader import MESES_DISPONIVEIS as _MESES_CARGAS_DISPONIVEIS, load_cargas
 from utils.pdf_report import (
     gerar_pdf_arealva_manta,
     gerar_pdf_iacanga_manta,
@@ -82,21 +82,8 @@ _METAS_IACANGA: dict[str, dict] = {
     "BURDAY":  {"SOLTEIRO": 9000, "CASAL": 9000, "QUEEN": 9000, "KING": 9000, "_DEFAULT": 9000},
 }
 
-# Cargas
-_CARGAS_SHEET_ID = "1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk"
-_MESES_CARGAS = [
-    ("JANEIRO",   1, 2026),
-    ("FEVEREIRO", 2, 2026),
-    ("MARÇO",     3, 2026),
-    ("ABRIL",     4, 2026),
-    ("MAIO",      5, 2026),
-    ("JUNHO",     6, 2026),
-]
-_MESES_PT_CARGAS = {
-    "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3,
-    "abril": 4, "maio": 5, "junho": 6, "julho": 7,
-    "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
-}
+# Cargas — meses/parsing/loader vêm de utils/cargas_loader.py (compartilhado com
+# pages/8_Previsao_Cargas.py; ver _MESES_CARGAS_DISPONIVEIS importado acima)
 
 # Carteira
 _CARTEIRA_SHEET_ID = "1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7"
@@ -464,308 +451,7 @@ def _metas_faccoes() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ── Cargas ─────────────────────────────────────────────────────────────────────
-
-def _parse_money_cg(s: str) -> float | None:
-    s = str(s).strip()
-    if not s or "R$" not in s:
-        return None
-    neg = s.startswith("-")
-    clean = re.sub(r"[R$\s\-]", "", s).replace(".", "").replace(",", ".")
-    try:
-        v = float(clean)
-        return -v if neg else v
-    except ValueError:
-        return None
-
-def _parse_num_cg(s: str) -> float | None:
-    s = str(s).strip()
-    if not s or s in ("-", "R$", "R$  -", "R$-"):
-        return None
-    clean = re.sub(r"[R$\s\-]", "", s).replace(".", "").replace(",", ".")
-    try:
-        v = float(clean)
-        return v if v > 0 else None
-    except ValueError:
-        return None
-
-def _parse_date_cg(s: str) -> date | None:
-    raw = str(s).strip()
-    sl = raw.lower()
-    m = re.search(r"(\w+),\s+(\w+)\s+(\d+),\s+(\d{4})", sl)
-    if m:
-        month = _MESES_PT_CARGAS.get(m.group(2))
-        if month:
-            try:
-                return date(int(m.group(4)), month, int(m.group(3)))
-            except ValueError:
-                pass
-    m2 = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", raw.strip())
-    if m2:
-        a, b, y = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
-        try:
-            if a > 12: return date(y, b, a)
-            elif b > 12: return date(y, a, b)
-            else: return date(y, b, a)
-        except ValueError:
-            pass
-    m3 = re.match(r"^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$", raw.strip())
-    if m3:
-        try:
-            return date(int(m3.group(1)), int(m3.group(2)), int(m3.group(3)))
-        except ValueError:
-            pass
-    return None
-
-def _is_date_str_cg(s: str) -> bool:
-    return bool(re.search(r"\d{4}", s)) and any(mes in s.lower() for mes in _MESES_PT_CARGAS)
-
-def _first_frete_cg(row: list[str]) -> float:
-    for j in range(5, min(10, len(row))):
-        v = _parse_money_cg(row[j])
-        if v and abs(v) > 0:
-            return abs(v)
-    return 0.0
-
-def _fetch_csv_cargas(sheet_name: str) -> list[list[str]]:
-    nome_enc = urllib.parse.quote(sheet_name)
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{_CARGAS_SHEET_ID}"
-        f"/gviz/tq?tqx=out:csv&sheet={nome_enc}"
-    )
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        raw = r.read().decode("utf-8", errors="replace")
-    return list(csv.reader(io.StringIO(raw)))
-
-def _find_resumo_cg(rows: list[list[str]]) -> tuple[float, float]:
-    for row in rows:
-        if _parse_date_cg(row[1] if len(row) > 1 else ""):
-            continue
-        big = []
-        for cell in row:
-            v = _parse_num_cg(str(cell))
-            if v and v > 1_500_000:
-                big.append(v)
-        if len(big) >= 2:
-            return (big[0], big[1])
-    best = 0.0
-    for row in rows:
-        if _parse_date_cg(row[1] if len(row) > 1 else ""):
-            continue
-        for j in range(8, min(16, len(row))):
-            v = _parse_money_cg(row[j])
-            if not v: continue
-            av = abs(v)
-            if av <= 1_000_000 or round(av) % 1_000 == 0: continue
-            if av > best: best = av
-    return (0.0, best)
-
-def _find_painel_col_cg(rows: list[list[str]]) -> int | None:
-    """Coluna do painel diário de realizado ("DD-mmm.") — varia por mês na planilha."""
-    contagem: Counter = Counter()
-    for row in rows:
-        for j, cell in enumerate(row):
-            if re.match(r'^\s*\d{1,2}\s*[-\.]\s*[a-z]{3}', str(cell).strip().lower()):
-                contagem[j] += 1
-    if not contagem:
-        return None
-    return contagem.most_common(1)[0][0]
-
-
-def _find_painel_col_rotulo_cg(rows: list[list[str]]) -> int | None:
-    """Fallback para meses sem cabeçalho 'DD-mmm.' repetido (ex.: Janeiro) — usa o
-    rótulo "REALIZADO" na primeira linha; o nome do cliente fica 2 colunas antes."""
-    if not rows:
-        return None
-    for j, cell in enumerate(rows[0]):
-        if _norm_text(cell) == "REALIZADO" and j >= 2:
-            return j - 2
-    return None
-
-
-def _extract_day_realized_cg(rows: list[list[str]], mes_num: int, ano: int) -> dict:
-    day_real: dict = {}
-    col = _find_painel_col_cg(rows)
-
-    if col is not None:
-        current_date = None
-        for row in rows:
-            if len(row) <= col: continue
-            cell_base = str(row[col]).strip()
-            m = re.match(r'^(\d{1,2})\s*[-\.]\s*(\w{3})', cell_base.lower())
-            if m:
-                try: current_date = date(ano, mes_num, int(m.group(1)))
-                except ValueError: current_date = None
-                continue
-            if not cell_base or 'R$' in cell_base: continue
-            if current_date is None or len(row) <= col + 2: continue
-            cliente_raw = cell_base.strip().upper()
-            v = _parse_num_cg(str(row[col + 2]).strip())
-            if v and v > 0 and cliente_raw:
-                key = (current_date, _norm_text(cliente_raw))
-                day_real[key] = day_real.get(key, 0.0) + v
-        return day_real
-
-    col = _find_painel_col_rotulo_cg(rows)
-    if col is None:
-        return {}
-    for row in rows:
-        if len(row) <= col + 2: continue
-        cliente_raw = str(row[col]).strip().upper()
-        if not cliente_raw or 'R$' in cliente_raw: continue
-        row_date = _parse_date_cg(row[1]) if len(row) > 1 else None
-        if row_date is None: continue
-        v = _parse_num_cg(str(row[col + 2]).strip())
-        if v and v > 0:
-            key = (row_date, _norm_text(cliente_raw))
-            day_real[key] = day_real.get(key, 0.0) + v
-    return day_real
-
-def _parse_month_cargas(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -> list[dict]:
-    previsto_mensal, realizado_mensal = _find_resumo_cg(rows)
-    day_realized = _extract_day_realized_cg(rows, mes_num, ano)
-
-    def _only_frete_col(r):
-        if len(r) <= 6: return False
-        return (not any(r[j].strip() for j in range(6)) and bool(r[6].strip())
-                and not any(r[j].strip() for j in range(7, len(r))))
-
-    _merged_idx: set[int] = set()
-    for _i, _r in enumerate(rows):
-        if _parse_date_cg(_r[1] if len(_r) > 1 else ""): continue
-        if not (_only_frete_col(_r) and _first_frete_cg(_r)): continue
-        _next = rows[_i + 1] if _i + 1 < len(rows) else []
-        if _parse_date_cg(_next[1] if len(_next) > 1 else ""):
-            _merged_idx.add(_i)
-
-    records = []
-    semana_atual = ""
-    _last_cargo_date = None
-    _last_destino_raw = ""
-
-    for idx, row in enumerate(rows):
-        if len(row) < 8: continue
-        cell0 = row[0].strip()
-        if re.search(r"SEMANA\s+\d{2}/\d{2}", _norm_text(cell0), re.I):
-            semana_atual = cell0
-            if not _parse_date_cg(row[1] if len(row) > 1 else ""):
-                continue
-        if "DATA CARREGAMENTO" in _norm_text(row[1] if len(row) > 1 else ""):
-            continue
-        data_carga = _parse_date_cg(row[1]) if len(row) > 1 else None
-        if not data_carga:
-            if idx in _merged_idx and _last_cargo_date:
-                data_carga = _last_cargo_date
-            else:
-                continue
-        _last_cargo_date = data_carga
-        destino = row[2].strip().upper() if len(row) > 2 else ""
-        if not destino or destino == "DESTINO":
-            if _last_destino_raw:
-                destino = _last_destino_raw
-            else:
-                continue
-        else:
-            _last_destino_raw = destino
-        valor_frete = _first_frete_cg(row)
-        cliente = ""
-        for i in range(4, min(8, len(row))):
-            v = row[i].strip()
-            if v and "R$" not in v and not _is_date_str_cg(v) and not re.match(r"^\d+[-/]", v):
-                cliente = v.upper(); break
-        if not cliente:
-            cliente = destino
-        local = ""
-        for i in range(3, min(7, len(row))):
-            v = row[i].strip().upper()
-            if v and "R$" not in v and not _is_date_str_cg(v):
-                local = v; break
-        local_n = _norm_text(local)
-        if "IACANGA" in local_n: local_tag = "Iacanga"
-        elif "AREALVA" in local_n: local_tag = "Arealva"
-        elif "ITAJU" in local_n: local_tag = "Itaju"
-        else: local_tag = local_n[:15] if local_n else "N/I"
-        status = "Normal"
-        obs_raw = ""
-        for cell in row[6:15]:
-            v = cell.strip().upper()
-            if not v or "R$" in v: continue
-            if "CANCEL" in v: obs_raw = v; status = "Cancelada"; break
-            if any(k in v for k in ["ADIAD", "ADIADO", "ADIADA"]): obs_raw = v; status = "Adiada"; break
-            if "ARMAZENAGEM" in v: obs_raw = v; status = "Armazenagem"; break
-        records.append({
-            "MES":          mes_nome,
-            "MES_NUM":      mes_num,
-            "ANO":          ano,
-            "SEMANA":       semana_atual,
-            "DATA":         data_carga,
-            "DESTINO":      destino,
-            "LOCAL":        local_tag,
-            "VALOR_FRETE":  valor_frete,
-            "CLIENTE":      cliente,
-            "PREVISAO":     0.0 if previsto_mensal > 0 else valor_frete,
-            "REALIZADO":    0.0,
-            # Painel direito registra 1 realizado por (data, cliente) — não por carga
-            # individual; guarda a chave e divide o valor logo abaixo entre todas as
-            # cargas do mesmo cliente/dia para não contar em dobro no total.
-            "_REAL_KEY": (
-                (data_carga, _norm_text(destino)) if (data_carga, _norm_text(destino)) in day_realized
-                else (data_carga, _norm_text(cliente)) if (data_carga, _norm_text(cliente)) in day_realized
-                else None
-            ),
-            "REALIZADO_DIA": 0.0,
-            "DIFERENCA":    0.0,
-            "OBS":          obs_raw,
-            "STATUS":       status,
-        })
-
-    _contagem_chave = Counter(r["_REAL_KEY"] for r in records if r["_REAL_KEY"] is not None)
-    for r in records:
-        _chave = r.pop("_REAL_KEY", None)
-        if _chave is not None:
-            r["REALIZADO_DIA"] = day_realized[_chave] / _contagem_chave[_chave]
-
-    # Reconcilia proporcionalmente com o Realizado oficial da linha-resumo (nem todo
-    # lançamento do painel diário casa por nome com uma carga) — mesma lógica de
-    # 8_Previsao_Cargas.py, para o relatório não divergir do dashboard.
-    _soma_batida = sum(r["REALIZADO_DIA"] for r in records)
-    if _soma_batida > 0 and realizado_mensal > 0:
-        _fator = realizado_mensal / _soma_batida
-        for r in records:
-            r["REALIZADO_DIA"] *= _fator
-
-    if realizado_mensal > 0 or previsto_mensal > 0:
-        proxy = _last_cargo_date or date(ano, mes_num, 28)
-        records.append({
-            "MES": mes_nome, "MES_NUM": mes_num, "ANO": ano, "SEMANA": "",
-            "DATA": proxy, "DESTINO": mes_nome, "LOCAL": "", "VALOR_FRETE": 0.0,
-            "CLIENTE": mes_nome, "PREVISAO": previsto_mensal, "REALIZADO": realizado_mensal,
-            "REALIZADO_DIA": 0.0, "DIFERENCA": 0.0, "OBS": "", "STATUS": "CARGO_REAL",
-        })
-    return records
-
-
-@st.cache_data(ttl=_TTL, show_spinner=False)
-def _dados_cargas() -> pd.DataFrame:
-    all_records: list[dict] = []
-    for mes_nome, mes_num, ano in _MESES_CARGAS:
-        try:
-            rows = _fetch_csv_cargas(mes_nome)
-            records = _parse_month_cargas(rows, mes_nome, mes_num, ano)
-            all_records.extend(records)
-        except Exception:
-            pass
-    if not all_records:
-        return pd.DataFrame()
-    df = pd.DataFrame(all_records)
-    df["DATA"] = pd.to_datetime(df["DATA"])
-    alias = {"NIAZITEX": "NIAZITEX", "NIAZITTEX": "NIAZITEX", "NC INDUSTRIA": "NIAZITEX"}
-    df["DESTINO_NORM"] = df["DESTINO"].apply(lambda x: alias.get(_norm_text(x), _norm_text(x)))
-    df["CLIENTE_NORM"] = df["CLIENTE"].apply(lambda x: alias.get(_norm_text(x), _norm_text(x)))
-    meses_com_real = set(df.loc[df["STATUS"] == "CARGO_REAL", "MES"].tolist())
-    df["TEM_REALIZADO"] = df["MES"].isin(meses_com_real) & (df["STATUS"] != "CARGO_REAL")
-    return df
+# ── Cargas: parsing/loader vêm de utils/cargas_loader.py (load_cargas) ─────────
 
 
 # ── Carteira de Pedidos ────────────────────────────────────────────────────────
@@ -1037,7 +723,11 @@ with tab_corte:
                 with st.spinner("Carregando dados e gerando PDF…"):
                     try:
                         from scripts.relatorio_diario_corte import gerar_pdf_consolidado as _gerar_pdf_consolidado_email
-                        _bytes_cc = _gerar_pdf_consolidado_email(_dia_cc, dia_ini=_ini_cc)
+                        _bytes_cc = _gerar_pdf_consolidado_email(
+                            _dia_cc, dia_ini=_ini_cc,
+                            meta_diaria_arealva=_METAS_AREALVA_META_TOTAL,
+                            meta_diaria_iacanga=sum(v.get("CASAL", 0) for v in _METAS_IACANGA.values()),
+                        )
                         st.session_state["pdf_cc_bytes"] = _bytes_cc
                         st.session_state["pdf_cc_nome"] = f"relatorio_consolidado_{_dia_cc.strftime('%d-%m-%Y')}.pdf"
                         st.success("PDF gerado! Clique em Baixar.")
@@ -1324,7 +1014,7 @@ with tab_interno:
     )
 
     from utils.producao_interno_loader import load_interno_unidade
-    from utils.pdf_report import gerar_pdf_colaborador
+    from utils.pdf_report import gerar_pdf_colaborador, gerar_pdf_colaboradores_todos
     from config.settings import PRODUCAO_INTERNO_SHEETS
 
     _unidades_int = list(PRODUCAO_INTERNO_SHEETS.keys())
@@ -1343,8 +1033,18 @@ with tab_interno:
             _dmin_int = _df_int_full["DATA"].min().date()
             _dmax_int = _df_int_full["DATA"].max().date()
 
+            _modo_int = st.radio(
+                "Gerar relatório para", ["Um colaborador", "Todos os colaboradores"],
+                key="modo_int", horizontal=True,
+            )
+
             _colab_disp_int = sorted(_df_int_full["COLABORADOR"].unique())
-            _colab_sel_int = st.selectbox("Colaborador", _colab_disp_int, key="colab_int")
+            if _modo_int == "Um colaborador":
+                _colab_sel_int = st.selectbox("Colaborador", _colab_disp_int, key="colab_int")
+            else:
+                _colabs_sel_int = st.multiselect(
+                    "Colaboradores", _colab_disp_int, default=_colab_disp_int, key="colabs_int",
+                )
 
             _ci_int, _cf_int = st.columns(2)
             with _ci_int:
@@ -1354,39 +1054,68 @@ with tab_interno:
                 _fim_int = st.date_input("Data Final", value=_dmax_int, min_value=_dmin_int,
                                           max_value=_dmax_int, format="DD/MM/YYYY", key="fim_int")
 
-            if st.button("📄 Gerar Relatório do Colaborador", key="btn_int", type="primary"):
+            _rotulo_btn_int = ("📄 Gerar Relatório do Colaborador" if _modo_int == "Um colaborador"
+                               else "📄 Gerar Relatório de Todos os Colaboradores")
+            if st.button(_rotulo_btn_int, key="btn_int", type="primary"):
                 if _ini_int > _fim_int:
                     st.error("A data inicial não pode ser maior que a final.")
                 else:
                     with st.spinner("Gerando PDF…"):
                         try:
-                            _mask_int = (
-                                (_df_int_full["COLABORADOR"] == _colab_sel_int)
-                                & (_df_int_full["DATA"].dt.date >= _ini_int)
+                            _mask_periodo_int = (
+                                (_df_int_full["DATA"].dt.date >= _ini_int)
                                 & (_df_int_full["DATA"].dt.date <= _fim_int)
                             )
-                            _df_colab_int = _df_int_full[_mask_int].copy()
-                            if _df_colab_int.empty:
-                                st.warning("Nenhum registro desse colaborador no período selecionado.")
+                            if _modo_int == "Um colaborador":
+                                _mask_int = _mask_periodo_int & (_df_int_full["COLABORADOR"] == _colab_sel_int)
+                                _df_colab_int = _df_int_full[_mask_int].copy()
+                                if _df_colab_int.empty:
+                                    st.warning("Nenhum registro desse colaborador no período selecionado.")
+                                else:
+                                    _bytes_int = gerar_pdf_colaborador(
+                                        df_colab=_df_colab_int,
+                                        colaborador=_colab_sel_int,
+                                        unidade_label=PRODUCAO_INTERNO_SHEETS[_chave_int]["label"],
+                                        data_ini=_ini_int,
+                                        data_fim=_fim_int,
+                                    )
+                                    st.session_state["pdf_int_bytes"] = _bytes_int
+                                    _slug_int = normalize_text(_colab_sel_int).replace(" ", "_")
+                                    st.session_state["pdf_int_nome"] = nome_arquivo_pdf(
+                                        f"colaborador_{_chave_int.lower()}_{_slug_int}", _ini_int, _fim_int
+                                    )
+                                    st.success("PDF gerado!")
                             else:
-                                _bytes_int = gerar_pdf_colaborador(
-                                    df_colab=_df_colab_int,
-                                    colaborador=_colab_sel_int,
-                                    unidade_label=PRODUCAO_INTERNO_SHEETS[_chave_int]["label"],
-                                    data_ini=_ini_int,
-                                    data_fim=_fim_int,
-                                )
-                                st.session_state["pdf_int_bytes"] = _bytes_int
-                                _slug_int = normalize_text(_colab_sel_int).replace(" ", "_")
-                                st.session_state["pdf_int_nome"] = nome_arquivo_pdf(
-                                    f"colaborador_{_chave_int.lower()}_{_slug_int}", _ini_int, _fim_int
-                                )
-                                st.success("PDF gerado!")
+                                if not _colabs_sel_int:
+                                    st.warning("Selecione ao menos um colaborador.")
+                                else:
+                                    _df_todos_int = _df_int_full[
+                                        _mask_periodo_int & _df_int_full["COLABORADOR"].isin(_colabs_sel_int)
+                                    ].copy()
+                                    if _df_todos_int.empty:
+                                        st.warning("Nenhum registro no período selecionado.")
+                                    else:
+                                        _ordem_colabs_int = (
+                                            _df_todos_int.groupby("COLABORADOR")["QUANTIDADE"].sum()
+                                            .sort_values(ascending=False).index.tolist()
+                                        )
+                                        _bytes_int = gerar_pdf_colaboradores_todos(
+                                            df_unidade=_df_todos_int,
+                                            colaboradores=_ordem_colabs_int,
+                                            unidade_label=PRODUCAO_INTERNO_SHEETS[_chave_int]["label"],
+                                            data_ini=_ini_int,
+                                            data_fim=_fim_int,
+                                        )
+                                        st.session_state["pdf_int_bytes"] = _bytes_int
+                                        st.session_state["pdf_int_nome"] = nome_arquivo_pdf(
+                                            f"colaboradores_{_chave_int.lower()}_todos", _ini_int, _fim_int
+                                        )
+                                        st.success("PDF gerado!")
                         except Exception as _e:
                             st.error(f"Erro ao gerar PDF: {_e}")
 
         if st.session_state.get("pdf_int_bytes"):
-            st.download_button("⬇️ Baixar Relatório do Colaborador", data=st.session_state["pdf_int_bytes"],
+            st.download_button("⬇️ Baixar Relatório", data=st.session_state["pdf_int_bytes"],
                 file_name=st.session_state.get("pdf_int_nome", "relatorio_colaborador.pdf"),
                 mime="application/pdf", key="dl_int", use_container_width=True)
 
@@ -1400,7 +1129,7 @@ with tab_cargas:
 
     with st.container(border=True):
         st.markdown("📅 **Período**")
-        _meses_disp_cg = [m[0] for m in _MESES_CARGAS]
+        _meses_disp_cg = [m[0] for m in _MESES_CARGAS_DISPONIVEIS]
         _sel_meses_cg = st.multiselect("Meses", _meses_disp_cg, default=_meses_disp_cg, key="sel_mes_cg")
         if not _sel_meses_cg:
             _sel_meses_cg = _meses_disp_cg
@@ -1408,7 +1137,7 @@ with tab_cargas:
         if st.button("📄 Gerar Relatório de Cargas", key="btn_cg", type="primary"):
             with st.spinner("Carregando dados de cargas… pode levar alguns segundos."):
                 try:
-                    _df_raw_cg = _dados_cargas()
+                    _df_raw_cg = load_cargas()
                     if _df_raw_cg.empty:
                         st.error("Dados de cargas não disponíveis.")
                     else:
@@ -1425,18 +1154,22 @@ with tab_cargas:
                         _n_adi_cg  = int((_df_cargos_cg["STATUS"] == "Adiada").sum())
                         _n_cli_cg  = int(_df_cargos_cg["DESTINO_NORM"].nunique()) if "DESTINO_NORM" in _df_cargos_cg.columns else 0
 
-                        _mes_nums = {m[0]: m[1] for m in _MESES_CARGAS}
+                        _mes_nums = {m[0]: m[1] for m in _MESES_CARGAS_DISPONIVEIS}
                         _df_mes_cg_rows = []
                         for _mes in _sel_meses_cg:
                             _mn = _mes_nums.get(_mes, 0)
                             _df_m = _df_cg_f[_df_cg_f["MES"] == _mes]
-                            _prev_m = float(_df_m[_df_m["STATUS"] != "CARGO_REAL"]["PREVISAO"].sum())
+                            # Previsto = soma de TODAS as linhas (cargas individuais +
+                            # CARGO_REAL) — igual ao dashboard (pages/8_Previsao_Cargas.py).
+                            # Em meses com resumo oficial na planilha, o Previsto de cada
+                            # carga individual já vem zerado (o total mora só na linha
+                            # CARGO_REAL) — excluir essa linha do somatório, como o código
+                            # antigo fazia, zerava o Previsto do mês inteiro na tabela,
+                            # mesmo com Realizado > 0 (bug relatado pelo usuário 13/07/2026,
+                            # mais visível filtrando um único mês).
+                            _prev_m = float(_df_m["PREVISAO"].sum())
                             _real_row = _df_m[_df_m["STATUS"] == "CARGO_REAL"]
                             _real_m = float(_real_row["REALIZADO"].sum()) if not _real_row.empty else 0.0
-                            if _real_row.empty and not _df_m[_df_m["STATUS"] != "CARGO_REAL"].empty:
-                                _prev_official = float(_df_m[_df_m["STATUS"] == "CARGO_REAL"]["PREVISAO"].sum())
-                                if _prev_official > 0:
-                                    _prev_m = _prev_official
                             _adh_m = (_real_m / _prev_m * 100) if _prev_m > 0 else 0.0
                             _df_mes_cg_rows.append({"MES": _mes, "MES_NUM": _mn,
                                 "PREVISAO": _prev_m, "REALIZADO": _real_m,
@@ -1498,6 +1231,49 @@ with tab_pedidos:
             if _sel_meses_cart:
                 _df_cart = _df_cart[_df_cart["ANO_MES"].isin(_sel_meses_cart)]
 
+            st.markdown("🔍 **Filtros Adicionais**")
+            _col_f1, _col_f2, _col_f3 = st.columns(3)
+            with _col_f1:
+                _clientes_cart = sorted(_df_cart["CLIENTE_CURTO"].unique())
+                _sel_clientes_cart = st.multiselect(
+                    "Cliente", _clientes_cart, placeholder="Todos", key="sel_cli_cart_rel"
+                )
+            with _col_f2:
+                _categorias_cart = sorted(_df_cart["CATEGORIA"].unique())
+                _sel_categorias_cart = st.multiselect(
+                    "Categoria", _categorias_cart, placeholder="Todas", key="sel_cat_cart_rel"
+                )
+            with _col_f3:
+                _produtos_cart = sorted(_df_cart["DESCRICAO"].unique())
+                _sel_produtos_cart = st.multiselect(
+                    "Produto", _produtos_cart, placeholder="Todos", key="sel_prod_cart_rel"
+                )
+
+            _col_f4, _col_f5 = st.columns(2)
+            with _col_f4:
+                _vendedores_cart = sorted(v for v in _df_cart["VENDEDOR"].unique() if str(v).strip())
+                _sel_vendedores_cart = st.multiselect(
+                    "Vendedor", _vendedores_cart, placeholder="Todos", key="sel_vend_cart_rel"
+                )
+            with _col_f5:
+                _estados_cart = sorted(_df_cart["ESTADO"].unique())
+                _sel_estados_cart = st.multiselect(
+                    "Estado (UF)", _estados_cart, placeholder="Todos", key="sel_uf_cart_rel"
+                )
+
+            if _sel_clientes_cart:
+                _df_cart = _df_cart[_df_cart["CLIENTE_CURTO"].isin(_sel_clientes_cart)]
+            if _sel_categorias_cart:
+                _df_cart = _df_cart[_df_cart["CATEGORIA"].isin(_sel_categorias_cart)]
+            if _sel_produtos_cart:
+                _df_cart = _df_cart[_df_cart["DESCRICAO"].isin(_sel_produtos_cart)]
+            if _sel_vendedores_cart:
+                _df_cart = _df_cart[_df_cart["VENDEDOR"].isin(_sel_vendedores_cart)]
+            if _sel_estados_cart:
+                _df_cart = _df_cart[_df_cart["ESTADO"].isin(_sel_estados_cart)]
+
+            st.caption(f"📊 {len(_df_cart):,} registro(s) com os filtros atuais".replace(",", "."))
+
             _total_valor_cart  = _df_cart["VALOR_TOTAL"].sum()
             _total_pecas_cart  = int(_df_cart["QUANTIDADE"].sum())
             _n_pedidos_cart    = _df_cart["PEDIDO"].nunique()
@@ -1509,9 +1285,24 @@ with tab_pedidos:
             _meses_str = ', '.join(_sel_meses_cart) if _sel_meses_cart else 'Todos'
             _periodo_cart = f"{_anos_str} — {_meses_str}"
 
+            _filtros_partes_cart = []
+            if _sel_clientes_cart:
+                _filtros_partes_cart.append(f"Cliente: {', '.join(_sel_clientes_cart)}")
+            if _sel_categorias_cart:
+                _filtros_partes_cart.append(f"Categoria: {', '.join(_sel_categorias_cart)}")
+            if _sel_produtos_cart:
+                _rotulo_prod = (', '.join(_sel_produtos_cart) if len(_sel_produtos_cart) <= 3
+                                else f"{len(_sel_produtos_cart)} selecionados")
+                _filtros_partes_cart.append(f"Produto: {_rotulo_prod}")
+            if _sel_vendedores_cart:
+                _filtros_partes_cart.append(f"Vendedor: {', '.join(_sel_vendedores_cart)}")
+            if _sel_estados_cart:
+                _filtros_partes_cart.append(f"UF: {', '.join(_sel_estados_cart)}")
+            _filtros_texto_cart = ' | '.join(_filtros_partes_cart)
+
             if st.button("📄 Gerar Relatório Carteira", key="btn_cart", type="primary"):
                 if _df_cart.empty:
-                    st.warning("Nenhum registro no período selecionado.")
+                    st.warning("Nenhum registro com os filtros selecionados.")
                 else:
                     with st.spinner("Gerando PDF…"):
                         try:
@@ -1524,7 +1315,7 @@ with tab_pedidos:
                                 n_produtos=_n_produtos_cart,
                                 ticket_medio=_ticket_medio_cart,
                                 periodo=_periodo_cart,
-                                filtros_texto="",
+                                filtros_texto=_filtros_texto_cart,
                             )
                             st.session_state["pdf_cart_bytes"] = _bytes_cart
                             st.session_state["pdf_cart_nome"] = f"carteira_pedidos_{datetime.now().strftime('%Y%m%d')}.pdf"

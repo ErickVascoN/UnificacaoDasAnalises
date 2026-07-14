@@ -120,6 +120,13 @@ NOME_EQUIVALENCIAS: dict[str, str] = {
     "ZARO TEXTIL (LUIS)":       "ZARO (LUIS)",
     "MARCELA SOARES DE MATTOS": "MARCELA SOARES",
     "MEGA PREVEN":              "MEGA PREVEN MATRIZ",
+    # Identificados ao conferir a planilha BD PLANO DE METAS atualizada (14/07/2026)
+    # contra as fontes de produção diária — nomes abreviados/parciais na guia de
+    # metas que já têm produção real sob um nome mais completo.
+    "BOCA":                                       "MEGA PREVEN (BOCA)",
+    "CARLINE":                                     "MEGA (CARLINE)",
+    "JOSIANE STEFANI CARDOSO DOS SANTOS AMENDOLA": "JOSIANE STEFANI",
+    "ANGELA BANDEIRANTE":                          "ANGELA BANDEIRANTES",
 }
 
 # ── Produção externa (facções / prestadores) ──────────────────────────────────

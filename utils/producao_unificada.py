@@ -21,10 +21,13 @@ CUTOVER_DATE = date(2026, 6, 1)
 # CLIENTE como aparece em load_faccoes() (maiúsculo) → nome canônico usado em
 # CORES_EMPRESAS / pela planilha antiga. Valores sem entrada aqui viram
 # Title Case (BURDAYS -> Burdays) — já bate com CORES_EMPRESAS.
+# NIAZITTEX e SEVEN são clientes diferentes e separados — não devem ser
+# fundidos num único rótulo (bug relatado pelo usuário 13/07/2026: relatório
+# mostrava "Niazittex / Seven" para produção da Seven).
 CLIENTE_ALIAS: dict[str, str] = {
     "CORTTEX":   "Cortex",
-    "NIAZITTEX": "Niazittex / Seven",
-    "SEVEN":     "Niazittex / Seven",
+    "NIAZITTEX": "Niazittex",
+    "SEVEN":     "Seven",
     "FORTEX":    "Fortex",
 }
 
@@ -86,7 +89,9 @@ PRESTADORES_INATIVOS: set[str] = {
     "MARIA HELENA",
 }
 
-_COLUNAS_UNIFICADAS = ["DATA", "CLIENTE", "FACCAO", "PRODUTO", "QUANTIDADE", "META_DIARIA", "FONTE"]
+_COLUNAS_UNIFICADAS = [
+    "DATA", "CLIENTE", "FACCAO", "PRODUTO", "QUANTIDADE", "META_DIARIA", "FONTE", "OBSERVACAO",
+]
 
 # Rótulo do grupo que junta todos os prestadores individuais (quarterizadas).
 GRUPO_QUARTERIZADAS = "QUARTERIZADAS"
@@ -149,9 +154,21 @@ def _achatar_legado(all_data_legado: dict[str, pd.DataFrame]) -> pd.DataFrame:
         faccao_col = df["Faccao"].astype(str).str.strip().str.upper().map(
             lambda v: FACCAO_ALIAS_LEGADO.get(v, v)
         )
+        # CLIENTE: usa a coluna "Cliente" da própria linha quando existe (caso
+        # de "Niazittex / Seven" — uma única aba/empresa carregando dois
+        # clientes DIFERENTES, ver pages/2_Producao_Geral.py::
+        # _load_niazitex_suplementar) — sem isso, todas as linhas dessa
+        # empresa (Niazittex e Seven juntos) eram rotuladas com o nome da
+        # aba/empresa "Niazittex / Seven", misturando dois clientes que devem
+        # ficar separados nos relatórios (feedback do usuário 13/07/2026).
+        # Demais empresas (Burdays, Camesa etc.) não têm coluna "Cliente"
+        # própria — o cliente delas É o nome da empresa/aba, sem mudança.
+        cliente_col = (
+            df["Cliente"] if "Cliente" in df.columns else empresa
+        )
         sub = pd.DataFrame({
             "DATA":        pd.to_datetime(df["Data"]),
-            "CLIENTE":     empresa,
+            "CLIENTE":     cliente_col,
             "FACCAO":      faccao_col,
             "PRODUTO":     [
                 _normalizar_produto_legado(f, empresa, p)
@@ -159,6 +176,7 @@ def _achatar_legado(all_data_legado: dict[str, pd.DataFrame]) -> pd.DataFrame:
             ],
             "QUANTIDADE":  df["Quantidade"],
             "META_DIARIA": pd.to_numeric(df.get("Meta Diaria"), errors="coerce").fillna(0.0),
+            "OBSERVACAO":  "",  # planilha antiga não tem essa coluna
         })
         frames.append(sub)
 
@@ -173,7 +191,7 @@ def _achatar_legado(all_data_legado: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 def _preparar_faccoes(df_fac: pd.DataFrame) -> pd.DataFrame:
     """df_fac: saída de utils.faccao_loader.load_faccoes() — colunas DATA,
-    FACCAO, ABA, PRESTADOR, PRODUTO, CLIENTE, QUANTIDADE. Restringe a
+    FACCAO, ABA, PRESTADOR, PRODUTO, CLIENTE, QUANTIDADE, OBSERVACAO. Restringe a
     DATA >= CUTOVER_DATE e normaliza nome de cliente pro padrão canônico.
     META_DIARIA fica 0 aqui — meta dessa fatia é calculada à parte
     (_calcular_meta_cliente_periodo / _calcular_meta_faccao_periodo), pois a
@@ -188,6 +206,9 @@ def _preparar_faccoes(df_fac: pd.DataFrame) -> pd.DataFrame:
     )
     out["META_DIARIA"] = 0.0
     out["FONTE"] = "faccoes"
+    # Defensivo: coluna nova (adicionada 14/07/2026) — se load_faccoes() vier
+    # de uma versão antiga em cache sem essa coluna, não deve quebrar.
+    out["OBSERVACAO"] = df_fac["OBSERVACAO"] if "OBSERVACAO" in df_fac.columns else ""
     out = out[out["DATA"] >= pd.Timestamp(CUTOVER_DATE)]
     return out[_COLUNAS_UNIFICADAS]
 

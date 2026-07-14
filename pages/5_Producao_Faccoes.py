@@ -98,6 +98,15 @@ def _fmt(n: float | int) -> str:
     return f"{int(n):,}".replace(",", ".")
 
 
+def _join_unique(s: pd.Series) -> str:
+    """Junta valores de texto não-vazios e únicos com ' / ' — usado quando um
+    groupby colapsa várias linhas (ex.: Observações de dias/produtos iguais
+    mas facções diferentes) numa só, sem perder nenhuma. Mesmo padrão de
+    utils/controle_op.py::agregar_por_op."""
+    vals = sorted({str(v).strip() for v in s if str(v).strip() not in ("", "nan", "NAN", "None")})
+    return " / ".join(vals)
+
+
 def _color_pct(val, t_green: float = 100, t_yellow: float = 75) -> str:
     """Colore um valor de % por faixas. Usado em st.dataframe style."""
     try:
@@ -305,11 +314,15 @@ du_mes = _dias_uteis(ano_sel, mes_sel)
 _df_periodo_pre = df[
     (df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)
 ]
-# Dias distintos com produção por facção
+# Dias distintos com produção por facção. Só conta QUANTIDADE > 0 — linhas
+# de QUANTIDADE=0 com Observação (dia sem produção, mas contextualizado, ex.:
+# "máquina quebrou") não contam como dia de produção, senão infla a meta e
+# derruba a % sem queda real de produção (feedback do usuário 14/07/2026).
 _dias_fac: dict[str, int] = {}
 if not _df_periodo_pre.empty:
     _dias_fac = (
-        _df_periodo_pre.groupby("FACCAO_N")["DATA"]
+        _df_periodo_pre[_df_periodo_pre["QUANTIDADE"] > 0]
+        .groupby("FACCAO_N")["DATA"]
         .apply(lambda s: s.dt.date.nunique())
         .to_dict()
     )
@@ -564,7 +577,9 @@ with tab_mes:
         fig_cum = apply_to_fig(fig_cum, _d_ini, _d_fim, pagina="faccoes", x_fmt="%d/%m")
         st.plotly_chart(fig_cum, use_container_width=True)
 
-        dias_com_prod_mes = int(daily["DATA"].dt.date.nunique())
+        # Só conta dias com QUANTIDADE > 0 — dias zerados/contextualizados (Observação)
+        # não entram na média (feedback do usuário 14/07/2026).
+        dias_com_prod_mes = int(daily[daily["QUANTIDADE"] > 0]["DATA"].dt.date.nunique())
         media_dia_mes = total_mes / dias_com_prod_mes if dias_com_prod_mes else 0
         top_dia_mes = daily.loc[daily["QUANTIDADE"].idxmax()]
         saldo_meta_mes = total_mes - meta_mes_total
@@ -1015,12 +1030,11 @@ with tab_dia:
 
             with col_t:
                 det = (
-                    df_dia.groupby(["FACCAO", "PRODUTO", "CLIENTE"])["QUANTIDADE"]
-                    .sum()
-                    .reset_index()
+                    df_dia.groupby(["FACCAO", "PRODUTO", "CLIENTE"], as_index=False)
+                    .agg(QUANTIDADE=("QUANTIDADE", "sum"), OBSERVACAO=("OBSERVACAO", _join_unique))
                     .sort_values("QUANTIDADE", ascending=False)
                 )
-                det.columns = ["Facção", "Produto", "Empresa", "Qtd"]
+                det.columns = ["Facção", "Produto", "Empresa", "Qtd", "Observações"]
                 st.dataframe(det, use_container_width=True, hide_index=True)
 
             # Por prestador (somente QUARTERIZADAS / quando tem PRESTADOR)
@@ -1210,7 +1224,8 @@ with tab_sem:
                     )
 
             saldo_sem = total_sem - meta_sem_total
-            dias_sem_prod = int(df_sem["DATA"].dt.date.nunique())
+            # Só conta dias com QUANTIDADE > 0 (feedback do usuário 14/07/2026).
+            dias_sem_prod = int(df_sem[df_sem["QUANTIDADE"] > 0]["DATA"].dt.date.nunique())
             media_dia_sem_prod = total_sem / dias_sem_prod if dias_sem_prod else 0
             fac_sem = (
                 df_sem.groupby("FACCAO")["QUANTIDADE"]

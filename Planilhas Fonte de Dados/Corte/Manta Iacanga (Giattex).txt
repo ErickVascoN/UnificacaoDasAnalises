@@ -1,0 +1,8 @@
+Corte - Manta Iacanga (Giattex)
+
+Link: https://docs.google.com/spreadsheets/d/1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU/edit#gid=0
+
+ID:  1FBpCrq29_e1UBNwBlcgPTz66tbpUsgcgtzfXi4DcORU
+GID: 0
+
+Usado em: config/settings.py (IACANGA_SHEETS_ID), pages/3_Controle_de_Corte.py, utils/controle_op.py (IACANGA_ID)

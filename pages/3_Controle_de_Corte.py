@@ -2916,11 +2916,11 @@ elif screen == 'arealva_lencol':
         # ── Caseamento Jogo Duplo × Fundo ────────────────────────────────────
         _casea_ln = lencol_caseamento(df_ln)
         if total_fundos_ln > 0 or not _casea_ln.empty:
-            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo Duplo × Fundo</div>", unsafe_allow_html=True)
+            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo × Fundo</div>", unsafe_allow_html=True)
             st.caption(
-                "Cada jogo duplo precisa de um fundo correspondente (corte à parte). "
+                "Cada jogo precisa de um fundo correspondente (corte à parte). "
                 "As quantidades devem casear por OP e tamanho. "
-                "⚠️ Este caseamento olha **só os jogos duplos das OPs que tiveram fundo** — "
+                "⚠️ Este caseamento olha **só os jogos das OPs que tiveram fundo** — "
                 "por isso é menor que o KPI 'Peças (s/ fundo)', que inclui também jogos "
                 "simples e outros produtos (fronha, lençol avulso, etc.)."
             )
@@ -2935,8 +2935,8 @@ elif screen == 'arealva_lencol':
             _jogos_sem_par = total_sem_fundo_ln - _jogo_em_op_fundo
 
             cj1, cj2, cj3, cj4 = st.columns(4)
-            cj1.metric("🧩 Jogos Duplos", lencol_fmt_num(_jogo_em_op_fundo),
-                       help="Jogos duplos das OPs que tiveram fundo (universo do caseamento).")
+            cj1.metric("🧩 Jogos", lencol_fmt_num(_jogo_em_op_fundo),
+                       help="Jogos das OPs que tiveram fundo (universo do caseamento).")
             cj2.metric("🔄 Fundos", lencol_fmt_num(_fundo_em_op_fundo),
                        help="Fundos de jogo cortados nas OPs que tiveram fundo.")
             cj3.metric("⚖️ Saldo de fundos (OPs c/ fundo)",
@@ -2952,7 +2952,7 @@ elif screen == 'arealva_lencol':
 
             if _jogos_sem_par > 0:
                 st.info(
-                    f"ℹ️ **{lencol_fmt_num(_jogos_sem_par)} peças** são jogos duplos de OPs que **não tiveram "
+                    f"ℹ️ **{lencol_fmt_num(_jogos_sem_par)} peças** são jogos de OPs que **não tiveram "
                     f"corte de fundo no período filtrado** — por isso ficam fora do caseamento acima. "
                     f"O fundo dessas OPs pode ter sido cortado em outro período ou ainda não foi cortado.",
                     icon=None,
@@ -3627,14 +3627,14 @@ elif screen == 'arealva_lencol':
         )
         st.dataframe(
             resumo_op_show_ln.rename(columns={
-                "OP": "OP", "Peças": "Peças", "Jogo_Duplo": "Jogo Duplo",
+                "OP": "OP", "Peças": "Peças", "Jogo_Duplo": "Jogo",
                 "Fundo": "Fundo", "Diferenca": "Diferença", "Casea": "Casea",
                 "Valor": "Valor R$", "Prestadores": "Prestadores", "Empresas": "Empresas",
                 "Tecido": "Tecido", "Categoria": "Categoria",
                 "Data_Inicio": "Início", "Ultimo_Corte": "Último Corte",
                 "Registros": "Registros",
             })[[
-                "OP", "Peças", "Jogo Duplo", "Fundo", "Diferença", "Casea",
+                "OP", "Peças", "Jogo", "Fundo", "Diferença", "Casea",
                 "Valor R$", "Prestadores", "Empresas", "Tecido", "Categoria",
                 "Início", "Último Corte", "Registros",
             ]],
@@ -3642,7 +3642,7 @@ elif screen == 'arealva_lencol':
         )
         st.caption(
             "**Peças** = total bruto (jogo + fundo + outros).  "
-            "**Jogo Duplo** / **Fundo** = cortes classificados por tipo.  "
+            "**Jogo** / **Fundo** = cortes classificados por tipo.  "
             "**Casea**: ✅ caseado · 🔴 faltam fundos · 🟠 sobram fundos · — sem fundo."
         )
 
@@ -3650,7 +3650,7 @@ elif screen == 'arealva_lencol':
         # _casea_op_ln já foi calculado acima
         if not _casea_op_ln.empty:
             st.divider()
-            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo Duplo × Fundo (por OP)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='ln-sec'>🔄 Caseamento Jogo × Fundo (por OP)</div>", unsafe_allow_html=True)
             _div_op_ln = _casea_op_ln[_casea_op_ln["DIFERENCA"] != 0]
             _n_ok = int((_casea_op_ln["DIFERENCA"] == 0).sum())
             _n_div = len(_div_op_ln)

@@ -1,0 +1,8 @@
+Corte - Itaju
+
+Link: https://docs.google.com/spreadsheets/d/19dJKG956drBCv3fEnL75dTLf157xLKvE/edit#gid=1039503764
+
+ID:  19dJKG956drBCv3fEnL75dTLf157xLKvE
+GID: 1039503764
+
+Usado em: pages/3_Controle_de_Corte.py (ITAJU_SHEET_ID), pages/10_Relatorios.py (_ITAJU_ID)

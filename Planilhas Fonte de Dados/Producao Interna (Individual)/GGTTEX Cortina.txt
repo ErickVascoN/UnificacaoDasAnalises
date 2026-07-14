@@ -1,0 +1,8 @@
+Produção Interna - GGTTEX Cortina
+
+Link: https://docs.google.com/spreadsheets/d/1PG5t_aWif2iJiCyEtgKE6sLFvMu7w5sL/edit#gid=296216772
+
+ID:  1PG5t_aWif2iJiCyEtgKE6sLFvMu7w5sL
+GID: 296216772
+
+Usado em: config/settings.py (PRODUCAO_INTERNO_SHEETS["GGTTEX_CORTINA"])

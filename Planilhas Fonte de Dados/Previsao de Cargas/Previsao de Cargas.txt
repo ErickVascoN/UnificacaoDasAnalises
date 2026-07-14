@@ -1,0 +1,7 @@
+Previsão de Cargas (uma aba por mês, ex: "JUNHO", "JULHO")
+
+Link: https://docs.google.com/spreadsheets/d/1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk/edit
+
+ID: 1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk
+
+Usado em: utils/cargas_loader.py (CARGAS_SHEET_ID) — compartilhado por pages/8_Previsao_Cargas.py e pages/10_Relatorios.py

@@ -1,0 +1,8 @@
+Corte - Eficiência Manta Arealva
+
+Link: https://docs.google.com/spreadsheets/d/1MDk2B2m8IA4IJn2yKvjFwyTyAnYbvACo/edit#gid=874592526
+
+ID:  1MDk2B2m8IA4IJn2yKvjFwyTyAnYbvACo
+GID: 874592526
+
+Usado em: config/settings.py (EFICIENCIA_MANTA_AREALVA_ID)

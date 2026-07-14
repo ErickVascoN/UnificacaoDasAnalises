@@ -381,15 +381,21 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
     else:
         print("[LITEX_GERAL] Coluna CLIENTE não encontrada — usando todas as linhas")
 
-    # Normaliza CLIENTE → "NIAZI" / "SEVEN" / valor original
+    # Normaliza CLIENTE → "Niazittex" / "Seven" / valor original. São clientes
+    # diferentes e separados (feedback do usuário 13/07/2026) — antes eram só
+    # agrupados na mesma aba/empresa "Niazittex / Seven" para carregar os dados
+    # (LITEX_GERAL não tem aba própria pra cada um), mas cada linha já mantinha
+    # o cliente certo aqui; o bug de mostrar "Niazittex/Seven" nos relatórios
+    # estava em _achatar_legado (utils/producao_unificada.py), que ignorava
+    # essa coluna e usava sempre o nome da aba/empresa.
     def _norm_cli_label(x):
         if not pd.notna(x) or str(x).strip() in ("", "nan", "None"):
             return ""
         n = _norm_pg(str(x))
         if "NIAZI" in n:
-            return "NIAZI"
+            return "Niazittex"
         if "SEVEN" in n:
-            return "SEVEN"
+            return "Seven"
         return n
 
     raw["_CLI"] = raw[col_cli].apply(_norm_cli_label) if col_cli else ""
@@ -436,6 +442,14 @@ def _load_niazitex_suplementar() -> pd.DataFrame:
 def fmt_br(v, decimals=0):
     txt = f"{v:,.{decimals}f}"
     return txt.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _join_unique(s: pd.Series) -> str:
+    """Junta valores de texto não-vazios e únicos com ' / ' — usado quando um
+    groupby colapsa várias linhas (ex.: Observações) numa só, sem perder
+    nenhuma. Mesmo padrão de utils/controle_op.py::agregar_por_op."""
+    vals = sorted({str(v).strip() for v in s if str(v).strip() not in ("", "nan", "NAN", "None")})
+    return " / ".join(vals)
 
 def dias_uteis(datas):
     """
@@ -1315,10 +1329,11 @@ def _faccao_tab_comparacao(df_periodo: pd.DataFrame):
             st.divider()
             st.markdown("#### 📋 Detalhe por Facção / Produto / Empresa")
             det_fac = (
-                df_periodo.groupby(["FACCAO", "PRODUTO", "CLIENTE"])["QUANTIDADE"].sum().reset_index()
+                df_periodo.groupby(["FACCAO", "PRODUTO", "CLIENTE"], as_index=False)
+                .agg(QUANTIDADE=("QUANTIDADE", "sum"), OBSERVACAO=("OBSERVACAO", _join_unique))
                 .sort_values(["FACCAO", "QUANTIDADE"], ascending=[True, False])
             )
-            det_fac.columns = ["Facção", "Produto", "Empresa", "Produzido"]
+            det_fac.columns = ["Facção", "Produto", "Empresa", "Produzido", "Observações"]
             st.dataframe(
                 det_fac.style.format({"Produzido": "{:,.0f}"}),
                 width="stretch", hide_index=True,
@@ -1566,7 +1581,9 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
         return
 
     prod_total = df_f["QUANTIDADE"].sum()
-    d_uteis = calcular_dias_com_sabados_trabalhados(df_f["DATA"])
+    # Só conta dias com QUANTIDADE > 0 — dias zerados/contextualizados
+    # (Observação) não entram na média (feedback do usuário 14/07/2026).
+    d_uteis = calcular_dias_com_sabados_trabalhados(df_f[df_f["QUANTIDADE"] > 0]["DATA"])
     media_dia = prod_total / d_uteis if d_uteis else 0
 
     ano_meta = int(sel_anos[0]) if sel_anos else date.today().year
@@ -1754,11 +1771,12 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
 
     with tab_dados:
         st.markdown("### Base Filtrada")
-        df_view = df_f[["DATA", "CLIENTE", "PRODUTO", "QUANTIDADE"]].copy()
+        df_view = df_f[["DATA", "CLIENTE", "PRODUTO", "QUANTIDADE", "OBSERVACAO"]].copy()
         df_view = df_view.sort_values(["DATA", "CLIENTE"], ascending=[False, True])
         df_view["DATA"] = df_view["DATA"].dt.strftime("%d/%m/%Y")
         df_view = df_view.rename(
-            columns={"DATA": "Data", "CLIENTE": "Cliente", "PRODUTO": "Produto", "QUANTIDADE": "Quantidade"}
+            columns={"DATA": "Data", "CLIENTE": "Cliente", "PRODUTO": "Produto",
+                     "QUANTIDADE": "Quantidade", "OBSERVACAO": "Observações"}
         )
         _fmt_int = lambda v: f"{v:,.0f}".replace(",", ".") if pd.notna(v) else "-"
         st.dataframe(

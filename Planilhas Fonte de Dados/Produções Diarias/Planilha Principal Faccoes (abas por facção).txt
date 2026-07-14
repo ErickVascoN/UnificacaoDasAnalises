@@ -1,0 +1,19 @@
+Facções Externas - Planilha principal (uma aba por facção)
+
+ID base: 1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ
+
+Link geral: https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit
+
+Abas (link direto por GID):
+- QUARTERIZADAS (por prestador):    https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=994268246
+- GGTTEX (RUTE):                    https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1265193869
+- GGTTEX (CORTINA):                 https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1766002384
+- ZANATTA (hoje = GIATTEX):         https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=670406828
+- PREVITTEX MATRIZ:                 https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1938192189
+- PREVITTEX FILIAL:                 https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1921426222
+- MEGA BARIRI:                      https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1219460477
+- MEGA PREVEN (BOCA):               https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=431490653
+- MEGA (CARLINE):                   https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=524251509
+- Metas de Facções (produto/cliente/meta mês): https://docs.google.com/spreadsheets/d/1V05lVI-HlZXpGTc1p3R2V7ddnMTTjSOQ/edit#gid=1797767576
+
+Usado em: config/settings.py (FACCOES_SHEET_ID, FACCOES_ABAS, FACCOES_GID_METAS)

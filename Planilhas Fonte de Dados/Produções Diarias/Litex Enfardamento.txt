@@ -1,0 +1,8 @@
+Facções Externas - Litex (Enfardamento)
+
+Link: https://docs.google.com/spreadsheets/d/1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p/edit#gid=1384006621
+
+ID:  1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p (mesmo arquivo do LITTEX interno, aba diferente)
+GID: 1384006621
+
+Usado em: config/settings.py (FACCOES_ABAS["LITEX (ENFARDAMENTO)"])

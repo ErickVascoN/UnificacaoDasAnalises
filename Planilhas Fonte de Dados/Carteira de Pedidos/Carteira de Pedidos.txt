@@ -1,0 +1,8 @@
+Carteira de Pedidos
+
+Link: https://docs.google.com/spreadsheets/d/1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7/edit#gid=611396912
+
+ID:  1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7
+GID: 611396912
+
+Usado em: pages/9_Carteira_de_Pedidos.py (SHEET_ID), utils/controle_op.py (CARTEIRA_ID), pages/10_Relatorios.py (_CARTEIRA_SHEET_ID)

@@ -873,6 +873,61 @@ def _mes_ant(d: date, n: int) -> date:
         y -= 1
     return date(y, m, 1)
 
+def _dias_uteis_simples(ini: date, fim: date) -> int:
+    """Dias úteis (seg-sex) entre ini e fim, inclusive — sem feriados.
+
+    Versão simplificada e autocontida: este script roda isolado (GitHub
+    Actions, sem o pacote utils/ que depende do Streamlit), então não pode
+    importar utils.feriados.contar_dias_uteis. Usada só pra estimar a Meta
+    do Período (meta diária × dias úteis) no relatório consolidado — não
+    precisa da precisão exata de feriados pra esse fim."""
+    if fim < ini:
+        return 0
+    return sum(1 for i in range((fim - ini).days + 1) if (ini + timedelta(days=i)).weekday() < 5)
+
+def _bloco_meta_status(itens: list[tuple[str, float, float, int]]) -> str:
+    """itens: lista de (nome_setor, meta_diaria, meta_periodo, produzido).
+
+    Resumo direto de Meta x Realizado por setor, com cor por % atingido
+    (verde >=100%, amarelo 80-99%, vermelho <80%) — pensado pra aparecer
+    logo após os KPIs de total, antes das tabelas de Estação/Top OPs
+    (pedido do usuário 14/07/2026: CEO quer informação clara e direta
+    primeiro, detalhe depois)."""
+    def _n(v: float) -> str:
+        return f"{v:,.0f}".replace(",", ".")
+
+    cels = []
+    largura = 100 // max(len(itens), 1)
+    for nome, meta_dia, meta_periodo, produzido in itens:
+        if meta_periodo > 0:
+            pct = produzido / meta_periodo * 100
+            # xhtml2pdf tem suporte limitado a Unicode — sem emoji aqui (nenhum
+            # outro bloco deste PDF usa), a cor de fundo/texto já é o sinal.
+            if pct >= 100:
+                cor, bg = "#2e7d32", "#e8f5e9"
+            elif pct >= 80:
+                cor, bg = "#f57f17", "#fff8e1"
+            else:
+                cor, bg = "#c62828", "#ffebee"
+            pct_txt = f"{pct:.0f}% da meta"
+        else:
+            cor, bg, pct_txt = "#555555", "#f5f5f5", "sem meta cadastrada"
+
+        cels.append(
+            f'<td width="{largura}%" style="background:{bg};border:1px solid {cor};'
+            f'padding:6px 10px;vertical-align:top;">'
+            f'<div style="font-size:9px;font-weight:bold;color:#1a237e;">{nome}</div>'
+            f'<div style="font-size:8px;color:#555;">Meta/dia: {_n(meta_dia)} '
+            f'&nbsp;&middot;&nbsp; Meta periodo: {_n(meta_periodo)}</div>'
+            f'<div style="font-size:10px;font-weight:bold;color:{cor};margin-top:2px;">'
+            f'Produzido: {_n(produzido)} &nbsp;&middot;&nbsp; {pct_txt}</div>'
+            f'</td>'
+        )
+    return (
+        '<table width="100%" style="border-collapse:collapse;margin-bottom:8px;">'
+        f'<tr>{"".join(cels)}</tr></table>'
+    )
+
 def _bloco_resumo_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE") -> str:
     th = "background:#f5f5f5;border:1px solid #ddd;padding:2px 5px;font-size:8px;text-align:left;"
     td_s = "border:1px solid #eee;padding:2px 5px;font-size:8px;"
@@ -981,13 +1036,26 @@ def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
         f'<tbody>{linhas_op}</tbody></table>'
     )
 
-def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
+def gerar_pdf_consolidado(
+    dia: date,
+    dia_ini: date | None = None,
+    meta_diaria_arealva: float = 11000,
+    meta_diaria_iacanga: float = 19000,
+) -> bytes:
     """
     dia_ini : quando informado e diferente de `dia`, a seção 1 passa a somar
     o período [dia_ini, dia] (mesmo estilo resumido das seções de mês) em vez
     do detalhamento de um único dia — usado pela tela de Relatórios pra
     permitir um intervalo real. O e-mail diário automático não passa esse
-    parâmetro, então continua idêntico (dia único, detalhado)."""
+    parâmetro, então continua idêntico (dia único, detalhado).
+
+    meta_diaria_arealva / meta_diaria_iacanga : meta diária (peças/dia) de
+    cada setor de manta, usada pra calcular a Meta do Período (meta diária ×
+    dias úteis) exibida em cada seção. Valores default = constantes hoje
+    hardcoded em pages/10_Relatorios.py (_METAS_AREALVA_META_TOTAL / CASAL de
+    _METAS_IACANGA); o caller da tela de Relatórios passa os valores reais
+    explicitamente. Lençol não tem meta configurada no sistema — não entra
+    nesse bloco. Pedido do usuário 14/07/2026."""
     from xhtml2pdf import pisa
 
     range_real = dia_ini is not None and dia_ini != dia
@@ -1033,6 +1101,12 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
     t_m1  = t_are_m1  + t_iac_m1  + t_len_m1
     t_m2  = t_are_m2  + t_iac_m2  + t_len_m2
 
+    # Dias úteis de cada seção — base pra Meta do Período (meta diária × dias).
+    dias_sec1 = _dias_uteis_simples(dia_ini if range_real else dia, dia)
+    dias_sec2 = _dias_uteis_simples(mes_ini, dia)
+    dias_m1   = _dias_uteis_simples(m1_ini, m1_fim)
+    dias_m2   = _dias_uteis_simples(m2_ini, m2_fim)
+
     data_fmt = dia.strftime("%d/%m/%Y")
     dias_pt  = ["Segunda-feira", "Terca-feira", "Quarta-feira",
                 "Quinta-feira", "Sexta-feira", "Sabado", "Domingo"]
@@ -1044,6 +1118,26 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
     else:
         sec1_titulo = f"1. DIA — {data_fmt} (producao de ontem)"
         sec1_ref    = "Referencia: dia anterior"
+
+    # Blocos de Meta x Realizado — um por seção (dias úteis próprios de cada
+    # período), exibidos logo após os KPIs de total e antes das tabelas
+    # detalhadas de Estação/Top OPs (pedido do usuário 14/07/2026).
+    _meta_bloco_sec1 = _bloco_meta_status([
+        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_sec1, t_are_dia),
+        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_sec1, t_iac_dia),
+    ])
+    _meta_bloco_sec2 = _bloco_meta_status([
+        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_sec2, t_are_mes),
+        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_sec2, t_iac_mes),
+    ])
+    _meta_bloco_m1 = _bloco_meta_status([
+        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_m1, t_are_m1),
+        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_m1, t_iac_m1),
+    ])
+    _meta_bloco_m2 = _bloco_meta_status([
+        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_m2, t_are_m2),
+        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_m2, t_iac_m2),
+    ])
 
     kpi_cell = "background:#f0f4ff;border:1px solid #c5cae9;padding:4px;text-align:center;"
 
@@ -1090,6 +1184,7 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
 <table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
   <tr>{kpi(f"{t_dia:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_dia:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_dia:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_dia:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
+{_meta_bloco_sec1}
 {(_bloco_resumo_manta("MANTA AREALVA", are_dia) + _bloco_resumo_manta("MANTA IACANGA", iac_dia) + _bloco_resumo_lencol(len_dia)) if range_real else (_bloco_pdf_manta("MANTA AREALVA", are_dia) + _bloco_pdf_manta("MANTA IACANGA", iac_dia) + _bloco_pdf_lencol(len_dia))}
 
 <div style="page-break-before:always;"></div>
@@ -1097,6 +1192,7 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
 <table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
   <tr>{kpi(f"{t_mes:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_mes:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_mes:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_mes:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
+{_meta_bloco_sec2}
 {_bloco_resumo_manta("MANTA AREALVA", are_mes)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_mes)}
 {_bloco_resumo_lencol(len_mes)}
@@ -1112,6 +1208,7 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
 <table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
   <tr>{kpi(f"{t_are_m1:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m1:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m1:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
+{_meta_bloco_m1}
 {_bloco_resumo_manta("MANTA AREALVA", are_m1)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m1)}
 {_bloco_resumo_lencol(len_m1)}
@@ -1124,6 +1221,7 @@ def gerar_pdf_consolidado(dia: date, dia_ini: date | None = None) -> bytes:
 <table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
   <tr>{kpi(f"{t_are_m2:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m2:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m2:,}".replace(",", "."), "Lencol Arealva")}</tr>
 </table>
+{_meta_bloco_m2}
 {_bloco_resumo_manta("MANTA AREALVA", are_m2)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m2)}
 {_bloco_resumo_lencol(len_m2)}

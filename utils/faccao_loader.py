@@ -81,6 +81,7 @@ def _load_tab(
     col_cli   = _col("cliente",    "CLIENTE")
     col_qtd   = _col("quantidade", "QUANTIDADE")
     col_prest = _col("prestador",  "PRESTADOR")
+    col_obs   = _col("observacao", "OBSERVACAO", "OBS")
 
     if not all([col_data, col_prod, col_cli, col_qtd]):
         logger.warning(
@@ -103,6 +104,13 @@ def _load_tab(
         if col_prest
         else ""
     )
+    # Texto livre — preserva a caixa digitada (diferente de PRODUTO/CLIENTE/
+    # PRESTADOR, que são canonizados em upper para casar com aliases).
+    out["OBSERVACAO"] = (
+        raw[col_obs].fillna("").astype(str).str.strip()
+        if col_obs
+        else ""
+    )
 
     # Facção: nome fixo da config OU o próprio prestador (abas quarterizadas, onde
     # cada prestador terceirizado é uma facção). Sem prestador → rótulo genérico.
@@ -116,12 +124,18 @@ def _load_tab(
     # Datas: gviz exporta no formato M/D/YYYY (locale US do Google)
     out["DATA"] = parse_date_series(out["DATA"], default_order="MDY")
 
-    # Remove linhas inválidas (placeholder, sem quantidade, etc.)
+    # Remove linhas inválidas (placeholder, sem quantidade, etc.). Exceção:
+    # QUANTIDADE=0 com Observação preenchida é um dia sem produção só pra
+    # contextualização (ex.: "máquina quebrou") — mantém a linha pra aparecer
+    # no dashboard/relatório, mas com QUANTIDADE=0 (não entra em nenhuma soma
+    # nem conta como dia de produção nas médias — ver utils/faccoes_metas_calc.py
+    # e as telas que calculam dias/média). Pedido do usuário 14/07/2026.
     raw_data_upper = raw[col_data].fillna("").astype(str).str.strip().str.upper()
+    tem_obs = out["OBSERVACAO"].str.strip() != ""
     valid = (
         ~raw_data_upper.isin(_BLANKS)
         & out["DATA"].notna()
-        & (out["QUANTIDADE"] > 0)
+        & ((out["QUANTIDADE"] > 0) | tem_obs)
         & ~out["PRODUTO"].str.upper().isin(_BLANKS)
         & ~out["CLIENTE"].str.upper().isin(_BLANKS)
     )
@@ -138,7 +152,8 @@ def load_faccoes() -> pd.DataFrame:
 
     Returns
     -------
-    DataFrame com colunas: DATA, FACCAO, ABA, PRESTADOR, PRODUTO, CLIENTE, QUANTIDADE.
+    DataFrame com colunas: DATA, FACCAO, ABA, PRESTADOR, PRODUTO, CLIENTE,
+    QUANTIDADE, OBSERVACAO.
     Vazio em caso de erro ou planilha indisponível.
     """
     from config.settings import (
