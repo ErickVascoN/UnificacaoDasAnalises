@@ -33,7 +33,7 @@ from reportlab.platypus import (
 from reportlab.pdfbase import pdfmetrics
 
 from utils.feriados import eh_dia_util, eh_feriado, contar_dias_uteis, feriados_no_periodo
-from utils.lencol_caseamento import lencol_tipos_tams
+from utils.lencol_caseamento import lencol_tipos_tams, lencol_fronha_mult
 
 logger = logging.getLogger(__name__)
 
@@ -1654,6 +1654,17 @@ def gerar_pdf_lencol(
     # Diferença: jogos duplos de OPs SEM fundo no período (ficam fora do caseamento)
     _jogos_sem_par_pdf = max(0, total_sem_fundo - _jogo_em_op_fundo_pdf)
 
+    # Fronha: cortada junto do jogo — 2 por jogo em todos os tamanhos, exceto
+    # solteiro (1 por jogo). Cobre todo o período (jogo duplo e simples).
+    total_fronha = 0
+    if 'CATEGORIA' in df.columns and 'QUANT' in df.columns:
+        _tipos_fr, _tams_fr = lencol_tipos_tams(df)
+        _df_fr = df.assign(_TIPO_FR=_tipos_fr, _TAM_FR=_tams_fr)
+        _df_fr = _df_fr[_df_fr['_TIPO_FR'].isin(['JOGO_DUPLO', 'JOGO_SIMPLES'])]
+        total_fronha = int(
+            (_df_fr['QUANT'] * _df_fr['_TAM_FR'].apply(lencol_fronha_mult)).sum()
+        )
+
     dias_trab = df['DATA'].dt.date.nunique()
     media_diaria = total_sem_fundo / max(dias_trab, 1)
     n_prest = df['PRESTADOR'].nunique() if 'PRESTADOR' in df.columns else 0
@@ -1675,6 +1686,7 @@ def gerar_pdf_lencol(
         {'label': _label_pecas,             'valor': _fmt(total_sem_fundo),            'cor': C_TEAL_LT},
         {'label': '🧩 Jogos Duplos',         'valor': _fmt(total_jogos_duplo),          'cor': C_TEAL_LT},
         {'label': '🔄 Fundos de Jogo',      'valor': _fmt(total_fundos),               'cor': C_AMBER_LT},
+        {'label': '👖 Fronhas (estimado)',  'valor': _fmt(total_fronha),               'cor': C_TEAL_LT},
         {'label': '💰 Total a Pagar/Pago',  'valor': f'R$ {_fmt(total_valor, 2)}',     'cor': C_GREEN_LT},
         {'label': '📆 Dias Trabalhados',    'valor': str(dias_trab),                   'cor': C_GRAY_BG},
         {'label': '📈 Média Diária',        'valor': f'{_fmt(media_diaria, 0)} pç/dia','cor': C_GRAY_BG},
@@ -1710,30 +1722,44 @@ def gerar_pdf_lencol(
         # categoria aparecia em 2 linhas por causa de espaço extra na
         # planilha (ex.: "JOGO DUPLO CS" e "JOGO DUPLO CS ").
         if 'CATEGORIA' in d_cat.columns:
-            _tipos_cat, _ = lencol_tipos_tams(d_cat)
+            _tipos_cat, _tams_cat = lencol_tipos_tams(d_cat)
             d_cat['_TIPO'] = _tipos_cat
+            d_cat['_TAM'] = _tams_cat
         else:
             d_cat['_TIPO'] = 'OUTRO'
+            d_cat['_TAM'] = ''
         d_cat['_CAT_LABEL'] = d_cat[cat_col].astype(str).str.strip()
         d_cat.loc[d_cat['_TIPO'] == 'FUNDO', '_CAT_LABEL'] = 'FUNDO DE JOGO'
 
+        # Fronha é cortada junto do jogo — 2 por jogo em todos os tamanhos,
+        # exceto solteiro (1 por jogo). Só se aplica a linhas de jogo (duplo/simples).
+        d_cat['_FRONHA'] = 0
+        _mask_jogo_cat = d_cat['_TIPO'].isin(['JOGO_DUPLO', 'JOGO_SIMPLES'])
+        d_cat.loc[_mask_jogo_cat, '_FRONHA'] = (
+            d_cat.loc[_mask_jogo_cat, 'QUANT'] * d_cat.loc[_mask_jogo_cat, '_TAM'].apply(lencol_fronha_mult)
+        )
+
         if 'VALOR_RECEBER' in d_cat.columns:
             df_cat_v = d_cat.groupby('_CAT_LABEL').agg(
-                QUANT=('QUANT', 'sum'), VALOR=('VALOR_RECEBER', 'sum')
+                QUANT=('QUANT', 'sum'), VALOR=('VALOR_RECEBER', 'sum'), FRONHA=('_FRONHA', 'sum')
             ).reset_index().sort_values('QUANT', ascending=False)
             linhas_cat = [
-                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']), f"R$ {_fmt(row['VALOR'], 2)}"]
+                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']),
+                 _fmt(row['FRONHA']) if row['FRONHA'] > 0 else '—',
+                 f"R$ {_fmt(row['VALOR'], 2)}"]
                 for _, row in df_cat_v.iterrows()
             ]
         else:
-            df_cat = (d_cat.groupby('_CAT_LABEL')['QUANT'].sum()
-                      .reset_index().sort_values('QUANT', ascending=False))
+            df_cat = (d_cat.groupby('_CAT_LABEL').agg(
+                QUANT=('QUANT', 'sum'), FRONHA=('_FRONHA', 'sum')
+            ).reset_index().sort_values('QUANT', ascending=False))
             linhas_cat = [
-                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']), '—']
+                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']),
+                 _fmt(row['FRONHA']) if row['FRONHA'] > 0 else '—', '—']
                 for _, row in df_cat.iterrows()
             ]
-        cabec_cat = ['Categoria', 'Peças', 'Valor (R$)']
-        cw_cat = [6.0*cm, 3.0*cm, 4.0*cm]
+        cabec_cat = ['Categoria', 'Peças', 'Fronha', 'Valor (R$)']
+        cw_cat = [5.2*cm, 2.6*cm, 2.6*cm, 3.6*cm]
         story.append(_tabela_generica(cabec_cat, linhas_cat, e, cw_cat))
     story.append(Spacer(1, 0.3*cm))
 
@@ -1778,25 +1804,25 @@ def gerar_pdf_lencol(
 
         # Tabela de divergências (ou todos se poucos)
         _tab_cas = _div if _n_div > 0 else caseamento_df
-        cabec_cas = ['OP', 'Tamanho', 'Jogo', 'Fundo', 'Diferença', 'Status']
+        cabec_cas = ['OP', 'Tamanho', 'Jogo', 'Fundo', 'Fronha', 'Diferença', 'Status']
         linhas_cas = []
         for _, r in _tab_cas.head(40).iterrows():
             _d = int(r['DIFERENCA'])
             _st = str(r['STATUS']).replace('🔴', '').replace('🟠', '').replace('✅', '').strip()
             linhas_cas.append([
                 str(r['OP']), str(r['TAMANHO']),
-                _fmt(int(r['JOGO'])), _fmt(int(r['FUNDO'])),
+                _fmt(int(r['JOGO'])), _fmt(int(r['FUNDO'])), _fmt(int(r.get('FRONHA', 0))),
                 f"{'+' if _d > 0 else ''}{_fmt(_d)}", _st,
             ])
-        cw_cas = [2.5*cm, 2.2*cm, 2.2*cm, 2.2*cm, 2.2*cm, 3.5*cm]
+        cw_cas = [2.2*cm, 1.9*cm, 1.9*cm, 1.9*cm, 1.9*cm, 2.0*cm, 3.2*cm]
         t_cas = _tabela_generica(cabec_cas, linhas_cas, e, cw_cas)
         # Colorir diferença (negativo = faltam fundos = vermelho)
         for ri, (_, r) in enumerate(_tab_cas.head(40).iterrows(), start=1):
             _d = int(r['DIFERENCA'])
             cor_s = C_GREEN if _d == 0 else (C_RED if _d < 0 else C_AMBER)
             t_cas.setStyle(TableStyle([
-                ('TEXTCOLOR', (4, ri), (4, ri), cor_s),
-                ('FONTNAME', (4, ri), (4, ri), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (5, ri), (5, ri), cor_s),
+                ('FONTNAME', (5, ri), (5, ri), 'Helvetica-Bold'),
             ]))
         story.append(t_cas)
         if _n_div > 40:

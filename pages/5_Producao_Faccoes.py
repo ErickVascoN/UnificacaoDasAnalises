@@ -475,15 +475,26 @@ rank_df["RESTANTE"] = rank_df.apply(
     lambda r: max(0, int(r["META_MES"] - r["QUANTIDADE"])) if r["META_MES"] > 0 else None, axis=1
 )
 
-# ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_mes, tab_dia, tab_sem, tab_prod, tab_fac = st.tabs([
-    "📅 Mensal", "📆 Diário", "📊 Semanal", "📦 Por Produto", "🏭 Por Facção"
-])
+# ── Seletor de seção ───────────────────────────────────────────────────────────
+# Antes usava st.tabs(), mas o Streamlit executa o corpo de TODAS as abas a cada
+# rerun do script, mesmo as que não estão visualmente selecionadas — a aba "Por
+# Facção" sozinha já monta ~9 gráficos Plotly + um loop por facção incondicional,
+# então qualquer interação na página (inclusive mudar o período na sidebar)
+# refazia o trabalho pesado das 5 abas de uma vez. Um seletor (só a seção
+# escolhida executa) resolve isso — mesmo padrão já usado em pages/10_Relatorios.py
+# (corrigido lá em 14/07/2026 pelo mesmo motivo: app caindo/lento no Streamlit
+# Cloud com 2+ usuários). Reportado pelo usuário 15/07/2026.
+_SECOES_FACCOES = ["📅 Mensal", "📆 Diário", "📊 Semanal", "📦 Por Produto", "🏭 Por Facção"]
+_secao_faccoes = st.radio(
+    "Seção", _SECOES_FACCOES, horizontal=True,
+    key="secao_faccoes", label_visibility="collapsed",
+)
+st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — MENSAL
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_mes:
+if _secao_faccoes == "📅 Mensal":
     df_mes = df[
         (df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)
     ]
@@ -550,10 +561,19 @@ with tab_mes:
         # Acumulado vs meta (burn-up): produção acumulada × meta acumulada esperada
         daily_cum = daily.copy()
         daily_cum["ACUM"] = daily_cum["QUANTIDADE"].cumsum()
-        daily_cum["DU_ACUM"] = [
-            contar_dias_uteis(data_ini, ts.date())
-            for ts in daily_cum["DATA"]
-        ]
+        # Pré-calcula dias úteis acumulados uma vez pro range inteiro do
+        # período (1 passada, 1 chamada de eh_dia_util por dia do calendário)
+        # em vez de recontar do zero pra cada dia que teve produção — antes
+        # isso era O(dias com produção × tamanho do período); num período de
+        # 1 ano isso chegava a ~130 mil chamadas só nesse trecho (reportado
+        # pelo usuário 15/07/2026 — dashboard lento).
+        _du_acum_map: dict = {}
+        _acc = 0
+        for _d in pd.date_range(data_ini, data_fim, freq="D").date:
+            if eh_dia_util(_d):
+                _acc += 1
+            _du_acum_map[_d] = _acc
+        daily_cum["DU_ACUM"] = daily_cum["DATA"].dt.date.map(_du_acum_map)
         daily_cum["META_ACUM"] = (daily_cum["DU_ACUM"] * meta_dia_total).round()
 
         fig_cum = go.Figure()
@@ -944,7 +964,7 @@ with tab_mes:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — DIÁRIO
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_dia:
+elif _secao_faccoes == "📆 Diário":
     datas_disp = sorted(df["DATA"].dropna().dt.date.unique())
 
     if not datas_disp:
@@ -1099,7 +1119,7 @@ with tab_dia:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — SEMANAL
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_sem:
+elif _secao_faccoes == "📊 Semanal":
     datas_all = sorted(df["DATA"].dropna().dt.date.unique())
 
     if not datas_all:
@@ -1308,7 +1328,7 @@ with tab_sem:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — POR PRODUTO
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_prod:
+elif _secao_faccoes == "📦 Por Produto":
     df_mp = df[
         (df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)
     ]
@@ -1438,7 +1458,7 @@ with tab_prod:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — POR FACÇÃO
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_fac:
+elif _secao_faccoes == "🏭 Por Facção":
     df_fac = df[
         (df["DATA"].dt.date >= data_ini) & (df["DATA"].dt.date <= data_fim)
     ]
@@ -1627,31 +1647,52 @@ with tab_fac:
 
         du_per = contar_dias_uteis(data_ini, data_fim)
 
-        cons_rows = []
-        for faccao in sorted(df_fac["FACCAO"].unique()):
-            sub = df_fac[df_fac["FACCAO"] == faccao]
-            diario = sub.groupby(sub["DATA"].dt.date)["QUANTIDADE"].sum()
-            dias_ativos = len(diario)
-            total_fac = int(diario.sum())
-            media_dia = total_fac / dias_ativos if dias_ativos > 0 else 0
-            if dias_ativos >= 2 and media_dia > 0:
-                cv = diario.std(ddof=0) / media_dia
-                regularidade = max(0.0, min(100.0, 100.0 * (1.0 - cv)))
-            else:
-                regularidade = 100.0 if dias_ativos >= 1 else 0.0
-            assiduidade = min(100.0, dias_ativos / du_per * 100) if du_per > 0 else 0.0
-            melhor = int(diario.max())
-            pior = int(diario[diario > 0].min()) if (diario > 0).any() else 0
-            cons_rows.append({
-                "FACCAO":             faccao,
-                "Dias Ativos":        dias_ativos,
-                "Assiduidade (%)":    round(assiduidade, 1),
-                "Média/Dia":          round(media_dia),
-                "Regularidade (%)":   round(regularidade, 1),
-                "Melhor Dia":         melhor,
-                "Pior Dia (>0)":      pior,
-            })
-        df_cons = pd.DataFrame(cons_rows)
+        # Vetorizado — antes era um loop Python por facção, cada uma refazendo
+        # seu próprio groupby diário; agora é um único groupby geral (por
+        # facção×dia) seguido de agregações vetorizadas. Mesmo resultado, sem
+        # o custo de N sub-DataFrames recalculados a cada rerun (reportado
+        # pelo usuário 15/07/2026 — dashboard lento).
+        _diario_fac = (
+            df_fac.assign(_DIA=df_fac["DATA"].dt.date)
+            .groupby(["FACCAO", "_DIA"])["QUANTIDADE"].sum()
+            .rename("QTD_DIA").reset_index()
+        )
+        _g = _diario_fac.groupby("FACCAO")["QTD_DIA"]
+        df_cons = pd.DataFrame({
+            "Dias Ativos": _g.size(),
+            "_total":      _g.sum(),
+            "Melhor Dia":  _g.max(),
+            "_std":        _g.std(ddof=0),
+        }).reset_index()
+        df_cons["Média/Dia"] = (df_cons["_total"] / df_cons["Dias Ativos"]).fillna(0)
+        _cv = np.where(
+            (df_cons["Dias Ativos"] >= 2) & (df_cons["Média/Dia"] > 0),
+            df_cons["_std"] / df_cons["Média/Dia"],
+            np.nan,
+        )
+        df_cons["Regularidade (%)"] = np.where(
+            ~np.isnan(_cv),
+            np.clip(100.0 * (1.0 - _cv), 0.0, 100.0),
+            np.where(df_cons["Dias Ativos"] >= 1, 100.0, 0.0),
+        )
+        df_cons["Assiduidade (%)"] = (
+            (df_cons["Dias Ativos"] / du_per * 100).clip(upper=100) if du_per > 0 else 0.0
+        )
+        _pior = (
+            _diario_fac[_diario_fac["QTD_DIA"] > 0]
+            .groupby("FACCAO")["QTD_DIA"].min()
+            .rename("Pior Dia (>0)")
+        )
+        df_cons = df_cons.merge(_pior, on="FACCAO", how="left")
+        df_cons["Pior Dia (>0)"] = df_cons["Pior Dia (>0)"].fillna(0).astype(int)
+
+        df_cons["Dias Ativos"]      = df_cons["Dias Ativos"].astype(int)
+        df_cons["Média/Dia"]        = df_cons["Média/Dia"].round().astype(int)
+        df_cons["Regularidade (%)"] = df_cons["Regularidade (%)"].round(1)
+        df_cons["Assiduidade (%)"]  = df_cons["Assiduidade (%)"].round(1)
+        df_cons["Melhor Dia"]       = df_cons["Melhor Dia"].astype(int)
+        df_cons = df_cons[["FACCAO", "Dias Ativos", "Assiduidade (%)", "Média/Dia",
+                            "Regularidade (%)", "Melhor Dia", "Pior Dia (>0)"]]
 
         col_cons1, col_cons2 = st.columns(2)
         with col_cons1:

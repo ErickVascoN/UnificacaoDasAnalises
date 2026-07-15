@@ -127,6 +127,8 @@ NOME_EQUIVALENCIAS: dict[str, str] = {
     "CARLINE":                                     "MEGA (CARLINE)",
     "JOSIANE STEFANI CARDOSO DOS SANTOS AMENDOLA": "JOSIANE STEFANI",
     "ANGELA BANDEIRANTE":                          "ANGELA BANDEIRANTES",
+    # Identificados ao trocar para a planilha de junho/2026 (15/07/2026):
+    "GIATEX":                                     "GIATTEX",
 }
 
 # ── Produção externa (facções / prestadores) ──────────────────────────────────
@@ -260,7 +262,12 @@ CORES_FACCAO: dict[str, str] = {
 FACCOES_GID_METAS = "1797767576"
 
 # Planilha de metas de facções (fonte secundária — planilha separada legada)
-SHEET_ID_METAS = "1gOhDE__QZ_AbgXZZZWuLTUfR-P1CYPvh"
+# Arquivo local é recriado todo mês com o mês no nome (ex.: "...202606.xlsx"),
+# por isso sempre usamos a cópia Google Sheets (estável) em vez do caminho
+# local. Atualizada em 15/07/2026 para a versão de junho/2026 (fornecida pelo
+# usuário) — troca só o ID do arquivo; o GID da aba BD PLANO DE METAS é o
+# mesmo de antes.
+SHEET_ID_METAS = "1iJ_lG6WZkA_S5z48wKyLsOl53aoieYt8"
 GID_METAS      = "1593003426"
 METAS_TTL      = 3600  # 1 hora
 # Aliases para compatibilidade com 7_Plano_de_Metas.py

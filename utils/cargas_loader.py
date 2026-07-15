@@ -254,8 +254,28 @@ def _parse_num(s: str) -> float | None:
         return None
 
 
-def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
-    """Retorna (previsto_mensal, realizado_mensal) a partir da linha de resumo da planilha.
+def _find_resumo_periodo_fim(label: str) -> tuple[int, int] | None:
+    """Extrai (dia, mês) do fim do período coberto por um rótulo tipo
+    "Total geral (01 a 11/07)" — usado para saber até que dia a linha de
+    resumo já contabilizou, e não tratar esse total parcial como se fosse
+    o mês inteiro (bug relatado pelo usuário 15/07/2026: planilha de Julho
+    só tinha "Total geral (01 a 11/07)", e cargas/realizado lançados depois
+    do dia 11 ficavam de fora do Previsto/Realizado total)."""
+    m = re.search(r"\(\s*\d{1,2}\s*a\s*(\d{1,2})/(\d{1,2})\s*\)", label)
+    if not m:
+        return None
+    try:
+        return (int(m.group(1)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int, int] | None]:
+    """Retorna (previsto_mensal, realizado_mensal, fim_periodo) a partir da linha
+    de resumo da planilha. fim_periodo = (dia, mês) até onde o resumo cobre,
+    quando o rótulo declara um intervalo parcial (ex.: "Total geral (01 a
+    11/07)"); None quando o resumo cobre o mês inteiro (ou quando não dá pra
+    saber — meses fechados usando as estratégias 1/3).
 
     Estratégia:
     1. Cabeçalho "Previsto total" no painel direito → lê os dois primeiros valores
@@ -284,7 +304,7 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
             if v and v > 1_500_000:
                 big.append(v)
         if len(big) >= 2:
-            return (big[0], big[1])
+            return (big[0], big[1], None)
 
     # 2. Linha GERAL (JANEIRO)
     for row in rows:
@@ -298,7 +318,8 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
                     v = _parse_money(row[real_col])
                     if v and abs(v) > 1_000_000:
                         prev_v = _parse_money(row[prev_col]) if len(row) > prev_col else None
-                        return (abs(prev_v) if prev_v else 0.0, abs(v))
+                        fim_periodo = _find_resumo_periodo_fim(row[j])
+                        return (abs(prev_v) if prev_v else 0.0, abs(v), fim_periodo)
 
     # 3. Maior valor não-redondo > R$1M em cols 8-15
     best = 0.0
@@ -317,14 +338,14 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float]:
             if av > best:
                 best = av
     if best > 0:
-        return (0.0, best)
+        return (0.0, best, None)
 
-    return (0.0, 0.0)
+    return (0.0, 0.0, None)
 
 
 def _find_realizado_mensal(rows: list[list[str]]) -> float:
     """Compat wrapper — retorna apenas o realizado."""
-    _, real = _find_resumo_mensal(rows)
+    _, real, _ = _find_resumo_mensal(rows)
     return real
 
 
@@ -454,7 +475,7 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
     direito quando disponível (meses em andamento com linha de resumo).
     REALIZADO mensal = valor oficial da planilha (linha de resumo).
     """
-    previsto_mensal, realizado_mensal = _find_resumo_mensal(rows)
+    previsto_mensal, realizado_mensal, _fim_periodo = _find_resumo_mensal(rows)
     if (ano, mes_num) in REALIZADO_MENSAL_OVERRIDE:
         realizado_mensal = REALIZADO_MENSAL_OVERRIDE[(ano, mes_num)]
     day_realized = _extract_day_realized(rows, mes_num, ano)
@@ -469,6 +490,25 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
     # não atualizava automaticamente).
     if realizado_mensal == 0:
         realizado_mensal = sum(day_realized.values())
+
+    # Resumo parcial: o rótulo declara até que dia ele cobre (ex.: "Total geral
+    # (01 a 11/07)"). Cargas/realizado lançados DEPOIS dessa data ainda não
+    # entraram no total oficial — soma-se por cima em vez de descartar, senão
+    # o Previsto/Realizado do mês fica travado no valor do meio do mês (bug
+    # relatado pelo usuário 15/07/2026: Julho mostrava Previsto R$905.000
+    # e Realizado R$1.233.961, ambos só até 11/07, ignorando cargas de 13 a
+    # 18/07 que já estavam lançadas).
+    resumo_fim_date: date | None = None
+    if _fim_periodo is not None:
+        try:
+            resumo_fim_date = date(ano, _fim_periodo[1], _fim_periodo[0])
+        except ValueError:
+            resumo_fim_date = None
+    if resumo_fim_date is not None:
+        _realizado_pos_corte = sum(
+            v for (_d, _c), v in day_realized.items() if _d > resumo_fim_date
+        )
+        realizado_mensal += _realizado_pos_corte
 
     # Pré-computa índices de "linha mesclada": linha sem data onde SOMENTE col[6]
     # tem valor (todos os outros cols estão vazios) E a próxima linha tem data.
@@ -628,8 +668,14 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
             "VALOR_FRETE":  valor_frete,
             "CLIENTE":      cliente,
             # Quando o painel direito tem previsto oficial, zera o frete individual
-            # para evitar dupla contagem (previsto total vai no CARGO_REAL).
-            "PREVISAO":       0.0 if previsto_mensal > 0 else valor_frete,
+            # para evitar dupla contagem (previsto total vai no CARGO_REAL) — mas só
+            # para cargas dentro do período que o resumo já cobre. Cargas depois do
+            # fim do período (resumo_fim_date) ainda não entraram no total oficial,
+            # então mantêm o frete individual para não sumir do Previsto do mês.
+            "PREVISAO": (
+                0.0 if previsto_mensal > 0 and (resumo_fim_date is None or data_carga <= resumo_fim_date)
+                else valor_frete
+            ),
             "REALIZADO":      0.0,
             # Painel direito registra 1 realizado por (data, cliente) — não por carga
             # individual. Guarda a chave aqui; o valor é dividido logo abaixo entre

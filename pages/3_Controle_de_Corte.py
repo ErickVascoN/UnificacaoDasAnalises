@@ -24,6 +24,7 @@ from utils.lencol_caseamento import (
     lencol_classifica_jogo_fundo,
     lencol_tipos_tams as _lencol_tipos_tams,
     lencol_caseamento,
+    lencol_fronha_mult,
 )
 
 try:
@@ -2836,6 +2837,13 @@ elif screen == 'arealva_lencol':
     total_jogos_duplo_ln = int(df_ln.loc[df_ln["_TIPO_JF"] == "JOGO_DUPLO", "QUANT"].sum())
     total_sem_fundo_ln = total_pecas_ln - total_fundos_ln
 
+    # Fronha: cortada junto do jogo — 2 por jogo em todos os tamanhos, exceto
+    # solteiro (1 por jogo). Cobre jogo duplo e simples (todo jogo de cama).
+    _df_jogos_ln = df_ln[df_ln["_TIPO_JF"].isin(["JOGO_DUPLO", "JOGO_SIMPLES"])]
+    total_fronha_ln = int(
+        (_df_jogos_ln["QUANT"] * _df_jogos_ln["_TAM_JF"].apply(lencol_fronha_mult)).sum()
+    )
+
     dias_trab_ln = (p_fim_ln - p_ini_ln).days + 1
     dias_com_dados_ln = df_ln["DATA"].dt.date.nunique()
     # Média diária baseada nas peças SEM fundo (consistente com o KPI principal)
@@ -2908,11 +2916,14 @@ elif screen == 'arealva_lencol':
         c3.metric("📆 Dias Trabalhados", str(dias_com_dados_ln), delta=_delta_ln, delta_color="off", help=_help_ln)
         c4.metric("📈 Média Diária", lencol_fmt_num(media_diaria_ln, 0) + " pç/dia")
 
-        c5, c6, c7, c8 = st.columns(4)
+        c5, c6, c7, c8, c9 = st.columns(5)
         c5.metric("👷 Prestadores", str(n_prestadores_ln))
         c6.metric("🏭 Empresas", str(n_empresas_ln))
         c7.metric("🥇 Top Prestador", top_prestador_ln)
         c8.metric("🏆 Top Empresa", top_empresa_ln)
+        c9.metric("👖 Fronhas (estimado)", lencol_fmt_num(total_fronha_ln),
+                  help="Fronha é cortada junto do jogo: 2 por jogo em todos os tamanhos, "
+                       "exceto solteiro (1 por jogo). Cobre jogo duplo e simples.")
 
         # ── Caseamento Jogo Duplo × Fundo ────────────────────────────────────
         _casea_ln = lencol_caseamento(df_ln)
@@ -2966,14 +2977,15 @@ elif screen == 'arealva_lencol':
                         _casea_show = _div_ln.copy()
                         _casea_show["JOGO"] = _casea_show["JOGO"].apply(lencol_fmt_num)
                         _casea_show["FUNDO"] = _casea_show["FUNDO"].apply(lencol_fmt_num)
+                        _casea_show["FRONHA"] = _casea_show["FRONHA"].apply(lencol_fmt_num)
                         _casea_show["DIFERENCA"] = _casea_show["DIFERENCA"].apply(
                             lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
                         )
                         st.dataframe(
                             _casea_show.rename(columns={
                                 "OP": "OP", "TAMANHO": "Tamanho", "JOGO": "Jogo",
-                                "FUNDO": "Fundo", "DIFERENCA": "Diferença", "STATUS": "Status",
-                            }),
+                                "FUNDO": "Fundo", "FRONHA": "Fronha", "DIFERENCA": "Diferença", "STATUS": "Status",
+                            })[["OP", "Tamanho", "Jogo", "Fundo", "Fronha", "Diferença", "Status"]],
                             use_container_width=True, hide_index=True,
                         )
                         st.caption(
@@ -3672,14 +3684,15 @@ elif screen == 'arealva_lencol':
                 _casea_op_show = _tab_casea.copy()
                 _casea_op_show["JOGO"] = _casea_op_show["JOGO"].apply(lencol_fmt_num)
                 _casea_op_show["FUNDO"] = _casea_op_show["FUNDO"].apply(lencol_fmt_num)
+                _casea_op_show["FRONHA"] = _casea_op_show["FRONHA"].apply(lencol_fmt_num)
                 _casea_op_show["DIFERENCA"] = _casea_op_show["DIFERENCA"].apply(
                     lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
                 )
                 st.dataframe(
                     _casea_op_show.rename(columns={
                         "OP": "OP", "TAMANHO": "Tamanho", "JOGO": "Jogo",
-                        "FUNDO": "Fundo", "DIFERENCA": "Diferença", "STATUS": "Status",
-                    }),
+                        "FUNDO": "Fundo", "FRONHA": "Fronha", "DIFERENCA": "Diferença", "STATUS": "Status",
+                    })[["OP", "Tamanho", "Jogo", "Fundo", "Fronha", "Diferença", "Status"]],
                     use_container_width=True, height=320, hide_index=True,
                 )
                 st.caption(
@@ -3720,14 +3733,15 @@ elif screen == 'arealva_lencol':
                     _casea_sel_show = _casea_sel_ln.copy()
                     _casea_sel_show["JOGO"] = _casea_sel_show["JOGO"].apply(lencol_fmt_num)
                     _casea_sel_show["FUNDO"] = _casea_sel_show["FUNDO"].apply(lencol_fmt_num)
+                    _casea_sel_show["FRONHA"] = _casea_sel_show["FRONHA"].apply(lencol_fmt_num)
                     _casea_sel_show["DIFERENCA"] = _casea_sel_show["DIFERENCA"].apply(
                         lambda v: f"{'+' if v > 0 else ''}{lencol_fmt_num(v)}"
                     )
                     st.dataframe(
                         _casea_sel_show.rename(columns={
-                            "TAMANHO": "Tamanho", "JOGO": "Jogo", "FUNDO": "Fundo",
+                            "TAMANHO": "Tamanho", "JOGO": "Jogo", "FUNDO": "Fundo", "FRONHA": "Fronha",
                             "DIFERENCA": "Diferença", "STATUS": "Status",
-                        }).drop(columns=["OP"]),
+                        }).drop(columns=["OP"])[["Tamanho", "Jogo", "Fundo", "Fronha", "Diferença", "Status"]],
                         use_container_width=True, hide_index=True,
                     )
 

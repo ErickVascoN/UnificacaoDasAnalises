@@ -58,6 +58,15 @@ def lencol_classifica_jogo_fundo(cat: str, tecido: str = "") -> tuple[str, str]:
     return (tipo_jogo, tamanho)
 
 
+def lencol_fronha_mult(tamanho: str) -> int:
+    """Multiplicador de fronhas por jogo cortado.
+
+    No caseamento, todo tamanho leva 2 fronhas por jogo, exceto o solteiro
+    (que leva só 1). A fronha é cortada junto do jogo (mesma peça de corte).
+    """
+    return 1 if str(tamanho).strip().upper() == "SOLTEIRO" else 2
+
+
 def lencol_tipos_tams(df: pd.DataFrame) -> tuple[list, list]:
     """Classifica todas as linhas do df em (tipos, tamanhos) de forma determinística.
 
@@ -85,7 +94,7 @@ def lencol_caseamento(df: pd.DataFrame, apenas_com_fundo: bool = True) -> pd.Dat
     apenas_com_fundo=True restringe às OPs que tiveram ao menos 1 corte de fundo —
     evita marcar como divergentes as centenas de OPs que simplesmente não usam fundo.
     """
-    cols = ["OP", "TAMANHO", "JOGO", "FUNDO", "DIFERENCA", "STATUS"]
+    cols = ["OP", "TAMANHO", "JOGO", "FUNDO", "FRONHA", "DIFERENCA", "STATUS"]
     if df is None or df.empty or "CATEGORIA" not in df.columns:
         return pd.DataFrame(columns=cols)
     d = df.copy()
@@ -109,6 +118,7 @@ def lencol_caseamento(df: pd.DataFrame, apenas_com_fundo: bool = True) -> pd.Dat
     rec["TAMANHO"] = rec["TAMANHO"].replace("", "—")
     rec["JOGO"] = rec["JOGO"].astype(int)
     rec["FUNDO"] = rec["FUNDO"].astype(int)
+    rec["FRONHA"] = rec["JOGO"] * rec["TAMANHO"].apply(lencol_fronha_mult)
     rec["DIFERENCA"] = rec["FUNDO"] - rec["JOGO"]
     rec["STATUS"] = rec["DIFERENCA"].apply(
         lambda x: "✅ Caseado" if x == 0

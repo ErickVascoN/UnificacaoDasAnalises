@@ -7,6 +7,96 @@ tag: "novo" | "melhoria" | "correção"
 CHANGELOG = [
     {
         "date": "15/07/2026",
+        "tag": "melhoria",
+        "title": "Produção Facções: otimização de performance (dashboard lento)",
+        "description": (
+            "Reportado pelo usuário: pages/5_Producao_Faccoes.py estava "
+            "lento. Três correções: (1) a página usava st.tabs() com 5 abas "
+            "(Mensal, Diário, Semanal, Por Produto, Por Facção) — o "
+            "Streamlit executa o código de TODAS as abas a cada rerun, "
+            "mesmo as não-selecionadas; só a aba 'Por Facção' já monta ~9 "
+            "gráficos Plotly + um loop por facção, então qualquer interação "
+            "na página (até mudar o período na sidebar) refazia o trabalho "
+            "das 5 abas de uma vez. Trocado por st.radio() — mesmo padrão já "
+            "usado em pages/10_Relatorios.py — só a seção escolhida executa "
+            "agora. (2) Na aba 'Por Facção', a Análise de Consistência "
+            "(Regularidade/Assiduidade) rodava um loop Python por facção, "
+            "cada uma refazendo seu próprio groupby diário; trocado por um "
+            "único groupby vetorizado + merges. (3) O gráfico Acumulado vs "
+            "Meta (Burn-up) recalculava dias úteis do zero "
+            "(contar_dias_uteis) pra cada dia com produção — O(dias com "
+            "produção × tamanho do período); num período de 1 ano isso "
+            "chegava a ~130 mil chamadas só nesse trecho. Trocado por um "
+            "mapa de dias-úteis-acumulados pré-calculado numa única passada "
+            "pelo período. Testado: números de Regularidade/Assiduidade e do "
+            "Burn-up idênticos aos de antes da otimização."
+        ),
+    },
+    {
+        "date": "15/07/2026",
+        "tag": "correção",
+        "title": "Previsão de Cargas · Previsto/Realizado de Julho travados no meio do mês",
+        "description": (
+            "Reportado pelo usuário: 'Previsão Total' e 'Realizado Total' de "
+            "Julho não batiam com a planilha. Causa: a linha de resumo da "
+            "planilha ('Total geral (01 a 11/07)') só cobre os primeiros 11 "
+            "dias do mês — cargas e realizado lançados depois do dia 11 "
+            "(13 a 18/07) estavam sendo descartados porque "
+            "utils/cargas_loader.py:_find_resumo_mensal() tratava esse total "
+            "parcial como se fosse o mês inteiro, zerando o frete individual "
+            "de todas as cargas do mês (não só as até o dia 11). Agora "
+            "_find_resumo_mensal() também extrai até que dia o resumo cobre "
+            "('fim_periodo'), e _parse_month() soma por cima o previsto/"
+            "realizado das cargas posteriores a essa data em vez de "
+            "descartá-los. Testado: Previsto Total de Julho subiu de "
+            "R$ 905.000 para R$ 1.820.000 e Realizado de R$ 1.233.961 para "
+            "R$ 1.430.264, batendo com a soma dos fretes individuais e do "
+            "painel diário até 18/07."
+        ),
+    },
+    {
+        "date": "15/07/2026",
+        "tag": "novo",
+        "title": "Painel de Metas: fonte de dados trocada para a planilha de junho/2026",
+        "description": (
+            "config/settings.py: SHEET_ID_METAS trocado pro arquivo novo "
+            "fornecido pelo usuário (\"PLANO DE METAS ZANATTEX - 202606\"), "
+            "acessado via a cópia Google Sheets (o arquivo local em "
+            "G:\\Meu Drive\\... só existe nesta máquina e muda de nome todo "
+            "mês — mantém o padrão do resto do sistema, sempre via Sheets). "
+            "GID da aba BD PLANO DE METAS continua o mesmo. Ajustado "
+            "pages/7_Plano_de_Metas.py:_load_metas() pra reconhecer a coluna "
+            "renomeada de 'META DIÁRIA' pra 'PRODUÇÃO DIÁRIA' (mesmo cálculo, "
+            "só mudou o rótulo na planilha nova). Adicionado alias GIATEX→"
+            "GIATTEX em NOME_EQUIVALENCIAS (promovido do match automático). "
+            "Testado ao vivo: painel carrega normalmente com Jul/2026 como "
+            "mês padrão, KPIs/quebras/semanal/custos funcionando. "
+            "9 prestadores da planilha ainda aparecem no aviso 'sem produção "
+            "diária cadastrada' (FRAN JAÚ, GISELE (IACANGA), LUIZ CARLOS, "
+            "PREVITTEX, RAYANE, RUTE, RUTE PAGIO, RUTE ZANATTEX, VANIA "
+            "CONFECÇÕES) — nenhum alias óbvio encontrado nas fontes de "
+            "produção atuais; alguns (ex.: 'PREVITTEX' sem MATRIZ/FILIAL, "
+            "'RUTE' sozinho) são ambíguos demais pra adivinhar sem confirmação "
+            "do usuário."
+        ),
+    },
+    {
+        "date": "15/07/2026",
+        "tag": "novo",
+        "title": "Corte de Lençol · coluna de Fronha estimada (dashboard e PDF)",
+        "description": (
+            "A fronha é cortada junto do jogo (não aparece como corte separado "
+            "na planilha), então passou a ser calculada: 2 fronhas por jogo em "
+            "todos os tamanhos, exceto solteiro (1 por jogo). Adicionada como "
+            "coluna 'FRONHA' em utils/lencol_caseamento.py:lencol_caseamento() "
+            "(propaga para as tabelas de caseamento jogo×fundo no dashboard e "
+            "no PDF), um novo KPI 'Fronhas (estimado)' na Visão Geral do "
+            "dashboard e no Resumo Executivo do PDF, e uma coluna 'Fronha' na "
+            "tabela 'O Que Foi Cortado — por Produto' do PDF."
+        ),
+    },
+    {
+        "date": "15/07/2026",
         "tag": "correção",
         "title": "Eficiência de Corte · Lençol Arealva ignorava dados antigos malpreenchidos",
         "description": (
