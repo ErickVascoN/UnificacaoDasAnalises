@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import io
 import logging
+import os
+import threading
 import time
 from pathlib import Path
 
@@ -27,6 +29,32 @@ import requests
 logger = logging.getLogger(__name__)
 
 _CACHE_DIR = Path(__file__).parent.parent / "cache" / "sheets"
+
+# Trava por arquivo de cache — evita que 2 sessões (o Streamlit Community
+# Cloud roda o app como um processo único, uma thread por sessão) disparem
+# o download da MESMA planilha ao mesmo tempo quando o cache expira: a
+# segunda sessão espera a primeira terminar e reaproveita o cache recém-
+# atualizado, em vez de duplicar a chamada de rede (13/07/2026).
+_locks_guard = threading.Lock()
+_locks: dict[str, threading.Lock] = {}
+
+
+def _lock_for(key: str) -> threading.Lock:
+    with _locks_guard:
+        lock = _locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _locks[key] = lock
+        return lock
+
+
+def _write_atomic(path: Path, content: str) -> None:
+    """Grava em arquivo temporário e substitui via os.replace() (atômico em
+    Windows e Linux) — evita que uma leitura concorrente pegue um CSV
+    parcialmente escrito no meio de path.write_text()."""
+    tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, path)
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -107,40 +135,44 @@ def get_raw(sheet_id: str, gid: str = "0", ttl: int = _DEFAULT_TTL) -> str | Non
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path = _cache_path(sheet_id, gid)
 
-    # Verifica frescor
-    is_fresh = False
-    cache_age = None
-    if path.exists():
-        cache_age = time.time() - path.stat().st_mtime
-        is_fresh = cache_age < ttl
+    # Trava por arquivo: se 2 sessões chegam aqui com cache expirado ao
+    # mesmo tempo, a segunda espera a primeira terminar (que já vai deixar
+    # o cache fresco) em vez de disparar outro download em paralelo.
+    with _lock_for(str(path)):
+        # Verifica frescor
+        is_fresh = False
+        cache_age = None
+        if path.exists():
+            cache_age = time.time() - path.stat().st_mtime
+            is_fresh = cache_age < ttl
 
-    if is_fresh:
-        logger.debug("✓ Cache fresco (%.0fs < %ds): %s", cache_age, ttl, path.name)
-        return path.read_text(encoding="utf-8")
+        if is_fresh:
+            logger.debug("✓ Cache fresco (%.0fs < %ds): %s", cache_age, ttl, path.name)
+            return path.read_text(encoding="utf-8")
 
-    if cache_age is not None:
-        logger.debug("↻ Cache obsoleto (%.0fs ≥ %ds): tentando atualizar %s", cache_age, ttl, path.name)
-    else:
-        logger.debug("↻ Sem cache: baixando %s_%s", sheet_id[:20], gid)
+        if cache_age is not None:
+            logger.debug("↻ Cache obsoleto (%.0fs ≥ %ds): tentando atualizar %s", cache_age, ttl, path.name)
+        else:
+            logger.debug("↻ Sem cache: baixando %s_%s", sheet_id[:20], gid)
 
-    # Tenta download
-    content = _download(sheet_id, gid)
-    if content:
-        path.write_text(content, encoding="utf-8")
-        logger.info("✓ Cache salvo: %s", path.name)
-        return content
+        # Tenta download
+        content = _download(sheet_id, gid)
+        if content:
+            _write_atomic(path, content)
+            logger.info("✓ Cache salvo: %s", path.name)
+            return content
 
-    # Fallback para cache obsoleto
-    if path.exists():
-        age_min = (time.time() - path.stat().st_mtime) / 60
-        logger.warning(
-            "⚠ Download falhou — usando cache com %.0f min de idade: %s",
-            age_min, path.name,
-        )
-        return path.read_text(encoding="utf-8")
+        # Fallback para cache obsoleto
+        if path.exists():
+            age_min = (time.time() - path.stat().st_mtime) / 60
+            logger.warning(
+                "⚠ Download falhou — usando cache com %.0f min de idade: %s",
+                age_min, path.name,
+            )
+            return path.read_text(encoding="utf-8")
 
-    logger.error("✗ Sem dados disponíveis para %s_%s", sheet_id[:20], gid)
-    return None
+        logger.error("✗ Sem dados disponíveis para %s_%s", sheet_id[:20], gid)
+        return None
 
 
 def get_dataframe(
@@ -207,44 +239,45 @@ def get_raw_sheet(sheet_id: str, sheet_name: str, ttl: int = _DEFAULT_TTL) -> st
     safe = "".join(c if c.isalnum() else "_" for c in sheet_name)
     path = _CACHE_DIR / f"{sheet_id}_{safe}.csv"
 
-    is_fresh = False
-    cache_age = None
-    if path.exists():
-        cache_age = time.time() - path.stat().st_mtime
-        is_fresh = cache_age < ttl
+    with _lock_for(str(path)):
+        is_fresh = False
+        cache_age = None
+        if path.exists():
+            cache_age = time.time() - path.stat().st_mtime
+            is_fresh = cache_age < ttl
 
-    if is_fresh:
-        logger.debug("✓ Cache fresco (%.0fs): %s", cache_age, path.name)
-        return path.read_text(encoding="utf-8")
+        if is_fresh:
+            logger.debug("✓ Cache fresco (%.0fs): %s", cache_age, path.name)
+            return path.read_text(encoding="utf-8")
 
-    if cache_age is not None:
-        logger.debug("↻ Cache obsoleto (%.0fs): atualizando %s", cache_age, path.name)
+        if cache_age is not None:
+            logger.debug("↻ Cache obsoleto (%.0fs): atualizando %s", cache_age, path.name)
 
-    encoded = urllib.parse.quote(sheet_name)
-    url = (
-        f"https://docs.google.com/spreadsheets/d/{sheet_id}"
-        f"/gviz/tq?tqx=out:csv&sheet={encoded}"
-    )
-    try:
-        r = requests.get(url, timeout=30, headers=_HEADERS, allow_redirects=True)
-        r.raise_for_status()
-        content = r.text
-        if content.strip():
-            path.write_text(content, encoding="utf-8")
-            logger.info("✓ Cache salvo (sheet=%r): %s", sheet_name, path.name)
-            return content
-    except requests.exceptions.HTTPError as e:
-        logger.warning("✗ HTTP %s (sheet=%r): %s", e.response.status_code, sheet_name, url[:80])
-    except Exception as e:
-        logger.warning("✗ get_raw_sheet falhou (sheet=%r): %s", sheet_name, str(e)[:100])
+        encoded = urllib.parse.quote(sheet_name)
+        url = (
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}"
+            f"/gviz/tq?tqx=out:csv&sheet={encoded}"
+        )
+        try:
+            r = requests.get(url, timeout=30, headers=_HEADERS, allow_redirects=True)
+            r.raise_for_status()
+            content = r.text
+            if content.strip():
+                _write_atomic(path, content)
+                logger.info("✓ Cache salvo (sheet=%r): %s", sheet_name, path.name)
+                return content
+        except requests.exceptions.HTTPError as e:
+            logger.warning("✗ HTTP %s (sheet=%r): %s", e.response.status_code, sheet_name, url[:80])
+        except Exception as e:
+            logger.warning("✗ get_raw_sheet falhou (sheet=%r): %s", sheet_name, str(e)[:100])
 
-    if path.exists():
-        age_min = (time.time() - path.stat().st_mtime) / 60
-        logger.warning("⚠ Usando cache obsoleto (%.0f min): %s", age_min, path.name)
-        return path.read_text(encoding="utf-8")
+        if path.exists():
+            age_min = (time.time() - path.stat().st_mtime) / 60
+            logger.warning("⚠ Usando cache obsoleto (%.0f min): %s", age_min, path.name)
+            return path.read_text(encoding="utf-8")
 
-    logger.error("✗ Sem dados para sheet=%r", sheet_name)
-    return None
+        logger.error("✗ Sem dados para sheet=%r", sheet_name)
+        return None
 
 
 def cache_status() -> list[dict]:

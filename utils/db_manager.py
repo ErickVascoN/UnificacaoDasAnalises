@@ -12,7 +12,15 @@ _log = logging.getLogger(__name__)
 
 def get_conn() -> sqlite3.Connection:
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(_DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+    # WAL permite leitores e escritores concorrentes sem travar o arquivo
+    # inteiro; busy_timeout faz uma escrita concorrente esperar até 5s em
+    # vez de falhar imediatamente com "database is locked" — necessário
+    # porque múltiplas sessões do Streamlit (Community Cloud, processo
+    # único) podem chamar upsert_df() ao mesmo tempo (13/07/2026).
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def _sql_type(dtype) -> str:

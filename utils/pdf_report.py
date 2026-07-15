@@ -33,6 +33,7 @@ from reportlab.platypus import (
 from reportlab.pdfbase import pdfmetrics
 
 from utils.feriados import eh_dia_util, eh_feriado, contar_dias_uteis, feriados_no_periodo
+from utils.lencol_caseamento import lencol_tipos_tams
 
 logger = logging.getLogger(__name__)
 
@@ -1672,7 +1673,7 @@ def gerar_pdf_lencol(
     _label_pecas = '🧵 Peças (s/ fundo)' if total_fundos > 0 else '🧵 Total de Peças'
     kpis = [
         {'label': _label_pecas,             'valor': _fmt(total_sem_fundo),            'cor': C_TEAL_LT},
-        {'label': '🧩 Jogos Duplos (c/ fundo)', 'valor': _fmt(_jogo_em_op_fundo_pdf),  'cor': C_TEAL_LT},
+        {'label': '🧩 Jogos Duplos',         'valor': _fmt(total_jogos_duplo),          'cor': C_TEAL_LT},
         {'label': '🔄 Fundos de Jogo',      'valor': _fmt(total_fundos),               'cor': C_AMBER_LT},
         {'label': '💰 Total a Pagar/Pago',  'valor': f'R$ {_fmt(total_valor, 2)}',     'cor': C_GREEN_LT},
         {'label': '📆 Dias Trabalhados',    'valor': str(dias_trab),                   'cor': C_GRAY_BG},
@@ -1689,6 +1690,51 @@ def gerar_pdf_lencol(
         f'📋 OPs: <b>{n_ops}</b>',
         e['corpo'],
     ))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── O Que Foi Cortado — por Produto ──────────────────────────────────────
+    # Indicador principal pedido pelo usuário: exatamente o que foi cortado,
+    # logo na primeira página (antes só existia como "Análise por Categoria"
+    # perto do fim do relatório, com um gráfico redundante com a própria
+    # tabela — removido; a tabela já é suficiente e mais compacta).
+    story.append(Paragraph('🔎 O Que Foi Cortado — por Produto', e['subtitulo_secao']))
+    cat_col = 'CAT_BASE' if 'CAT_BASE' in df.columns else 'CATEGORIA'
+    if cat_col in df.columns:
+        d_cat = df.copy()
+        # Fundo é uma categoria à parte: o mesmo texto de CATEGORIA (ex.: "JOGO
+        # DUPLO CS") é usado tanto pro jogo quanto pro fundo correspondente —
+        # só o TECIDO diferencia (ver utils/lencol_caseamento.py). Sem isso,
+        # peças de fundo ficavam somadas junto com as de jogo na mesma linha,
+        # inflando o total do jogo e escondendo o fundo (reportado pelo
+        # usuário 14/07/2026). Normaliza espaço em branco também: a mesma
+        # categoria aparecia em 2 linhas por causa de espaço extra na
+        # planilha (ex.: "JOGO DUPLO CS" e "JOGO DUPLO CS ").
+        if 'CATEGORIA' in d_cat.columns:
+            _tipos_cat, _ = lencol_tipos_tams(d_cat)
+            d_cat['_TIPO'] = _tipos_cat
+        else:
+            d_cat['_TIPO'] = 'OUTRO'
+        d_cat['_CAT_LABEL'] = d_cat[cat_col].astype(str).str.strip()
+        d_cat.loc[d_cat['_TIPO'] == 'FUNDO', '_CAT_LABEL'] = 'FUNDO DE JOGO'
+
+        if 'VALOR_RECEBER' in d_cat.columns:
+            df_cat_v = d_cat.groupby('_CAT_LABEL').agg(
+                QUANT=('QUANT', 'sum'), VALOR=('VALOR_RECEBER', 'sum')
+            ).reset_index().sort_values('QUANT', ascending=False)
+            linhas_cat = [
+                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']), f"R$ {_fmt(row['VALOR'], 2)}"]
+                for _, row in df_cat_v.iterrows()
+            ]
+        else:
+            df_cat = (d_cat.groupby('_CAT_LABEL')['QUANT'].sum()
+                      .reset_index().sort_values('QUANT', ascending=False))
+            linhas_cat = [
+                [str(row['_CAT_LABEL'])[:30], _fmt(row['QUANT']), '—']
+                for _, row in df_cat.iterrows()
+            ]
+        cabec_cat = ['Categoria', 'Peças', 'Valor (R$)']
+        cw_cat = [6.0*cm, 3.0*cm, 4.0*cm]
+        story.append(_tabela_generica(cabec_cat, linhas_cat, e, cw_cat))
     story.append(Spacer(1, 0.3*cm))
 
     # ── Caseamento Jogo Duplo × Fundo ────────────────────────────────────────
@@ -1759,10 +1805,8 @@ def gerar_pdf_lencol(
             'Faltam fundos = jogo cortado sem fundo suficiente.  '
             'Sobram fundos = fundo cortado a mais que o jogo.', e['nota'],
         ))
-    story.append(Spacer(1, 0.3*cm))
-
-    # ── Tabela por Prestador ─────────────────────────────────────────────────
-    story.append(Paragraph('Desempenho por Prestador', e['subtitulo_secao']))
+    # ── Cortes por Prestador ─────────────────────────────────────────────────
+    story.append(Paragraph('👷 Cortes por Prestador', e['subtitulo_secao']))
     if 'PRESTADOR' in df.columns:
         df_prest = (
             df.groupby('PRESTADOR')
@@ -1783,9 +1827,164 @@ def gerar_pdf_lencol(
         ]
         cw_pr = [3.5*cm, 2.0*cm, 1.8*cm, 2.8*cm, 1.2*cm, 2.0*cm, 2.2*cm]
         story.append(_tabela_generica(cabec_pr, linhas_pr, e, cw_pr))
+    story.append(Spacer(1, 0.3*cm))
 
-    # ── Página 3: Produção Diária (paisagem — feedback do usuário 13/07/2026) ─
+    # ── Detalhamento Diário ───────────────────────────────────────────────────
+    # Mesmo padrão de "Detalhamento Diário" já usado em gerar_pdf_arealva_manta/
+    # gerar_pdf_iacanga_manta (data + dia da semana abreviado via dict local).
+    story.append(Paragraph('📆 Detalhamento Diário', e['subtitulo_secao']))
+    if 'DATA' in df.columns:
+        d_dia = df.copy()
+        if 'CATEGORIA' in d_dia.columns:
+            _tipos_dia, _ = lencol_tipos_tams(d_dia)
+            d_dia['_TIPO'] = _tipos_dia
+        else:
+            d_dia['_TIPO'] = 'OUTRO'
+
+        agg_dia = {'Peças': ('QUANT', 'sum')}
+        if 'VALOR_RECEBER' in df.columns: agg_dia['Valor'] = ('VALOR_RECEBER', 'sum')
+        if 'PRESTADOR' in df.columns: agg_dia['Prestadores'] = ('PRESTADOR', 'nunique')
+        if 'EMPRESA' in df.columns: agg_dia['Empresas'] = ('EMPRESA', 'nunique')
+        if 'OP' in df.columns: agg_dia['OPs'] = ('OP', 'nunique')
+        resumo_dia = d_dia.groupby('DATA').agg(**agg_dia).reset_index().sort_values('DATA')
+
+        if total_fundos > 0:
+            _fundo_por_dia = d_dia[d_dia['_TIPO'] == 'FUNDO'].groupby('DATA')['QUANT'].sum()
+            resumo_dia['Fundo'] = resumo_dia['DATA'].map(_fundo_por_dia).fillna(0).astype(int)
+
+        dias_semana_pt = {0: 'Seg', 1: 'Ter', 2: 'Qua', 3: 'Qui', 4: 'Sex', 5: 'Sáb', 6: 'Dom'}
+        cabec_dia = ['Data', 'Dia', 'Peças']
+        if 'Valor' in resumo_dia.columns: cabec_dia.append('Valor (R$)')
+        if 'Fundo' in resumo_dia.columns: cabec_dia.append('Fundo')
+        if 'Prestadores' in resumo_dia.columns: cabec_dia.append('Prestadores')
+        if 'Empresas' in resumo_dia.columns: cabec_dia.append('Empresas')
+        if 'OPs' in resumo_dia.columns: cabec_dia.append('OPs')
+
+        linhas_dia = []
+        for row in resumo_dia.itertuples():
+            d = pd.Timestamp(row.DATA)
+            linha = [d.strftime('%d/%m/%Y'), dias_semana_pt.get(d.weekday(), ''), _fmt(row.Peças)]
+            if 'Valor' in resumo_dia.columns: linha.append(f"R$ {_fmt(row.Valor, 2)}")
+            if 'Fundo' in resumo_dia.columns: linha.append(_fmt(row.Fundo) if row.Fundo > 0 else '—')
+            if 'Prestadores' in resumo_dia.columns: linha.append(str(row.Prestadores))
+            if 'Empresas' in resumo_dia.columns: linha.append(str(row.Empresas))
+            if 'OPs' in resumo_dia.columns: linha.append(str(row.OPs))
+            linhas_dia.append(linha)
+
+        cw_dia = [2.2*cm, 1.1*cm, 1.9*cm]
+        if 'Valor (R$)' in cabec_dia: cw_dia.append(2.6*cm)
+        if 'Fundo' in cabec_dia: cw_dia.append(1.6*cm)
+        if 'Prestadores' in cabec_dia: cw_dia.append(2.0*cm)
+        if 'Empresas' in cabec_dia: cw_dia.append(1.8*cm)
+        if 'OPs' in cabec_dia: cw_dia.append(1.4*cm)
+
+        story.append(_tabela_generica(cabec_dia, linhas_dia, e, cw_dia))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── Análise por Ordem de Produção (OP) ───────────────────────────────────
+    story.append(Paragraph('Análise por Ordem de Produção (OP)', e['subtitulo_secao']))
+
+    if 'OP' in df.columns:
+        d_op = df.copy()
+        cat_col_op = 'CAT_BASE' if 'CAT_BASE' in d_op.columns else ('CATEGORIA' if 'CATEGORIA' in d_op.columns else None)
+        if 'CATEGORIA' in d_op.columns:
+            _tipos_op, _ = lencol_tipos_tams(d_op)
+            d_op['_TIPO'] = _tipos_op
+        else:
+            d_op['_TIPO'] = 'OUTRO'
+
+        agg_d = {'Peças': ('QUANT', 'sum'), 'Dias': ('DATA', 'nunique')}
+        if 'VALOR_RECEBER' in df.columns: agg_d['Valor'] = ('VALOR_RECEBER', 'sum')
+        if 'PRESTADOR' in df.columns: agg_d['Prestadores'] = ('PRESTADOR', 'nunique')
+        if 'EMPRESA' in df.columns: agg_d['Empresa'] = ('EMPRESA', 'first')
+        resumo_op = d_op.groupby('OP').agg(**agg_d).reset_index().sort_values('Peças', ascending=False)
+
+        # Produto — categoria com mais peças cortadas na OP (produto principal);
+        # quando a OP corta mais de uma categoria (ex.: jogo + outro item avulso),
+        # sinaliza "(+N)" em vez de esconder a diferença.
+        if cat_col_op:
+            _prod_por_op = (
+                d_op.groupby(['OP', cat_col_op])['QUANT'].sum()
+                .reset_index().sort_values('QUANT', ascending=False)
+                .drop_duplicates('OP').set_index('OP')[cat_col_op]
+            )
+            _n_cat_por_op = d_op.groupby('OP')[cat_col_op].nunique()
+            resumo_op['Produto'] = resumo_op['OP'].map(_prod_por_op)
+            resumo_op['N_CAT'] = resumo_op['OP'].map(_n_cat_por_op).fillna(1)
+
+        # Fundo — peças classificadas como FUNDO (corte separado do jogo duplo)
+        # cortadas nessa OP especificamente, reaproveitando a mesma classificação
+        # usada no caseamento Jogo × Fundo acima. "—" quando a OP não teve fundo.
+        if total_fundos > 0:
+            _fundo_por_op = d_op[d_op['_TIPO'] == 'FUNDO'].groupby('OP')['QUANT'].sum()
+            resumo_op['Fundo'] = resumo_op['OP'].map(_fundo_por_op).fillna(0).astype(int)
+
+        cabec_op = ['OP']
+        if 'Produto' in resumo_op.columns: cabec_op.append('Produto')
+        cabec_op.append('Peças')
+        if 'Valor' in resumo_op.columns: cabec_op.append('Valor (R$)')
+        if 'Fundo' in resumo_op.columns: cabec_op.append('Fundo')
+        if 'Empresa' in resumo_op.columns: cabec_op.append('Empresa')
+        if 'Prestadores' in resumo_op.columns: cabec_op.append('Prestadores')
+        cabec_op.append('Dias')
+
+        linhas_op = []
+        for row in resumo_op.itertuples():
+            linha = [str(row.OP)]
+            if 'Produto' in resumo_op.columns:
+                _prod_txt = str(row.Produto)[:22]
+                if int(row.N_CAT) > 1:
+                    _prod_txt += f' (+{int(row.N_CAT) - 1})'
+                linha.append(_prod_txt)
+            linha.append(_fmt(row.Peças))
+            if 'Valor' in resumo_op.columns: linha.append(f"R$ {_fmt(row.Valor, 2)}")
+            if 'Fundo' in resumo_op.columns: linha.append(_fmt(row.Fundo) if row.Fundo > 0 else '—')
+            if 'Empresa' in resumo_op.columns: linha.append(str(row.Empresa)[:20])
+            if 'Prestadores' in resumo_op.columns: linha.append(str(row.Prestadores))
+            linha.append(str(row.Dias))
+            linhas_op.append(linha)
+
+        cw_op = [2.1*cm]
+        if 'Produto' in cabec_op: cw_op.append(3.0*cm)
+        cw_op.append(1.7*cm)
+        if 'Valor (R$)' in cabec_op: cw_op.append(2.5*cm)
+        if 'Fundo' in cabec_op: cw_op.append(1.5*cm)
+        if 'Empresa' in cabec_op: cw_op.append(2.7*cm)
+        if 'Prestadores' in cabec_op: cw_op.append(1.7*cm)
+        cw_op.append(1.2*cm)
+
+        story.append(_tabela_generica(cabec_op, linhas_op[:60], e, cw_op))
+        if len(linhas_op) > 60:
+            story.append(Paragraph(f'... e mais {len(linhas_op) - 60} OPs.', e['nota']))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── Análise Visual — Prestadores e Empresas, os dois numa página só
+    # (paisagem). Antes eram 2 páginas separadas, cada uma com só 1 gráfico —
+    # muito espaço em branco (feedback do usuário 14/07/2026). _ir_paisagem()
+    # já inclui seu próprio PageBreak — um PageBreak() extra aqui geraria uma
+    # página em branco entre as duas seções.
     story.extend(_ir_paisagem())
+    story.append(Paragraph('Análise Visual — Prestadores e Empresas', e['titulo_secao']))
+    story.append(_linha_divisoria())
+
+    if 'EMPRESA' in df.columns and 'PRESTADOR' in df.columns:
+        df_prest2 = df.groupby('PRESTADOR').agg(
+            Peças=('QUANT', 'sum'), Valor=('VALOR_RECEBER', 'sum')
+        ).reset_index()
+        buf_prest = _chart_lencol_prestador_valor(df_prest2)
+        story.append(_imagem_de_buf(buf_prest, largura_cm=LARGURA_GRAFICO_PAISAGEM, altura_max_cm=7.5))
+        story.append(Spacer(1, 0.3*cm))
+
+        dist_emp = df.groupby('EMPRESA')['QUANT'].sum().reset_index()
+        buf_emp = _chart_pizza_estacao(dist_emp, 'EMPRESA', 'QUANT', 'Distribuição por Empresa')
+        img_emp = _imagem_de_buf(buf_emp, largura_cm=16.0, altura_max_cm=6.0)
+        t_centro = Table([[img_emp]], colWidths=[PAGE_W_L - 2 * MARGIN])
+        t_centro.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                                      ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
+        story.append(t_centro)
+    story.append(PageBreak())
+
+    # ── Análise Visual — Produção Diária (mesma página em paisagem já aberta) ─
     story.append(Paragraph('Análise Visual — Produção Diária', e['titulo_secao']))
     story.append(_linha_divisoria())
 
@@ -1799,140 +1998,6 @@ def gerar_pdf_lencol(
         )
         story.append(_imagem_de_buf(buf_dia, largura_cm=LARGURA_GRAFICO_PAISAGEM,
                                     altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
-    story.append(PageBreak())
-
-    # ── Página 4: Prestadores, depois Empresas — 1 gráfico por página (segue
-    # em paisagem; feedback do usuário 13/07/2026). ──────────────────────────
-    story.append(Paragraph('Análise Visual — Prestadores', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    if 'EMPRESA' in df.columns and 'PRESTADOR' in df.columns:
-        # Gráfico prestadores (largura total)
-        df_prest2 = df.groupby('PRESTADOR').agg(
-            Peças=('QUANT', 'sum'), Valor=('VALOR_RECEBER', 'sum')
-        ).reset_index()
-        buf_prest = _chart_lencol_prestador_valor(df_prest2)
-        story.append(_imagem_de_buf(buf_prest, largura_cm=LARGURA_GRAFICO_PAISAGEM,
-                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
-        story.append(PageBreak())
-
-        story.append(Paragraph('Análise Visual — Distribuição por Empresa', e['titulo_secao']))
-        story.append(_linha_divisoria())
-
-        # Pizza de empresas (centralizada, tamanho generoso)
-        dist_emp = df.groupby('EMPRESA')['QUANT'].sum().reset_index()
-        buf_emp = _chart_pizza_estacao(dist_emp, 'EMPRESA', 'QUANT', 'Distribuição por Empresa')
-        img_emp = _imagem_de_buf(buf_emp, largura_cm=20.0,
-                                 altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO)
-        t_centro = Table([[img_emp]], colWidths=[PAGE_W_L - 2 * MARGIN])
-        t_centro.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'),
-                                      ('VALIGN', (0, 0), (0, 0), 'MIDDLE')]))
-        story.append(t_centro)
-    story.append(PageBreak())
-
-    # ── Página 4: Categorias (gráfico segue em paisagem, tabela volta a retrato)
-    story.append(Paragraph('Análise por Categoria', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    cat_col = 'CAT_BASE' if 'CAT_BASE' in df.columns else 'CATEGORIA'
-    if cat_col in df.columns:
-        df_cat = (df.groupby(cat_col)['QUANT'].sum()
-                  .reset_index().sort_values('QUANT', ascending=False))
-        df_cat['%'] = (df_cat['QUANT'] / df_cat['QUANT'].sum() * 100).round(1)
-
-        buf_cat = _chart_barras_h(df_cat, cat_col, 'QUANT', 'Peças por Categoria', top_n=12)
-        story.append(_imagem_de_buf(buf_cat, largura_cm=LARGURA_GRAFICO_PAISAGEM,
-                                    altura_max_cm=ALTURA_GRAFICO_PAISAGEM_SOLO))
-        story.append(Spacer(1, 0.4*cm))
-    story.extend(_ir_retrato())
-
-    if cat_col in df.columns:
-        cabec_cat = ['Categoria', 'Peças', '% Total', 'Valor (R$)']
-        if 'VALOR_RECEBER' in df.columns:
-            df_cat_v = df.groupby(cat_col).agg(
-                QUANT=('QUANT', 'sum'), VALOR=('VALOR_RECEBER', 'sum')
-            ).reset_index().sort_values('QUANT', ascending=False)
-            df_cat_v['%'] = (df_cat_v['QUANT'] / df_cat_v['QUANT'].sum() * 100).round(1)
-            linhas_cat = [
-                [str(row[cat_col])[:30], _fmt(row['QUANT']),
-                 f"{row['%']:.1f}%", f"R$ {_fmt(row['VALOR'], 2)}"]
-                for _, row in df_cat_v.iterrows()
-            ]
-        else:
-            linhas_cat = [
-                [str(row[cat_col])[:30], _fmt(row['QUANT']), f"{row['%']:.1f}%", '—']
-                for _, row in df_cat.iterrows()
-            ]
-        cw_cat = [5.0*cm, 2.5*cm, 2.0*cm, 3.5*cm]
-        story.append(_tabela_generica(cabec_cat, linhas_cat, e, cw_cat))
-    story.append(PageBreak())
-
-    # ── Página 5: OPs ────────────────────────────────────────────────────────
-    story.append(Paragraph('Análise por Ordem de Produção (OP)', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    if 'OP' in df.columns:
-        agg_d = {'Peças': ('QUANT', 'sum'), 'Dias': ('DATA', 'nunique')}
-        if 'VALOR_RECEBER' in df.columns: agg_d['Valor'] = ('VALOR_RECEBER', 'sum')
-        if 'PRESTADOR' in df.columns: agg_d['Prestadores'] = ('PRESTADOR', 'nunique')
-        if 'EMPRESA' in df.columns: agg_d['Empresa'] = ('EMPRESA', 'first')
-        resumo_op = df.groupby('OP').agg(**agg_d).reset_index().sort_values('Peças', ascending=False)
-
-        cabec_op = ['OP', 'Peças']
-        if 'Valor' in resumo_op.columns: cabec_op.append('Valor (R$)')
-        if 'Empresa' in resumo_op.columns: cabec_op.append('Empresa')
-        if 'Prestadores' in resumo_op.columns: cabec_op.append('Prestadores')
-        cabec_op.append('Dias')
-
-        linhas_op = []
-        for row in resumo_op.itertuples():
-            linha = [str(row.OP), _fmt(row.Peças)]
-            if 'Valor' in resumo_op.columns: linha.append(f"R$ {_fmt(row.Valor, 2)}")
-            if 'Empresa' in resumo_op.columns: linha.append(str(row.Empresa)[:20])
-            if 'Prestadores' in resumo_op.columns: linha.append(str(row.Prestadores))
-            linha.append(str(row.Dias))
-            linhas_op.append(linha)
-
-        n_extra_cols = len(cabec_op) - 3
-        base_w = PAGE_W - 2 * MARGIN
-        cw_op = [2.5*cm, 2.5*cm]
-        if 'Valor (R$)' in cabec_op: cw_op.append(3.0*cm)
-        if 'Empresa' in cabec_op: cw_op.append(3.5*cm)
-        if 'Prestadores' in cabec_op: cw_op.append(2.0*cm)
-        cw_op.append(1.5*cm)
-
-        story.append(_tabela_generica(cabec_op, linhas_op[:60], e, cw_op))
-        if len(linhas_op) > 60:
-            story.append(Paragraph(f'... e mais {len(linhas_op) - 60} OPs.', e['nota']))
-    story.append(PageBreak())
-
-    # ── Conclusão ────────────────────────────────────────────────────────────
-    story.append(Paragraph('Conclusão do Período', e['titulo_secao']))
-    story.append(_linha_divisoria())
-
-    is_pago = fim < date.today()
-    status_fin = 'PAGO' if is_pago else 'A PAGAR'
-    _pecas_txt = (
-        f'<b>{_fmt(total_sem_fundo)} peças (exceto fundos)</b> '
-        f'+ <b>{_fmt(total_fundos)} fundos de jogo</b>'
-        if total_fundos > 0 else f'<b>{_fmt(total_pecas)} peças cortadas</b>'
-    )
-    conclusao_html = (
-        f'No período de <b>{ini.strftime("%d/%m/%Y")}</b> a <b>{fim.strftime("%d/%m/%Y")}</b>, '
-        f'o setor de Corte de Lençol registrou {_pecas_txt} '
-        f'por <b>{n_prest} prestador(es)</b> de <b>{n_emp} empresa(s)</b>, '
-        f'ao longo de <b>{dias_trab} dias trabalhados</b>. '
-        f'A média diária foi de <b>{_fmt(media_diaria, 0)} peças/dia</b>. '
-        f'Valor total ({status_fin}): <b>R$ {_fmt(total_valor, 2)}</b>, '
-        f'com ticket médio de <b>R$ {_fmt(ticket_medio, 4)}/peça</b>.'
-    )
-    story.append(Paragraph(conclusao_html, e['corpo']))
-    story.append(Spacer(1, 1.5*cm))
-    story.append(Paragraph(
-        f'Relatório gerado automaticamente pelo Sistema de Gestão Industrial<br/>'
-        f'Arealva · Lençol',
-        ParagraphStyle('ass_ln', parent=e['nota'], alignment=TA_CENTER, fontSize=8),
-    ))
 
     doc.build(story)
     return buf.getvalue()

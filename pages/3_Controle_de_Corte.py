@@ -1127,7 +1127,8 @@ if screen == 'analysis_type':
             </div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True, disabled=True)
+        if st.button("Abrir Dashboard  →", key="btn_eficiencia_main", use_container_width=True):
+            _go('eficiencia_dashboard')
 
     st.markdown('<div style="height:40px"></div>', unsafe_allow_html=True)
     col_back_inicio, *_ = st.columns([2, 5])

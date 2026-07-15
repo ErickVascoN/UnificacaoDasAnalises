@@ -128,7 +128,7 @@ def _render_card_button(
 
     if fully_disabled:
         label = "🚧 Em breve" if coming_soon else "🔧 Em Manutenção"
-        st.button(label, key=f"open_{key}", use_container_width=True, disabled=True)
+        st.button(label, key=f"open_{key}", use_container_width=False, disabled=False)
 
     elif locked:
         st.button(

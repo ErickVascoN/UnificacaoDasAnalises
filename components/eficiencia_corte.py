@@ -209,6 +209,16 @@ def carregar_lencol_arealva() -> pd.DataFrame:
     for col in ["OP", "CLIENTE", "PRODUTO", "TECIDO", "TIPO", "TAMANHO", "STATUS"]:
         df[col] = df[col].astype(str).str.strip() if col in df.columns else ""
 
+    # A planilha tem uma linha marcadora ("ATUALIZADO DAQUI PARA BAIXO") na
+    # coluna PRODUTO indicando que os dados ANTES dela não foram preenchidos
+    # corretamente (reportado pelo usuário 15/07/2026). Descarta a linha
+    # marcadora e tudo acima dela — só as OPs abaixo do marcador entram no
+    # dashboard.
+    _marcador = df["PRODUTO"].str.upper().str.contains("ATUALIZADO", na=False)
+    if _marcador.any():
+        _marcador_idx = df.index[_marcador][-1]
+        df = df.loc[df.index > _marcador_idx].reset_index(drop=True)
+
     for col in ["QTD_PROG", "QTD_CORT", "MTS_ESP", "MTS_CORT", "RETALHO_KG"]:
         df[col] = _num(df[col]) if col in df.columns else 0.0
 

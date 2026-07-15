@@ -6,6 +6,212 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "15/07/2026",
+        "tag": "correção",
+        "title": "Eficiência de Corte · Lençol Arealva ignorava dados antigos malpreenchidos",
+        "description": (
+            "Reportado pelo usuário: a planilha de Lençol Arealva "
+            "(components/eficiencia_corte.py:carregar_lencol_arealva) tem uma "
+            "linha marcadora 'ATUALIZADO DAQUI PARA BAIXO' na coluna PRODUTO "
+            "(17/05/2026) indicando que só os dados abaixo dela foram "
+            "preenchidos corretamente — tudo acima é lançamento antigo "
+            "malformado. O dashboard estava lendo a planilha inteira, do "
+            "topo. Agora descarta a linha marcadora e tudo acima dela. "
+            "Testado: Total OPs caiu de 450 para 133 (só as OPs corretas "
+            "entram), primeira linha após o filtro bate com a planilha "
+            "(NIAZTEX/190650)."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Dashboard 'Análise de Eficiência OPs' liberado",
+        "description": (
+            "O card 'Análise de Eficiência OPs' (Controle de Corte → Selecione "
+            "o Tipo de Análise) tinha o botão 'Abrir Dashboard' travado "
+            "(disabled=True), mas o dashboard por trás "
+            "(components/eficiencia_corte.py, 3 abas: Manta Arealva, Lençol "
+            "Arealva, Giattex) já estava pronto e funcionando com dados reais. "
+            "Removida só a trava do botão em pages/3_Controle_de_Corte.py — "
+            "o card mantém o aviso visual 'Em desenvolvimento', mas agora "
+            "navega normalmente ao clicar. Testado: Manta Arealva e Lençol "
+            "Arealva carregam KPIs e gráficos reais; Giattex mostra aviso de "
+            "configuração pendente (planilha ainda não cadastrada em "
+            "components/eficiencia_corte.py — comportamento já esperado, não "
+            "é erro)."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "novo",
+        "title": "Relatório de Corte · Lençol: nova tabela 'Detalhamento Diário'",
+        "description": (
+            "utils/pdf_report.py:gerar_pdf_lencol — nova seção 'Detalhamento "
+            "Diário' entre 'Cortes por Prestador' e 'Análise por Ordem de "
+            "Produção (OP)', mesmo padrão já usado em gerar_pdf_arealva_manta/"
+            "gerar_pdf_iacanga_manta (data + dia da semana abreviado). Colunas: "
+            "Data, Dia, Peças, Valor (R$), Fundo (peças de fundo do dia — só "
+            "aparece se houver fundos no período, mesma classificação via "
+            "lencol_tipos_tams já usada nas outras tabelas), Prestadores, "
+            "Empresas e OPs (contagem de únicos por dia). Testado com dados "
+            "reais: soma de Peças e de Fundo por dia bate exatamente com os "
+            "totais do Resumo Executivo; nenhuma página em branco nova."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "correção",
+        "title": "KPI 'Jogos Duplos' do relatório de Lençol batia com número errado",
+        "description": (
+            "Reportado pelo usuário: o KPI 'Jogos Duplos (c/ fundo)' do Resumo "
+            "Executivo (utils/pdf_report.py:gerar_pdf_lencol) não batia com a "
+            "tabela 'O Que Foi Cortado — por Produto' (ex.: KPI mostrando "
+            "13.694 enquanto a soma das categorias JOGO DUPLO na tabela dava "
+            "muito mais). Causa: o KPI usava _jogo_em_op_fundo_pdf — jogos "
+            "duplos só das OPs que também tiveram corte de fundo no período "
+            "(o universo restrito do caseamento) — em vez de "
+            "total_jogos_duplo, o total real (já calculado e passado em "
+            "totais_jf, mas nunca usado). Corrigido pra usar o total real e "
+            "renomeado o label pra só 'Jogos Duplos' (sem '(c/ fundo)', que "
+            "não fazia mais sentido). Testado: bate exatamente com a soma das "
+            "categorias JOGO DUPLO da tabela de produto (60.185 nos dois "
+            "lugares)."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "correção",
+        "title": "Deploy no Railway crashava (rodava sem `streamlit run`)",
+        "description": (
+            "Novo Procfile na raiz do projeto: `web: streamlit run app.py --server.port $PORT "
+            "--server.address 0.0.0.0 ...`. Sem ele, o Railway (via Nixpacks) executava "
+            "`python app.py` direto — o app rodava sem o runtime do Streamlit (log cheio de "
+            "'missing ScriptRunContext') e crashava ao abrir o diálogo de login: "
+            "`StreamlitAPIException: open() is not a valid Streamlit command` — o decorator "
+            "@st.dialog só funciona dentro do processo real do `streamlit run`. Testado "
+            "localmente com o comando exato do Procfile (variável $PORT incluída) — sobe "
+            "limpo, sem erro."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Tabela 'O Que Foi Cortado' sem a coluna % Total",
+        "description": (
+            "Removida a coluna '% Total' da tabela de categoria/produto do "
+            "relatório de Corte · Lençol (utils/pdf_report.py:gerar_pdf_lencol) "
+            "a pedido do usuário — ficam Categoria, Peças e Valor (R$)."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "correção",
+        "title": "'O Que Foi Cortado' misturava fundo com jogo na mesma categoria",
+        "description": (
+            "Confirmado pelo usuário: a tabela 'O Que Foi Cortado — por "
+            "Produto' (utils/pdf_report.py:gerar_pdf_lencol) somava peças de "
+            "FUNDO junto com as de JOGO na mesma linha. Causa: o mesmo texto "
+            "de CATEGORIA (ex.: 'JOGO DUPLO CS') é usado na planilha tanto "
+            "pro jogo quanto pro fundo correspondente — só o TECIDO diferencia "
+            "(mesma regra de utils/lencol_caseamento.py). Agora a tabela "
+            "classifica cada linha com lencol_tipos_tams antes de agrupar: "
+            "peças de FUNDO viram uma categoria própria 'FUNDO DE JOGO' "
+            "(soma bate com o KPI 'Fundos de Jogo' do Resumo Executivo), e as "
+            "demais mostram só o jogo/produto de fato. De quebra, corrigido "
+            "também um problema de dados que fazia a mesma categoria aparecer "
+            "em 2 linhas (ex.: 'JOGO DUPLO CS' e 'JOGO DUPLO CS ' — espaço em "
+            "branco extra na planilha); agora normaliza antes de agrupar."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Corte · Lençol: sem Conclusão, Prestador antes de OP",
+        "description": (
+            "utils/pdf_report.py:gerar_pdf_lencol — removida a seção 'Conclusão "
+            "do Período' (redundante com o Resumo Executivo). 'Cortes por "
+            "Prestador' movido pra antes de 'Análise por Ordem de Produção "
+            "(OP)', e as duas passaram a fluir na mesma página do Resumo "
+            "Executivo/O Que Foi Cortado/Caseamento (sem PageBreak forçado "
+            "entre elas — só quebra de página quando o conteúdo realmente "
+            "transborda). No período de teste (2 semanas, 37 OPs): 8 → 6 "
+            "páginas."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "correção",
+        "title": "App caindo/lento no Streamlit Cloud com múltiplos usuários",
+        "description": (
+            "Investigação de estabilidade (relatada pelo usuário: app 'caindo' ou 'carregando "
+            "a todo momento' com 2 pessoas usando ao mesmo tempo — Streamlit Community Cloud, "
+            "1GB de RAM compartilhado entre sessões). 3 correções: "
+            "(1) pages/10_Relatorios.py usava st.tabs() no nível principal — o Streamlit "
+            "executa o corpo de TODAS as abas a cada rerun, mesmo as não-selecionadas; 3 das 6 "
+            "abas chamavam seus carregadores pesados (planilha XLSX completa de produção, "
+            "colaborador interno, carteira de pedidos) sem estarem atrás de botão, então "
+            "qualquer clique em QUALQUER lugar da página disparava os 3 downloads/parses "
+            "pesados. Trocado por um seletor (st.radio) — só a seção escolhida executa. "
+            "Confirmado com streamlit.testing.v1.AppTest interceptando requests.get: seção "
+            "'Corte' selecionada = 0 chamadas de rede; ao trocar pra 'Produção Geral' = 11 "
+            "chamadas (antes, essas 11 aconteciam em qualquer interação, não só ao selecionar "
+            "essa aba). (2) utils/cache_manager.py::get_raw()/get_raw_sheet() não tinham "
+            "nenhuma trava — duas sessões batendo no mesmo cache expirado ao mesmo tempo "
+            "disparavam downloads duplicados (até ~3min de bloqueio cada no pior caso) e "
+            "escreviam o CSV sem atomicidade (risco de leitura truncada por uma terceira "
+            "sessão). Adicionada trava em memória por arquivo de cache + escrita atômica "
+            "(tmp + os.replace). Testado com 6 threads batendo no mesmo cache expirado "
+            "simultaneamente: só 1 download real aconteceu, todas as threads receberam o "
+            "CSV completo e idêntico. (3) utils/db_manager.py::get_conn() não usava WAL nem "
+            "busy_timeout — escritas SQLite concorrentes (upsert_df, 7 pontos no código) "
+            "podiam falhar com 'database is locked' silenciosamente. Adicionado "
+            "PRAGMA journal_mode=WAL + PRAGMA busy_timeout=5000. Testado com 8 threads "
+            "gravando ao mesmo tempo: zero erros, 400/400 linhas gravadas corretamente. "
+            "Todas as 6 seções de Relatórios testadas de ponta a ponta (dados reais, via "
+            "AppTest) sem exceções após a mudança."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Corte · Lençol reorganizado — menos páginas, indicadores primeiro",
+        "description": (
+            "utils/pdf_report.py:gerar_pdf_lencol reordenado pra abrir com o que "
+            "mais importa: a 1a página de conteúdo já traz Resumo Executivo + "
+            "'O Que Foi Cortado — por Produto' (tabela de categoria, antes só "
+            "aparecia perto do fim como 'Análise por Categoria') + Caseamento "
+            "Jogo × Fundo. Em seguida, página própria de 'Cortes por "
+            "Prestador'. O resto (gráficos visuais, tabela de OP, conclusão) "
+            "vem depois. Removido o gráfico de barras de categoria (redundante "
+            "com a tabela que já mostra os mesmos números). As páginas de "
+            "gráfico 'Prestadores' e 'Distribuição por Empresa', antes cada "
+            "uma sozinha numa página cheia de espaço em branco, agora dividem "
+            "uma página só. No total: 10 → 8 páginas no período de teste (2 "
+            "semanas, 37 OPs), sem perder nenhuma informação. Reportado pelo "
+            "usuário 14/07/2026: relatório 'com muitos gaps, espaços em "
+            "branco e análises desnecessárias'."
+        ),
+    },
+    {
+        "date": "14/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Corte · Lençol: tabela de OP com Produto e Fundo",
+        "description": (
+            "A tabela 'Análise por Ordem de Produção (OP)' do PDF de Lençol "
+            "(utils/pdf_report.py:gerar_pdf_lencol) só mostrava OP, Peças, Valor, "
+            "Empresa, Prestadores e Dias — sem indicar o que foi cortado. "
+            "Adicionadas duas colunas: 'Produto' (categoria com mais peças da OP; "
+            "quando a OP corta mais de uma categoria, mostra '(+N)' em vez de "
+            "esconder) e 'Fundo' (peças classificadas como FUNDO — corte "
+            "separado do jogo duplo — nessa OP especificamente, via "
+            "utils/lencol_caseamento.lencol_tipos_tams; '—' quando a OP não "
+            "teve fundo). Coluna Fundo só aparece quando há fundos no período, "
+            "mesmo padrão já usado nos KPIs desse relatório. Testado gerando o "
+            "PDF com dados reais (37 OPs, 2 semanas) — Produto e Fundo batem "
+            "com o caseamento Jogo × Fundo já existente no relatório."
+        ),
+    },
+    {
         "date": "14/07/2026",
         "tag": "melhoria",
         "title": "Meta Diária/Período no Relatório de Corte Consolidado",

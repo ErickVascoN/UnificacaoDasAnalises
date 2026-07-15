@@ -664,23 +664,37 @@ def _calcular_df_agg(df_prog: pd.DataFrame, df_cortes: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LAYOUT — TABS
+# LAYOUT — SELETOR DE SEÇÃO
 # ══════════════════════════════════════════════════════════════════════════════
+# Antes usava st.tabs(), mas o Streamlit executa o corpo de TODAS as abas a
+# cada rerun do script, mesmo as que não estão visualmente selecionadas —
+# isso disparava download/parse pesado de planilha (Produção Geral,
+# Colaboradores Internos, Carteira) em qualquer interação na página, mesmo
+# só clicando em algo na aba de Corte. Um seletor (só a seção escolhida
+# executa) resolve isso — mesmo padrão de "tela ativa" já usado em
+# pages/2_Producao_Geral.py e pages/3_Controle_de_Corte.py, e do
+# st.segmented_control já usado dentro da própria seção de Corte, abaixo.
+# Corrigido 14/07/2026 — app caindo/lento no Streamlit Cloud com 2+ usuários.
 
 _today = date.today()
 _mes_ini = _today.replace(day=1)
 _mes_fim = _today.replace(day=monthrange(_today.year, _today.month)[1])
 
-tab_corte, tab_prod, tab_interno, tab_cargas, tab_pedidos, tab_prog = st.tabs([
+_SECOES_REL = [
     "✂️ Corte", "🏭 Produção Geral", "👥 Colaboradores Internos", "🚛 Cargas",
     "📦 Carteira de Pedidos", "📋 Programação",
-])
+]
+_secao_rel = st.radio(
+    "Categoria de relatório", _SECOES_REL, horizontal=True,
+    key="secao_rel", label_visibility="collapsed",
+)
+st.divider()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — CORTE
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_corte:
+if _secao_rel == "✂️ Corte":
     st.markdown("### ✂️ Relatórios de Corte")
     st.markdown("Escolha o relatório abaixo — o período aparece sempre no card seguinte.")
 
@@ -871,7 +885,7 @@ with tab_corte:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — PRODUÇÃO GERAL
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_prod:
+if _secao_rel == "🏭 Produção Geral":
     st.markdown("### 🏭 Relatório de Produção")
     st.markdown(
         "Relatório de produção x meta x período — indicador principal é Facção x Meta, "
@@ -1006,7 +1020,7 @@ with tab_prod:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — COLABORADORES INTERNOS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_interno:
+if _secao_rel == "👥 Colaboradores Internos":
     st.markdown("### 👥 Relatório de Colaborador Interno")
     st.markdown(
         "Produção individual de um colaborador interno (LITTEX / GGTTEX), por período — "
@@ -1123,7 +1137,7 @@ with tab_interno:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — CARGAS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_cargas:
+if _secao_rel == "🚛 Cargas":
     st.markdown("### 🚛 Relatório de Previsão de Cargas")
     st.markdown("Comparativo previsão vs. realizado por mês e destino.")
 
@@ -1204,7 +1218,7 @@ with tab_cargas:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — CARTEIRA DE PEDIDOS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_pedidos:
+if _secao_rel == "📦 Carteira de Pedidos":
     st.markdown("### 📦 Relatório de Carteira de Pedidos")
     st.markdown("Análise consolidada de pedidos em aberto por cliente e categoria.")
 
@@ -1332,7 +1346,7 @@ with tab_pedidos:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — PROGRAMAÇÃO DE CORTE
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_prog:
+if _secao_rel == "📋 Programação":
     st.markdown("### 📋 Relatório de Programação de Corte")
     st.markdown("Status de OPs programadas vs. cortadas (todas as semanas disponíveis).")
 
