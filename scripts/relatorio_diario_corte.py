@@ -302,6 +302,29 @@ def carregar_lencol_arealva_range(d_ini: date, d_fim: date) -> pd.DataFrame:
     return df[(df["DATA"].dt.date >= d_ini) & (df["DATA"].dt.date <= d_fim)].copy()
 
 # geração de HTML
+# Paleta e escala tipográfica dos PDFs de corte (diário + consolidado) —
+# centralizada aqui pra manter os blocos (_bloco_pdf_manta, _bloco_pdf_lencol,
+# _tabela_meta_setor etc.) visualmente consistentes. Redesenho pedido pelo
+# usuário 20/07/2026: números pequenos e blocos colados demais no PDF
+# consolidado — números maiores, mais respiro entre elementos, cores de
+# destaque por setor.
+_PDF = {
+    "navy":    "#1a237e",
+    "blue":    "#1565c0",
+    "teal":    "#00897b",
+    "amber":   "#ef6c00",
+    "slate":   "#37474f",
+    "ink":     "#1e293b",
+    "muted":   "#64748b",
+    "border":  "#dde3ee",
+    "head_bg": "#eef1f8",
+    "row_alt": "#f8fafc",
+    "green":   "#2e7d32",
+    "yellow":  "#b8860b",
+    "red":     "#c62828",
+}
+
+
 def _v(val: str) -> str:
     # retorna valor limpo ou traço se vazio
     s = str(val).strip()
@@ -593,30 +616,30 @@ def gerar_html(dia: date, df_manta_are: pd.DataFrame, df_manta_iac: pd.DataFrame
 def _bloco_pdf_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE") -> str:
     if df.empty:
         return (
-            f'<table width="100%" style="margin-bottom:6px;border-collapse:collapse;">'
-            f'<tr><td style="background:#1a237e;color:#fff;font-weight:bold;padding:4px 8px;font-size:10px;">'
+            f'<table width="100%" style="margin-bottom:10px;border-collapse:collapse;">'
+            f'<tr><td style="background:{_PDF["navy"]};color:#fff;font-weight:bold;padding:7px 12px;font-size:11px;">'
             f'{titulo}</td></tr>'
-            f'<tr><td style="padding:8px;color:#888;font-style:italic;font-size:9px;">'
+            f'<tr><td style="padding:12px;color:#888;font-style:italic;font-size:10px;border:1px solid {_PDF["border"]};border-top:none;">'
             f'Sem producao registrada</td></tr></table>'
         )
     total_setor = int(df[col_qtd].sum())
     blocos = (
-        f'<table width="100%" style="margin-bottom:2px;border-collapse:collapse;">'
-        f'<tr><td style="background:#1a237e;color:#fff;font-weight:bold;padding:4px 8px;font-size:10px;">'
+        f'<table width="100%" style="margin-bottom:4px;border-collapse:collapse;">'
+        f'<tr><td style="background:{_PDF["navy"]};color:#fff;font-weight:bold;padding:7px 12px;font-size:11px;">'
         f'{titulo}</td></tr></table>'
     )
     tem_cliente = "CLIENTE" in df.columns
     for estacao, grupo in df.groupby("ESTACAO", sort=True):
         subtotal = int(grupo[col_qtd].sum())
         blocos += (
-            f'<table width="100%" style="margin-bottom:0;border-collapse:collapse;">'
-            f'<tr><td style="background:#e8eaf6;color:#1a237e;font-weight:bold;'
-            f'padding:3px 8px;font-size:9px;">Estacao: {estacao}</td></tr></table>'
+            f'<table width="100%" style="margin:6px 0 0 0;border-collapse:collapse;">'
+            f'<tr><td style="background:{_PDF["head_bg"]};color:{_PDF["navy"]};font-weight:bold;'
+            f'padding:5px 10px;font-size:9.5px;letter-spacing:0.3px;">ESTACAO: {estacao}</td></tr></table>'
         )
         # cabeçalho da tabela
-        th = "background:#f5f5f5;border:1px solid #ddd;padding:3px 6px;font-size:8px;text-align:left;"
-        td_s = "border:1px solid #eee;padding:2px 6px;font-size:9px;"
-        td_r = td_s + "text-align:right;font-weight:bold;color:#1a237e;"
+        th = f'background:{_PDF["head_bg"]};border:1px solid {_PDF["border"]};padding:5px 8px;font-size:8.5px;text-align:left;color:{_PDF["slate"]};text-transform:uppercase;letter-spacing:0.3px;'
+        td_s = f'border:1px solid {_PDF["border"]};padding:4px 8px;font-size:9.5px;color:{_PDF["ink"]};'
+        td_r = td_s + f'text-align:right;font-weight:bold;color:{_PDF["navy"]};'
         if tem_cliente:
             header = (f'<tr><th style="{th}">OP</th><th style="{th}">Cliente</th>'
                       f'<th style="{th}">Produto</th><th style="{th}">Tamanho</th>'
@@ -628,7 +651,7 @@ def _bloco_pdf_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE")
                       f'<th style="{th}">Qtd</th><th style="{th}">Observacao</th></tr>')
         linhas = ""
         for i, (_, r) in enumerate(grupo.sort_values("OP").iterrows()):
-            bg = "background:#fafafa;" if i % 2 else ""
+            bg = f'background:{_PDF["row_alt"]};' if i % 2 else ""
             if tem_cliente:
                 linhas += (
                     f'<tr style="{bg}">'
@@ -653,15 +676,15 @@ def _bloco_pdf_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE")
                     f'</tr>'
                 )
         blocos += (
-            f'<table width="100%" style="border-collapse:collapse;margin-bottom:2px;">'
+            f'<table width="100%" style="border-collapse:collapse;margin-bottom:4px;">'
             f'<thead>{header}</thead><tbody>{linhas}</tbody></table>'
-            f'<p style="text-align:right;font-size:9px;color:#1565c0;'
-            f'background:#e3f2fd;padding:2px 8px;margin:0 0 4px 0;">'
+            f'<p style="text-align:right;font-size:9.5px;color:{_PDF["blue"]};'
+            f'background:#e3f2fd;padding:4px 10px;margin:0 0 8px 0;">'
             f'Subtotal {estacao}: <b>{subtotal:,} pecas</b></p>'
         )
     blocos += (
-        f'<p style="text-align:right;font-size:9px;font-weight:bold;color:#fff;'
-        f'background:#1a237e;padding:3px 8px;margin:0 0 8px 0;">'
+        f'<p style="text-align:right;font-size:10px;font-weight:bold;color:#fff;'
+        f'background:{_PDF["navy"]};padding:6px 10px;margin:0 0 14px 0;">'
         f'TOTAL {titulo}: {total_setor:,} pecas</p>'
     )
     return blocos
@@ -670,22 +693,22 @@ def _bloco_pdf_lencol(df: pd.DataFrame) -> str:
     titulo = "LENCOL AREALVA"
     if df.empty:
         return (
-            f'<table width="100%" style="margin-bottom:6px;border-collapse:collapse;">'
-            f'<tr><td style="background:#1a237e;color:#fff;font-weight:bold;padding:4px 8px;font-size:10px;">'
+            f'<table width="100%" style="margin-bottom:10px;border-collapse:collapse;">'
+            f'<tr><td style="background:{_PDF["navy"]};color:#fff;font-weight:bold;padding:7px 12px;font-size:11px;">'
             f'{titulo}</td></tr>'
-            f'<tr><td style="padding:8px;color:#888;font-style:italic;font-size:9px;">'
+            f'<tr><td style="padding:12px;color:#888;font-style:italic;font-size:10px;border:1px solid {_PDF["border"]};border-top:none;">'
             f'Sem producao registrada</td></tr></table>'
         )
     total_setor = int(df["QUANT"].sum())
     total_valor = df["VALOR_RECEBER"].sum()
     blocos = (
-        f'<table width="100%" style="margin-bottom:2px;border-collapse:collapse;">'
-        f'<tr><td style="background:#1a237e;color:#fff;font-weight:bold;padding:4px 8px;font-size:10px;">'
+        f'<table width="100%" style="margin-bottom:4px;border-collapse:collapse;">'
+        f'<tr><td style="background:{_PDF["navy"]};color:#fff;font-weight:bold;padding:7px 12px;font-size:11px;">'
         f'{titulo}</td></tr></table>'
     )
-    th = "background:#f5f5f5;border:1px solid #ddd;padding:3px 5px;font-size:8px;text-align:left;"
-    td_s = "border:1px solid #eee;padding:2px 5px;font-size:9px;"
-    td_r = td_s + "text-align:right;font-weight:bold;color:#1a237e;"
+    th = f'background:{_PDF["head_bg"]};border:1px solid {_PDF["border"]};padding:5px 7px;font-size:8.5px;text-align:left;color:{_PDF["slate"]};text-transform:uppercase;letter-spacing:0.3px;'
+    td_s = f'border:1px solid {_PDF["border"]};padding:4px 7px;font-size:9.5px;color:{_PDF["ink"]};'
+    td_r = td_s + f'text-align:right;font-weight:bold;color:{_PDF["navy"]};'
     for prestador, grupo in df.groupby("PRESTADOR", sort=True):
         subtotal  = int(grupo["QUANT"].sum())
         sub_valor = grupo["VALOR_RECEBER"].sum()
@@ -699,7 +722,7 @@ def _bloco_pdf_lencol(df: pd.DataFrame) -> str:
         )
         linhas = ""
         for i, (_, r) in enumerate(grupo.sort_values("OP").iterrows()):
-            bg = "background:#fafafa;" if i % 2 else ""
+            bg = f'background:{_PDF["row_alt"]};' if i % 2 else ""
             vp  = f'R$ {r["VALOR_PECA"]:.2f}'.replace(".", ",") if r["VALOR_PECA"] else "-"
             vr  = f'R$ {r["VALOR_RECEBER"]:.2f}'.replace(".", ",") if r["VALOR_RECEBER"] else "-"
             ret = f'{r["RETALHO_KG"]:.2f} kg'.replace(".", ",") if r["RETALHO_KG"] else "-"
@@ -718,18 +741,18 @@ def _bloco_pdf_lencol(df: pd.DataFrame) -> str:
             )
         sv_fmt = f'R$ {sub_valor:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".")
         blocos += (
-            f'<p style="background:#e8eaf6;color:#1a237e;font-weight:bold;'
-            f'font-size:9px;padding:3px 8px;margin:0 0 0 0;">Prestador: {prestador}</p>'
-            f'<table width="100%" style="border-collapse:collapse;margin-bottom:2px;">'
+            f'<p style="background:{_PDF["head_bg"]};color:{_PDF["navy"]};font-weight:bold;'
+            f'font-size:9.5px;padding:5px 10px;margin:6px 0 0 0;">Prestador: {prestador}</p>'
+            f'<table width="100%" style="border-collapse:collapse;margin-bottom:4px;">'
             f'<thead>{header}</thead><tbody>{linhas}</tbody></table>'
-            f'<p style="text-align:right;font-size:9px;color:#1565c0;'
-            f'background:#e3f2fd;padding:2px 8px;margin:0 0 4px 0;">'
+            f'<p style="text-align:right;font-size:9.5px;color:{_PDF["blue"]};'
+            f'background:#e3f2fd;padding:4px 10px;margin:0 0 8px 0;">'
             f'Subtotal {prestador}: <b>{subtotal:,} pecas</b> &nbsp;|&nbsp; <b>{sv_fmt}</b></p>'
         )
     tv_fmt = f'R$ {total_valor:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".")
     blocos += (
-        f'<p style="text-align:right;font-size:9px;font-weight:bold;color:#fff;'
-        f'background:#1a237e;padding:3px 8px;margin:0 0 8px 0;">'
+        f'<p style="text-align:right;font-size:10px;font-weight:bold;color:#fff;'
+        f'background:{_PDF["navy"]};padding:6px 10px;margin:0 0 14px 0;">'
         f'TOTAL {titulo}: {total_setor:,} pecas &nbsp;|&nbsp; {tv_fmt}</p>'
     )
     return blocos
@@ -885,60 +908,95 @@ def _dias_uteis_simples(ini: date, fim: date) -> int:
         return 0
     return sum(1 for i in range((fim - ini).days + 1) if (ini + timedelta(days=i)).weekday() < 5)
 
-def _bloco_meta_status(itens: list[tuple[str, float, float, int]]) -> str:
-    """itens: lista de (nome_setor, meta_diaria, meta_periodo, produzido).
+def _tabela_meta_setor(nome: str, meta_dia: float, dias: int, produzido: int) -> str:
+    """Tabela 'Realizado x Meta' de um setor — 2 linhas (Producao do Periodo /
+    Media Diaria) com Realizado, Meta e % Atingimento lado a lado, colorido.
 
-    Resumo direto de Meta x Realizado por setor, com cor por % atingido
-    (verde >=100%, amarelo 80-99%, vermelho <80%) — pensado pra aparecer
-    logo após os KPIs de total, antes das tabelas de Estação/Top OPs
-    (pedido do usuário 14/07/2026: CEO quer informação clara e direta
-    primeiro, detalhe depois)."""
+    Mesma estrutura de analise da aba de Producao Diaria do dashboard ao vivo
+    (pages/2_Producao_Geral.py::_tabela_resumo_meta), agora reaproveitada no
+    PDF Consolidado de Corte pros 3 setores (Manta Arealva, Manta Iacanga,
+    Lencol Arealva) — mesmos limiares de cor (verde >=100%, amarelo >=75%,
+    vermelho <75%). Setor sem meta diaria cadastrada (meta_dia<=0 — caso do
+    Lencol, que nao precisa de meta) mostra só o Realizado, sem comparacao
+    inventada. Pedido do usuario 14/07/2026 (bloco original) e 16/07/2026
+    (reaproveitar a mesma estrutura de analise da Producao Diaria)."""
     def _n(v: float) -> str:
         return f"{v:,.0f}".replace(",", ".")
 
-    cels = []
-    largura = 100 // max(len(itens), 1)
-    for nome, meta_dia, meta_periodo, produzido in itens:
-        if meta_periodo > 0:
-            pct = produzido / meta_periodo * 100
-            # xhtml2pdf tem suporte limitado a Unicode — sem emoji aqui (nenhum
-            # outro bloco deste PDF usa), a cor de fundo/texto já é o sinal.
-            if pct >= 100:
-                cor, bg = "#2e7d32", "#e8f5e9"
-            elif pct >= 80:
-                cor, bg = "#f57f17", "#fff8e1"
-            else:
-                cor, bg = "#c62828", "#ffebee"
-            pct_txt = f"{pct:.0f}% da meta"
-        else:
-            cor, bg, pct_txt = "#555555", "#f5f5f5", "sem meta cadastrada"
+    dias_ef      = max(dias, 1)
+    media_dia    = produzido / dias_ef
+    tem_meta     = meta_dia > 0
+    meta_periodo = meta_dia * dias_ef
 
-        cels.append(
-            f'<td width="{largura}%" style="background:{bg};border:1px solid {cor};'
-            f'padding:6px 10px;vertical-align:top;">'
-            f'<div style="font-size:9px;font-weight:bold;color:#1a237e;">{nome}</div>'
-            f'<div style="font-size:8px;color:#555;">Meta/dia: {_n(meta_dia)} '
-            f'&nbsp;&middot;&nbsp; Meta periodo: {_n(meta_periodo)}</div>'
-            f'<div style="font-size:10px;font-weight:bold;color:{cor};margin-top:2px;">'
-            f'Produzido: {_n(produzido)} &nbsp;&middot;&nbsp; {pct_txt}</div>'
-            f'</td>'
+    def _cor(pct):
+        if pct is None:
+            return _PDF["muted"], _PDF["head_bg"]
+        if pct >= 100:
+            return _PDF["green"], "#e6f4ea"
+        if pct >= 75:
+            return _PDF["yellow"], "#fdf3dc"
+        return _PDF["red"], "#fbe9e7"
+
+    pct_periodo = (produzido / meta_periodo * 100) if (tem_meta and meta_periodo) else None
+    pct_media   = (media_dia / meta_dia * 100) if tem_meta else None
+
+    th = f'background:{_PDF["head_bg"]};border:1px solid {_PDF["border"]};padding:6px 9px;font-size:9px;text-align:left;color:{_PDF["slate"]};text-transform:uppercase;letter-spacing:0.3px;'
+    td_s = f'border:1px solid {_PDF["border"]};padding:6px 9px;font-size:10.5px;color:{_PDF["ink"]};'
+    td_r = td_s + "text-align:right;"
+
+    def _linha(label, realizado, meta, pct):
+        cor, bg  = _cor(pct)
+        meta_txt = _n(meta) if tem_meta else "—"
+        pct_txt  = f"{pct:.1f}%" if pct is not None else "—"
+        return (
+            f'<tr><td style="{td_s}">{label}</td>'
+            f'<td style="{td_r}font-weight:bold;">{_n(realizado)}</td>'
+            f'<td style="{td_r}color:{_PDF["muted"]};">{meta_txt}</td>'
+            f'<td style="{td_r}">'
+            f'<span style="background:{bg};color:{cor};font-weight:bold;padding:3px 9px;">{pct_txt}</span>'
+            f'</td></tr>'
         )
+
+    linhas = (
+        _linha("Producao do Periodo", produzido, meta_periodo, pct_periodo)
+        + _linha("Media Diaria", media_dia, meta_dia, pct_media)
+    )
+    obs = "" if tem_meta else (
+        f'<p style="font-size:8px;color:{_PDF["muted"]};font-style:italic;padding:3px 9px;margin:0 0 10px 0;">'
+        'Sem meta cadastrada para comparacao — mostrando apenas o realizado.</p>'
+    )
     return (
-        '<table width="100%" style="border-collapse:collapse;margin-bottom:8px;">'
-        f'<tr>{"".join(cels)}</tr></table>'
+        f'<p style="background:{_PDF["blue"]};color:#fff;font-weight:bold;padding:6px 10px;'
+        f'font-size:10px;margin:10px 0 0 0;">{nome}</p>'
+        f'<table width="100%" style="border-collapse:collapse;margin-bottom:{"10px" if tem_meta else "0"};">'
+        f'<thead><tr><th style="{th}">Indicador</th><th style="{th}">Realizado</th>'
+        f'<th style="{th}">Meta</th><th style="{th}">Atingimento</th></tr></thead>'
+        f'<tbody>{linhas}</tbody></table>{obs}'
+    )
+
+
+def _bloco_meta_status(itens: list[tuple[str, float, int, int]]) -> str:
+    """itens: lista de (nome_setor, meta_diaria, dias_uteis, produzido).
+
+    Uma tabela 'Realizado x Meta' por setor (empilhadas), na mesma estrutura
+    de analise da aba de Producao Diaria do dashboard ao vivo. Pedido do
+    usuario 16/07/2026."""
+    return "".join(
+        _tabela_meta_setor(nome, meta_dia, dias, produzido)
+        for nome, meta_dia, dias, produzido in itens
     )
 
 def _bloco_resumo_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDADE") -> str:
-    th = "background:#f5f5f5;border:1px solid #ddd;padding:2px 5px;font-size:8px;text-align:left;"
-    td_s = "border:1px solid #eee;padding:2px 5px;font-size:8px;"
-    td_r = td_s + "text-align:right;font-weight:bold;color:#1a237e;"
+    th = f'background:{_PDF["head_bg"]};border:1px solid {_PDF["border"]};padding:5px 8px;font-size:8.5px;text-align:left;color:{_PDF["slate"]};text-transform:uppercase;letter-spacing:0.3px;'
+    td_s = f'border:1px solid {_PDF["border"]};padding:4px 8px;font-size:9.5px;color:{_PDF["ink"]};'
+    td_r = td_s + f'text-align:right;font-weight:bold;color:{_PDF["navy"]};'
 
     cabec = (
-        f'<p style="background:#1565c0;color:#fff;font-weight:bold;padding:3px 8px;'
-        f'font-size:9px;margin:0 0 0 0;">{titulo}</p>'
+        f'<p style="background:{_PDF["blue"]};color:#fff;font-weight:bold;padding:6px 10px;'
+        f'font-size:10px;margin:10px 0 0 0;">{titulo}</p>'
     )
     if df.empty:
-        return cabec + '<p style="color:#888;font-style:italic;font-size:8px;padding:2px 8px;margin:0 0 4px 0;">Sem producao no periodo</p>'
+        return cabec + f'<p style="color:#888;font-style:italic;font-size:9px;padding:6px 10px;margin:0 0 8px 0;">Sem producao no periodo</p>'
 
     total = int(df[col_qtd].sum())
     por_est = df.groupby("ESTACAO")[col_qtd].sum().sort_values(ascending=False)
@@ -966,27 +1024,27 @@ def _bloco_resumo_manta(titulo: str, df: pd.DataFrame, col_qtd: str = "QUANTIDAD
 
     return (
         f'{cabec}'
-        f'<p style="font-size:8px;font-weight:bold;color:#1a237e;padding:1px 8px;margin:0;">Total: {total:,} pecas</p>'
-        f'<table width="100%" style="border-collapse:collapse;">'
+        f'<p style="font-size:9.5px;font-weight:bold;color:{_PDF["navy"]};padding:4px 10px;margin:0;">Total: {total:,} pecas</p>'
+        f'<table width="100%" style="border-collapse:collapse;margin-top:2px;">'
         f'<thead><tr><th style="{th}">Estacao</th><th style="{th}">Pecas</th><th style="{th}">%</th></tr></thead>'
         f'<tbody>{linhas_est}</tbody></table>'
-        f'<p style="font-size:7px;color:#777;padding:1px 8px;background:#eeeeee;margin:2px 0 0 0;">Top OPs</p>'
-        f'<table width="100%" style="border-collapse:collapse;margin-bottom:6px;">'
+        f'<p style="font-size:8px;color:{_PDF["muted"]};padding:4px 10px;background:{_PDF["head_bg"]};margin:4px 0 0 0;text-transform:uppercase;letter-spacing:0.3px;">Top OPs</p>'
+        f'<table width="100%" style="border-collapse:collapse;margin-bottom:10px;">'
         f'<thead><tr><th style="{th}">OP</th><th style="{th}">Produto</th><th style="{th}">Qtd</th></tr></thead>'
         f'<tbody>{linhas_op}</tbody></table>'
     )
 
 def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
-    th = "background:#f5f5f5;border:1px solid #ddd;padding:2px 5px;font-size:8px;text-align:left;"
-    td_s = "border:1px solid #eee;padding:2px 5px;font-size:8px;"
-    td_r = td_s + "text-align:right;font-weight:bold;color:#1a237e;"
+    th = f'background:{_PDF["head_bg"]};border:1px solid {_PDF["border"]};padding:5px 8px;font-size:8.5px;text-align:left;color:{_PDF["slate"]};text-transform:uppercase;letter-spacing:0.3px;'
+    td_s = f'border:1px solid {_PDF["border"]};padding:4px 8px;font-size:9.5px;color:{_PDF["ink"]};'
+    td_r = td_s + f'text-align:right;font-weight:bold;color:{_PDF["navy"]};'
 
     cabec = (
-        '<p style="background:#1565c0;color:#fff;font-weight:bold;padding:3px 8px;'
-        'font-size:9px;margin:0 0 0 0;">LENCOL AREALVA</p>'
+        f'<p style="background:{_PDF["blue"]};color:#fff;font-weight:bold;padding:6px 10px;'
+        f'font-size:10px;margin:10px 0 0 0;">LENCOL AREALVA</p>'
     )
     if df.empty:
-        return cabec + '<p style="color:#888;font-style:italic;font-size:8px;padding:2px 8px;margin:0 0 4px 0;">Sem producao no periodo</p>'
+        return cabec + f'<p style="color:#888;font-style:italic;font-size:9px;padding:6px 10px;margin:0 0 8px 0;">Sem producao no periodo</p>'
 
     total = int(df["QUANT"].sum())
     total_val = df["VALOR_RECEBER"].sum()
@@ -1026,12 +1084,12 @@ def _bloco_resumo_lencol(df: pd.DataFrame) -> str:
     tv_fmt = f'R$ {total_val:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".")
     return (
         f'{cabec}'
-        f'<p style="font-size:8px;font-weight:bold;color:#1a237e;padding:1px 8px;margin:0;">Total: {total:,} pecas | {tv_fmt}</p>'
-        f'<table width="100%" style="border-collapse:collapse;">'
+        f'<p style="font-size:9.5px;font-weight:bold;color:{_PDF["navy"]};padding:4px 10px;margin:0;">Total: {total:,} pecas | {tv_fmt}</p>'
+        f'<table width="100%" style="border-collapse:collapse;margin-top:2px;">'
         f'<thead><tr><th style="{th}">Prestador</th><th style="{th}">Pecas</th><th style="{th}">%</th><th style="{th}">Total R$</th></tr></thead>'
         f'<tbody>{linhas_prest}</tbody></table>'
-        f'<p style="font-size:7px;color:#777;padding:1px 8px;background:#eeeeee;margin:2px 0 0 0;">Top OPs</p>'
-        f'<table width="100%" style="border-collapse:collapse;margin-bottom:6px;">'
+        f'<p style="font-size:8px;color:{_PDF["muted"]};padding:4px 10px;background:{_PDF["head_bg"]};margin:4px 0 0 0;text-transform:uppercase;letter-spacing:0.3px;">Top OPs</p>'
+        f'<table width="100%" style="border-collapse:collapse;margin-bottom:10px;">'
         f'<thead><tr><th style="{th}">OP</th><th style="{th}">Material</th><th style="{th}">Categoria</th><th style="{th}">Qtd</th><th style="{th}">Total R$</th></tr></thead>'
         f'<tbody>{linhas_op}</tbody></table>'
     )
@@ -1041,6 +1099,7 @@ def gerar_pdf_consolidado(
     dia_ini: date | None = None,
     meta_diaria_arealva: float = 11000,
     meta_diaria_iacanga: float = 19000,
+    meta_diaria_lencol: float = 0,
 ) -> bytes:
     """
     dia_ini : quando informado e diferente de `dia`, a seção 1 passa a somar
@@ -1049,13 +1108,18 @@ def gerar_pdf_consolidado(
     permitir um intervalo real. O e-mail diário automático não passa esse
     parâmetro, então continua idêntico (dia único, detalhado).
 
-    meta_diaria_arealva / meta_diaria_iacanga : meta diária (peças/dia) de
-    cada setor de manta, usada pra calcular a Meta do Período (meta diária ×
-    dias úteis) exibida em cada seção. Valores default = constantes hoje
+    meta_diaria_arealva / meta_diaria_iacanga / meta_diaria_lencol : meta
+    diária (peças/dia) de cada setor de corte, usada pra calcular o corte
+    médio/dia e a Meta do Período (meta diária × dias úteis) exibidos em
+    cada seção. Valores default de Arealva/Iacanga = constantes hoje
     hardcoded em pages/10_Relatorios.py (_METAS_AREALVA_META_TOTAL / CASAL de
     _METAS_IACANGA); o caller da tela de Relatórios passa os valores reais
-    explicitamente. Lençol não tem meta configurada no sistema — não entra
-    nesse bloco. Pedido do usuário 14/07/2026."""
+    explicitamente. Lençol não tem meta diária configurada no sistema (só
+    meta por empresa/categoria na planilha METAS, sem recorte diário) —
+    default 0, o que mostra o setor no bloco com os valores realizados mas
+    sem comparação inventada; caller pode passar um valor real se/quando
+    existir. Pedido do usuário 14/07/2026 (bloco original) e 16/07/2026
+    (unificar Manta Arealva + Manta Iacanga + Lençol no mesmo bloco)."""
     from xhtml2pdf import pisa
 
     range_real = dia_ini is not None and dia_ini != dia
@@ -1123,111 +1187,129 @@ def gerar_pdf_consolidado(
     # período), exibidos logo após os KPIs de total e antes das tabelas
     # detalhadas de Estação/Top OPs (pedido do usuário 14/07/2026).
     _meta_bloco_sec1 = _bloco_meta_status([
-        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_sec1, t_are_dia),
-        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_sec1, t_iac_dia),
+        ("Manta Arealva",  meta_diaria_arealva, dias_sec1, t_are_dia),
+        ("Manta Iacanga",  meta_diaria_iacanga, dias_sec1, t_iac_dia),
+        ("Lencol Arealva", meta_diaria_lencol,  dias_sec1, t_len_dia),
     ])
     _meta_bloco_sec2 = _bloco_meta_status([
-        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_sec2, t_are_mes),
-        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_sec2, t_iac_mes),
+        ("Manta Arealva",  meta_diaria_arealva, dias_sec2, t_are_mes),
+        ("Manta Iacanga",  meta_diaria_iacanga, dias_sec2, t_iac_mes),
+        ("Lencol Arealva", meta_diaria_lencol,  dias_sec2, t_len_mes),
     ])
     _meta_bloco_m1 = _bloco_meta_status([
-        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_m1, t_are_m1),
-        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_m1, t_iac_m1),
+        ("Manta Arealva",  meta_diaria_arealva, dias_m1, t_are_m1),
+        ("Manta Iacanga",  meta_diaria_iacanga, dias_m1, t_iac_m1),
+        ("Lencol Arealva", meta_diaria_lencol,  dias_m1, t_len_m1),
     ])
     _meta_bloco_m2 = _bloco_meta_status([
-        ("Manta Arealva", meta_diaria_arealva, meta_diaria_arealva * dias_m2, t_are_m2),
-        ("Manta Iacanga", meta_diaria_iacanga, meta_diaria_iacanga * dias_m2, t_iac_m2),
+        ("Manta Arealva",  meta_diaria_arealva, dias_m2, t_are_m2),
+        ("Manta Iacanga",  meta_diaria_iacanga, dias_m2, t_iac_m2),
+        ("Lencol Arealva", meta_diaria_lencol,  dias_m2, t_len_m2),
     ])
 
-    kpi_cell = "background:#f0f4ff;border:1px solid #c5cae9;padding:4px;text-align:center;"
-
-    def kpi(v, lbl):
+    def kpi(v, lbl, cor=_PDF["navy"]):
         return (
-            f'<td style="{kpi_cell}">'
-            f'<div style="font-size:13px;font-weight:bold;color:#1a237e;">{v}</div>'
-            f'<div style="font-size:7px;color:#555;text-transform:uppercase;">{lbl}</div>'
+            f'<td width="25%" style="background:#ffffff;border:1px solid {_PDF["border"]};'
+            f'border-top:3px solid {cor};padding:12px 6px;text-align:center;">'
+            f'<div style="font-size:21px;font-weight:bold;color:{cor};line-height:1.1;">{v}</div>'
+            f'<div style="font-size:8px;color:{_PDF["muted"]};text-transform:uppercase;'
+            f'letter-spacing:0.5px;margin-top:4px;">{lbl}</div>'
             f'</td>'
+        )
+
+    def kpi_row(*cells):
+        return (
+            f'<table width="100%" style="border-collapse:separate;border-spacing:5px 0;margin:0 -5px 12px -5px;">'
+            f'<tr>{"".join(cells)}</tr></table>'
         )
 
     def sec_header(txt, cor="#0d47a1"):
         return (
-            f'<table width="100%" style="margin:8px 0 6px 0;border-collapse:collapse;">'
-            f'<tr><td style="background:{cor};color:#fff;font-weight:bold;font-size:11px;'
-            f'padding:5px 10px;letter-spacing:0.5px;">{txt}</td></tr></table>'
+            f'<table width="100%" style="margin:18px 0 10px 0;border-collapse:collapse;">'
+            f'<tr><td style="background:{cor};color:#fff;font-weight:bold;font-size:12.5px;'
+            f'padding:8px 12px;letter-spacing:0.4px;">{txt}</td></tr></table>'
+        )
+
+    def mes_bar(nome_mes, total):
+        total_fmt = f"{total:,}".replace(",", ".")
+        return (
+            f'<table width="100%" style="margin-bottom:5px;border-collapse:collapse;">'
+            f'<tr><td style="background:{_PDF["slate"]};color:#fff;font-weight:bold;font-size:11px;padding:7px 12px;">'
+            f'{nome_mes} &nbsp;—&nbsp; Total: {total_fmt} pecas</td></tr></table>'
         )
 
     html = f"""<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8">
 <style>
-  @page {{ size: A4 portrait; margin: 12mm 10mm; }}
-  body {{ font-family: Arial, sans-serif; font-size: 10px; color: #1a1a1a; }}
+  @page {{ size: A4 portrait; margin: 14mm 11mm; }}
+  body {{ font-family: Arial, sans-serif; font-size: 10.5px; color: {_PDF["ink"]}; }}
   * {{ box-sizing: border-box; }}
 </style>
 </head>
 <body>
 
-<table width="100%" style="border-bottom:2px solid #1a237e;margin-bottom:8px;padding-bottom:4px;">
+<table width="100%" style="border-bottom:3px solid {_PDF["navy"]};margin-bottom:14px;padding-bottom:7px;">
   <tr>
     <td>
-      <span style="font-size:15px;font-weight:bold;color:#1a237e;">ZANATTEX</span><br>
-      <span style="font-size:11px;font-weight:bold;">RELATORIO CONSOLIDADO DE CORTE</span>
+      <span style="font-size:19px;font-weight:bold;color:{_PDF["navy"]};letter-spacing:0.4px;">ZANATTEX</span><br>
+      <span style="font-size:12px;font-weight:bold;color:{_PDF["slate"]};">RELATORIO CONSOLIDADO DE CORTE</span>
     </td>
     <td align="right">
-      <span style="font-size:12px;font-weight:bold;color:#1a237e;">{data_fmt}</span><br>
-      <span style="font-size:8px;color:#666;">{dia_semana} | {sec1_ref}</span>
+      <span style="font-size:15px;font-weight:bold;color:{_PDF["navy"]};">{data_fmt}</span><br>
+      <span style="font-size:9px;color:{_PDF["muted"]};">{dia_semana} &nbsp;|&nbsp; {sec1_ref}</span>
     </td>
   </tr>
 </table>
 
 {sec_header(sec1_titulo)}
-<table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
-  <tr>{kpi(f"{t_dia:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_dia:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_dia:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_dia:,}".replace(",", "."), "Lencol Arealva")}</tr>
-</table>
+{kpi_row(
+    kpi(f"{t_dia:,}".replace(",", "."), "Total Geral"),
+    kpi(f"{t_are_dia:,}".replace(",", "."), "Manta Arealva", _PDF["blue"]),
+    kpi(f"{t_iac_dia:,}".replace(",", "."), "Manta Iacanga", _PDF["teal"]),
+    kpi(f"{t_len_dia:,}".replace(",", "."), "Lencol Arealva", _PDF["amber"]),
+)}
 {_meta_bloco_sec1}
 {(_bloco_resumo_manta("MANTA AREALVA", are_dia) + _bloco_resumo_manta("MANTA IACANGA", iac_dia) + _bloco_resumo_lencol(len_dia)) if range_real else (_bloco_pdf_manta("MANTA AREALVA", are_dia) + _bloco_pdf_manta("MANTA IACANGA", iac_dia) + _bloco_pdf_lencol(len_dia))}
 
-<div style="page-break-before:always;"></div>
-{sec_header(f"2. MES ATUAL — {_nome_mes(dia)}  (01/{dia.strftime('%m/%Y')} ate {data_fmt})", "#1565c0")}
-<table width="100%" style="border-collapse:collapse;margin-bottom:8px;">
-  <tr>{kpi(f"{t_mes:,}".replace(",", "."), "Total Geral")}{kpi(f"{t_are_mes:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_mes:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_mes:,}".replace(",", "."), "Lencol Arealva")}</tr>
-</table>
+{sec_header(f"2. MES ATUAL — {_nome_mes(dia)}  (01/{dia.strftime('%m/%Y')} ate {data_fmt})", _PDF["blue"])}
+{kpi_row(
+    kpi(f"{t_mes:,}".replace(",", "."), "Total Geral"),
+    kpi(f"{t_are_mes:,}".replace(",", "."), "Manta Arealva", _PDF["blue"]),
+    kpi(f"{t_iac_mes:,}".replace(",", "."), "Manta Iacanga", _PDF["teal"]),
+    kpi(f"{t_len_mes:,}".replace(",", "."), "Lencol Arealva", _PDF["amber"]),
+)}
 {_meta_bloco_sec2}
 {_bloco_resumo_manta("MANTA AREALVA", are_mes)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_mes)}
 {_bloco_resumo_lencol(len_mes)}
 
-<div style="page-break-before:always;"></div>
-{sec_header("3. HISTORICO — ULTIMOS 2 MESES", "#37474f")}
+{sec_header("3. HISTORICO — ULTIMOS 2 MESES", _PDF["slate"])}
 
-<table width="100%" style="margin-bottom:4px;border-collapse:collapse;">
-  <tr><td style="background:#455a64;color:#fff;font-weight:bold;font-size:10px;padding:4px 8px;">
-    {_nome_mes(m1)} — Total: {t_m1:,} pecas
-  </td></tr>
-</table>
-<table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
-  <tr>{kpi(f"{t_are_m1:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m1:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m1:,}".replace(",", "."), "Lencol Arealva")}</tr>
-</table>
+{mes_bar(_nome_mes(m1), t_m1)}
+{kpi_row(
+    kpi(f"{t_are_m1:,}".replace(",", "."), "Manta Arealva", _PDF["blue"]),
+    kpi(f"{t_iac_m1:,}".replace(",", "."), "Manta Iacanga", _PDF["teal"]),
+    kpi(f"{t_len_m1:,}".replace(",", "."), "Lencol Arealva", _PDF["amber"]),
+)}
 {_meta_bloco_m1}
 {_bloco_resumo_manta("MANTA AREALVA", are_m1)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m1)}
 {_bloco_resumo_lencol(len_m1)}
 
-<table width="100%" style="margin:10px 0 4px 0;border-collapse:collapse;">
-  <tr><td style="background:#455a64;color:#fff;font-weight:bold;font-size:10px;padding:4px 8px;">
-    {_nome_mes(m2)} — Total: {t_m2:,} pecas
-  </td></tr>
-</table>
-<table width="100%" style="border-collapse:collapse;margin-bottom:6px;">
-  <tr>{kpi(f"{t_are_m2:,}".replace(",", "."), "Manta Arealva")}{kpi(f"{t_iac_m2:,}".replace(",", "."), "Manta Iacanga")}{kpi(f"{t_len_m2:,}".replace(",", "."), "Lencol Arealva")}</tr>
-</table>
+{mes_bar(_nome_mes(m2), t_m2)}
+{kpi_row(
+    kpi(f"{t_are_m2:,}".replace(",", "."), "Manta Arealva", _PDF["blue"]),
+    kpi(f"{t_iac_m2:,}".replace(",", "."), "Manta Iacanga", _PDF["teal"]),
+    kpi(f"{t_len_m2:,}".replace(",", "."), "Lencol Arealva", _PDF["amber"]),
+)}
 {_meta_bloco_m2}
 {_bloco_resumo_manta("MANTA AREALVA", are_m2)}
 {_bloco_resumo_manta("MANTA IACANGA", iac_m2)}
 {_bloco_resumo_lencol(len_m2)}
 
-<p style="font-size:8px;color:#aaa;margin-top:8px;border-top:1px solid #ddd;padding-top:4px;">
-  Gerado automaticamente | Sistema Zanattex
+<p style="font-size:8.5px;color:#9aa4b2;margin-top:12px;border-top:1px solid {_PDF["border"]};padding-top:6px;">
+  Gerado automaticamente &nbsp;|&nbsp; Sistema Zanattex
 </p>
 </body>
 </html>"""

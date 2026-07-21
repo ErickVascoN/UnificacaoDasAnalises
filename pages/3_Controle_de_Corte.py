@@ -2826,6 +2826,7 @@ elif screen == 'arealva_lencol':
         st.stop()
 
     # métricas globais
+    df_ln["QUANT"] = pd.to_numeric(df_ln["QUANT"], errors="coerce").fillna(0)
     total_pecas_ln = int(df_ln["QUANT"].sum())
     total_valor_ln = df_ln["VALOR_RECEBER"].sum()
 
@@ -2840,9 +2841,11 @@ elif screen == 'arealva_lencol':
     # Fronha: cortada junto do jogo — 2 por jogo em todos os tamanhos, exceto
     # solteiro (1 por jogo). Cobre jogo duplo e simples (todo jogo de cama).
     _df_jogos_ln = df_ln[df_ln["_TIPO_JF"].isin(["JOGO_DUPLO", "JOGO_SIMPLES"])]
-    total_fronha_ln = int(
-        (_df_jogos_ln["QUANT"] * _df_jogos_ln["_TAM_JF"].apply(lencol_fronha_mult)).sum()
-    )
+    _quant_vals_ln = pd.to_numeric(_df_jogos_ln["QUANT"], errors="coerce").fillna(0).tolist()
+    _tam_vals_ln = _df_jogos_ln["_TAM_JF"].tolist()
+    total_fronha_ln = int(sum(
+        q * lencol_fronha_mult(t) for q, t in zip(_quant_vals_ln, _tam_vals_ln)
+    ))
 
     dias_trab_ln = (p_fim_ln - p_ini_ln).days + 1
     dias_com_dados_ln = df_ln["DATA"].dt.date.nunique()
@@ -2864,6 +2867,9 @@ elif screen == 'arealva_lencol':
     if sel_prest_ln: df_ant_ln = df_ant_ln[df_ant_ln["PRESTADOR"].isin(sel_prest_ln)]
     if sel_emp_ln:   df_ant_ln = df_ant_ln[df_ant_ln["EMPRESA"].isin(sel_emp_ln)]
     if sel_cat_ln:   df_ant_ln = df_ant_ln[df_ant_ln["CAT_BASE"].isin(sel_cat_ln)]
+    if not df_ant_ln.empty:
+        df_ant_ln = df_ant_ln.copy()
+        df_ant_ln["QUANT"] = pd.to_numeric(df_ant_ln["QUANT"], errors="coerce").fillna(0)
     pecas_ant_ln = int(df_ant_ln["QUANT"].sum()) if not df_ant_ln.empty else 0
     valor_ant_ln = df_ant_ln["VALOR_RECEBER"].sum() if not df_ant_ln.empty else 0
     # Peças do período anterior também sem fundo (delta do KPI principal)

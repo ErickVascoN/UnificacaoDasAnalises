@@ -116,9 +116,12 @@ def lencol_caseamento(df: pd.DataFrame, apenas_com_fundo: bool = True) -> pd.Dat
     rec = pd.concat([jogo, fundo], axis=1).fillna(0).reset_index()
     rec = rec.rename(columns={"_TAM": "TAMANHO"})
     rec["TAMANHO"] = rec["TAMANHO"].replace("", "—")
-    rec["JOGO"] = rec["JOGO"].astype(int)
-    rec["FUNDO"] = rec["FUNDO"].astype(int)
-    rec["FRONHA"] = rec["JOGO"] * rec["TAMANHO"].apply(lencol_fronha_mult)
+    rec["JOGO"] = pd.to_numeric(rec["JOGO"], errors="coerce").fillna(0).astype(int)
+    rec["FUNDO"] = pd.to_numeric(rec["FUNDO"], errors="coerce").fillna(0).astype(int)
+    rec["FRONHA"] = [
+        jogo * lencol_fronha_mult(tam)
+        for jogo, tam in zip(rec["JOGO"].tolist(), rec["TAMANHO"].tolist())
+    ]
     rec["DIFERENCA"] = rec["FUNDO"] - rec["JOGO"]
     rec["STATUS"] = rec["DIFERENCA"].apply(
         lambda x: "✅ Caseado" if x == 0

@@ -241,6 +241,10 @@ FACCOES_FACCAO_ALIAS: dict[str, str] = {
     # nome novo aparecia com 0 produzido.
     "ZANATTA":                "GIATTEX",          # Zanatta virou Giattex
     "PREVITTEX FILIAL":       "MEGA PREVEN MATRIZ",  # Previttex Filial virou Mega Preven Matriz
+    # Confirmado com o usuário 20/07/2026, pro cruzamento do Plano de Metas
+    # (7_Plano_de_Metas.py) com a produção real de facções:
+    "GIATEX":                 "GIATTEX",          # variante sem o duplo T na guia de metas
+    "GISELE (IACANGA)":       "GIATTEX",          # Gisele é quem responde pela Iacanga/Giattex
 }
 
 # Cores fixas para as facções "fixas" nos gráficos (Produção por Facção e

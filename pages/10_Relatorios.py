@@ -818,6 +818,7 @@ if _secao_rel == "✂️ Corte":
                                 (_df_ln_full["DATA"].dt.date >= _ini_corte) &
                                 (_df_ln_full["DATA"].dt.date <= _fim_corte)
                             ].copy()
+                            _df_ln["QUANT"] = pd.to_numeric(_df_ln["QUANT"], errors="coerce").fillna(0)
                             # Caseamento Jogo Duplo × Fundo (mesma lógica do dashboard, via
                             # utils/lencol_caseamento) — sem isso os KPIs de Jogos/Fundos
                             # do PDF ficam sempre zerados.
@@ -937,6 +938,7 @@ if _secao_rel == "🏭 Produção Geral":
                             _calc_pg = calcular_meta_faccoes(
                                 _df_mes_pg[["DATA", "FACCAO", "PRODUTO", "CLIENTE", "QUANTIDADE"]],
                                 _ano_sel_pg, _mes_sel_pg,
+                                faccoes_filtro=_sel_faccoes_pg,
                             )
                             _rank_df_pg = _calc_pg["rank_df"]
                             _meta_mes_total_pg = _calc_pg["meta_mes_total"]
@@ -994,6 +996,7 @@ if _secao_rel == "🏭 Produção Geral":
                                 data_fim=_fim_pg,
                                 filtros_texto=_filtros_txt_pg,
                                 rank_df=_rank_df_pg,
+                                tem_filtro_faccao=bool(_sel_faccoes_pg),
                             )
                             st.session_state["pdf_pg_bytes"] = _bytes_pg
                             if 1 <= len(_sel_faccoes_pg) <= 3:

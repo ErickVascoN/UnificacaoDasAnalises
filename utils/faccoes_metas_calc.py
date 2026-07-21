@@ -51,10 +51,67 @@ def _build_goals() -> pd.DataFrame:
     )
 
 
+def calcular_meta_interna_periodo(
+    faccao_meta: str | None,
+    df_periodo: pd.DataFrame,
+    dias_com_producao: int,
+) -> dict:
+    """Meta do período para uma unidade de produção interna (LITTEX/GGTTEX),
+    casando pelo nome de facção correspondente na MESMA guia de metas usada
+    pelas facções externas (ver PADROES.md / config/settings.py).
+
+    Diferente de calcular_meta_faccoes(), aqui o cruzamento é só por CLIENTE
+    (ignorando PRODUTO): as planilhas de colaboradores internos guardam em
+    PRODUTO uma etapa do processo (ex.: "CASEADO", "DOBRA FUNDO") ou ficam
+    vazias, então casar por produto como nas facções externas zeraria a meta
+    das unidades sem esse detalhe (GGTTEX Cortina, por ex., não tem PRODUTO
+    preenchido). Pedido do usuário 16/07/2026 — usar a mesma guia de metas já
+    usada em Produção Facções, sem cadastrar nada novo.
+
+    faccao_meta : nome da facção na guia de metas que representa essa unidade
+                  (None = unidade sem meta cadastrada ainda, ex. GGTTEX Fronha).
+    """
+    if not faccao_meta:
+        return {"tem_meta": False, "meta_dia": 0.0, "meta_periodo": 0.0}
+
+    goals_df = _build_goals()
+    fn = normalize_text(faccao_meta)
+    grp = goals_df[goals_df["FACCAO_N"] == fn]
+    if grp.empty:
+        return {"tem_meta": False, "meta_dia": 0.0, "meta_periodo": 0.0}
+
+    meta_dia = 0.0
+
+    # Metas sem cliente específico valem para toda a produção da unidade.
+    sem_cli = grp[grp["CLIENTE_N"] == ""]
+    meta_dia += float(sem_cli["META_DIA"].sum())
+
+    # Metas por cliente — pondera pela participação de cada cliente na
+    # produção do período (só entre clientes que têm meta cadastrada, senão
+    # um cliente sem meta dilui o alvo sem contribuir nada — mesma regra de
+    # calcular_meta_faccoes()).
+    com_cli = grp[grp["CLIENTE_N"] != ""]
+    if not com_cli.empty and not df_periodo.empty:
+        qty_cli = (
+            df_periodo.assign(_cn=df_periodo["CLIENTE"].apply(normalize_text))
+            .groupby("_cn")["QUANTIDADE"].sum()
+        )
+        total_qty_com_meta = sum(qty_cli.get(cn, 0) for cn in com_cli["CLIENTE_N"])
+        if total_qty_com_meta > 0:
+            for _, row in com_cli.iterrows():
+                q = qty_cli.get(row["CLIENTE_N"], 0)
+                if q > 0:
+                    meta_dia += float(row["META_DIA"]) * (q / total_qty_com_meta)
+
+    meta_periodo = meta_dia * dias_com_producao
+    return {"tem_meta": meta_dia > 0, "meta_dia": meta_dia, "meta_periodo": meta_periodo}
+
+
 def calcular_meta_faccoes(
     df_periodo: pd.DataFrame,
     ano_sel: int,
     mes_sel: int,
+    faccoes_filtro: list[str] | None = None,
 ) -> dict:
     """Calcula meta por facção e o ranking Facção × Meta para o período dado.
 
@@ -64,6 +121,10 @@ def calcular_meta_faccoes(
                  se aplicável) — colunas DATA, FACCAO, PRODUTO, CLIENTE, QUANTIDADE.
     ano_sel, mes_sel : usados apenas como fallback de dias úteis para facções
                  sem nenhuma produção no período.
+    faccoes_filtro : quando informado, restringe as metas somadas às facções
+                 listadas — sem isso, a Meta do Período soma a meta de TODAS
+                 as facções cadastradas mesmo quando o usuário filtrou o
+                 relatório pra só algumas (reportado pelo usuário 16/07/2026).
 
     Returns
     -------
@@ -79,6 +140,9 @@ def calcular_meta_faccoes(
       total_geral    : int, total produzido no período (todas as facções).
     """
     goals_df = _build_goals()
+    if faccoes_filtro:
+        _fn_filtro = {normalize_text(f) for f in faccoes_filtro}
+        goals_df = goals_df[goals_df["FACCAO_N"].isin(_fn_filtro)]
     du_mes = dias_uteis(ano_sel, mes_sel)
 
     df_periodo = df_periodo.copy()

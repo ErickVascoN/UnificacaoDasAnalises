@@ -6,6 +6,230 @@ tag: "novo" | "melhoria" | "correção"
 
 CHANGELOG = [
     {
+        "date": "20/07/2026",
+        "tag": "novo",
+        "title": "Painel de Metas: nova seção Capacidade Máxima Estimada por Prestador",
+        "description": (
+            "Pedido do usuário: 'Capacidade Disponível' (Meta Mês − Realizado) media só "
+            "quanto falta da meta CONTRATADA, não a capacidade física real do prestador — "
+            "exemplo dado: Carol tem meta de 7.000/dia, mas se ela render mais, comporta "
+            "produção maior do que a meta atual reflete. Renomeada a seção antiga pra "
+            "'Meta Restante do Mês' (deixa claro que é sobre a meta contratada) e criada a "
+            "nova 'Capacidade Máxima Estimada', calculada a partir do histórico real de "
+            "produção diária (utils.faccao_loader.load_faccoes, desde jun/2026): Capacidade "
+            "Máxima Diária = média dos melhores dias de cada prestador (top 10% dos dias "
+            "com produção, mínimo 3 dias — evita tanto o viés de um pico isolado quanto o "
+            "de misturar dias fracos na média geral). Margem de Crescimento = Capacidade "
+            "Máxima do Mês − Meta Mês atual, mostrando quem comporta mais meta do que a "
+            "contratada hoje. Prestadores com menos de 5 dias de histórico são marcados "
+            "como baixa confiança, não escondidos."
+        ),
+    },
+    {
+        "date": "20/07/2026",
+        "tag": "melhoria",
+        "title": "Painel de Metas: Realizado agora cruza com a produção real",
+        "description": (
+            "Pedido do usuário: o Realizado do Plano de Metas (pages/7_Plano_de_Metas.py) "
+            "dependia só do que era lançado à mão na própria planilha — e isso praticamente "
+            "parou depois de fevereiro/2026, deixando quase todo mês seguinte com Realizado "
+            "0% e Capacidade Disponível 100%, mesmo havendo produção real. Agora, quando não "
+            "há Realizado lançado pra uma combinação, o sistema cruza com a produção real de "
+            "facções (utils/faccao_loader.load_faccoes), casando nome de "
+            "Prestador/Centro de Custo × Produto × Cliente × mês via os mesmos aliases já "
+            "usados em pages/5_Producao_Faccoes.py (config/settings.py:FACCOES_FACCAO_ALIAS — "
+            "2 entradas novas: GIATEX→GIATTEX e GISELE (IACANGA)→GIATTEX, confirmadas com o "
+            "usuário). Nova coluna 'Fonte' na aba Detalhado mostra se cada Realizado veio "
+            "Lançado, de Produção ou ficou Sem correspondência (nunca escondido como zero "
+            "silencioso). Cobertura completa a partir de junho/2026 — a planilha de facções "
+            "não tem histórico anterior. Também removidas as colunas PREÇO FINAL/CUSTO FINAL "
+            "da planilha de metas, que eram parseadas mas nunca usadas em lugar nenhum do "
+            "dashboard e traziam números que não batiam com Meta × Valor Unitário."
+        ),
+    },
+    {
+        "date": "20/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Lençol: Fundo separado por jogo na tabela 'O Que Foi Cortado'",
+        "description": (
+            "Pedido do usuário: a tabela 'O Que Foi Cortado — por Produto' "
+            "(utils/pdf_report.py) jogava todo corte de fundo numa única linha "
+            "genérica 'FUNDO DE JOGO', sem indicar de qual jogo. Como o texto "
+            "de CATEGORIA do fundo é idêntico ao do jogo correspondente (só o "
+            "TECIDO diferencia), parar de sobrescrever esse rótulo faz o "
+            "fundo cair naturalmente na mesma linha do seu jogo ao agrupar — "
+            "agora aparece como coluna 'Fundo' ao lado de 'Fronha', a mesma "
+            "lógica já usada pra fronha. Categorias sem fundo (Fronha Avulsa, "
+            "Lençol Avulso, Cortina Stripe etc.) mostram '—'."
+        ),
+    },
+    {
+        "date": "20/07/2026",
+        "tag": "melhoria",
+        "title": "Relatórios de Corte: removida a folha final de Conclusão",
+        "description": (
+            "Pedido do usuário: os PDFs de Arealva Manta e Iacanga Manta "
+            "(utils/pdf_report.py) tinham uma página final 'Conclusão do "
+            "Período' com um parágrafo-resumo, status geral e assinatura — "
+            "removida a pedido, o relatório agora termina na página de "
+            "Análise Gráfica. Lençol e Itaju já não tinham essa seção."
+        ),
+    },
+    {
+        "date": "20/07/2026",
+        "tag": "correção",
+        "title": "Relatórios de Corte: eliminados espaços em branco excessivos entre seções",
+        "description": (
+            "Reportado pelo usuário: os PDFs de Corte (Arealva Manta, Iacanga "
+            "Manta, Lençol, Itaju e o Consolidado enviado por e-mail) estavam "
+            "deixando muitas folhas com metade do espaço em branco. Causa: "
+            "PageBreak() forçado entre tabelas curtas (Detalhamento Diário, "
+            "Distribuição por Estação, OPs, Tamanhos) nos 4 PDFs individuais "
+            "(utils/pdf_report.py), e page-break-before:always entre as seções "
+            "Dia/Mês Atual/Histórico no Consolidado (scripts/relatorio_diario_"
+            "corte.py). Removidas as quebras forçadas — o conteúdo agora flui "
+            "e só quebra de página quando não cabe mais; a capa foi mantida e "
+            "a segunda página passou a se chamar 'Resumo Completo do Corte', "
+            "com uma tabela resumindo todas as estações de uma vez antes do "
+            "detalhamento. Gráficos que antes ocupavam uma folha paisagem cada "
+            "um (Produção Diária, Top Cores/Tamanho, pizza de Estação) agora "
+            "dividem a mesma folha quando o formato permite. Corrigido também "
+            "um caso no Itaju em que a assinatura final ficava sozinha numa "
+            "folha quase inteiramente em branco. Arealva Manta caiu de "
+            "~10-11 folhas para 6; o Consolidado, de 7 para 5 (mesmos dados)."
+        ),
+    },
+    {
+        "date": "17/07/2026",
+        "tag": "melhoria",
+        "title": "Relatórios individuais de Corte: tabelas de resumo/detalhamento primeiro, gráficos por último",
+        "description": (
+            "Pedido do usuário: a chefia prefere ver o resumo geral, meta, "
+            "período e % de atingimento em tabela antes de qualquer análise "
+            "gráfica. Nos PDFs individuais de Arealva Manta, Iacanga Manta e "
+            "Itaju (utils/pdf_report.py), o Resumo Executivo, a tabela por "
+            "Estação, o Detalhamento Diário, a análise por OP e por Tamanho "
+            "agora vêm nas primeiras páginas; os gráficos (Produção Diária, "
+            "Distribuição por Estação, Top Cores/Tamanho) foram movidos para "
+            "o final, antes da Conclusão. O relatório de Lençol já seguia "
+            "essa ordem (categoria de produto e detalhamento diário no início, "
+            "gráficos no fim) e não precisou de mudança."
+        ),
+    },
+    {
+        "date": "16/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Produção por Facção: coluna 'Última Data' no Resumo por Facção",
+        "description": (
+            "Pedido do usuário: além do Painel de Alertas (que já cita a data "
+            "só das facções atrasadas ou sem dado), a tabela 'Resumo por "
+            "Facção' agora tem uma coluna 'Última Data' mostrando, pra TODAS "
+            "as facções da tabela, o último dia com produção lançada no "
+            "período — usa o mesmo campo ULTIMA_DATA já calculado em "
+            "utils/faccoes_metas_calc.py::calcular_meta_faccoes. Facção sem "
+            "nenhum dado no período aparece com '—'."
+        ),
+    },
+    {
+        "date": "16/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório de Carteira de Pedidos: Resumo por Produto agora agrupado por categoria",
+        "description": (
+            "Reportado pelo usuário: no PDF de Carteira de Pedidos, a seção "
+            "'Resumo por Produto — Peças em Aberto' listava todos os produtos "
+            "numa tabela só, ordenados por peças, com a categoria só como mais "
+            "uma coluna — ficava tudo misturado (cobertor, manta, fronha, "
+            "lençol etc. intercalados). Agora essa seção é agrupada por "
+            "categoria (mesma ordem — maior demanda primeiro — e mesmo estilo "
+            "de cabeçalho colorido já usado no Detalhamento Completo logo "
+            "abaixo), com subtotal de peças por categoria e os produtos "
+            "ordenados por peças dentro de cada uma."
+        ),
+    },
+    {
+        "date": "16/07/2026",
+        "tag": "melhoria",
+        "title": "Relatório Consolidado de Corte: mesma tabela Realizado x Meta da Produção Diária",
+        "description": (
+            "Pedido do usuário: o PDF Consolidado de Corte (Central de Relatórios "
+            "e e-mail diário) agora mostra, logo após os KPIs de cada seção "
+            "(Dia/Período, Mês Atual, Últimos 2 Meses), uma tabela 'Realizado x "
+            "Meta' por setor — Manta Arealva, Manta Iacanga e Lençol Arealva — "
+            "com as linhas Produção do Período e Média Diária, colunas "
+            "Realizado/Meta/Atingimento, mesma estrutura e limiares de cor "
+            "(verde ≥100%, amarelo ≥75%, vermelho <75%) já usados na tabela "
+            "'Rendimento — Realizado x Meta' dos dashboards de Produção Diária "
+            "(pages/2_Producao_Geral.py). Antes o bloco era um resumo em cards "
+            "só pra Arealva/Iacanga, sem essa granularidade. Lençol não tem (e "
+            "não precisa de) meta diária cadastrada — aparece na mesma tabela "
+            "só com o Realizado, sem comparação de %."
+        ),
+    },
+    {
+        "date": "16/07/2026",
+        "tag": "novo",
+        "title": "Dashboards de produção diária ganharam tabela de Realizado x Meta",
+        "description": (
+            "Pedido do usuário: nos dashboards de Produção Diária — tanto de "
+            "facções quarterizadas quanto das empresas fixas (LITTEX/GGTTEX, "
+            "em Colaboradores Internos) — agora há uma tabela 'Rendimento — "
+            "Realizado x Meta' logo abaixo dos KPIs, comparando produção do "
+            "período x meta do período e média diária x meta diária lado a "
+            "lado, com o % de atingimento colorido. Para as empresas fixas, a "
+            "meta usa a mesma guia de metas já usada em Produção Facções "
+            "(utils/metas_manager.load_metas), casando pelo nome de facção que "
+            "representa cada unidade (LITTEX→LITEX, GGTTEX Jogos→GGTTEX RUTE, "
+            "GGTTEX Cortina→GGTTEX CORTINA); GGTTEX Fronha ainda não tem meta "
+            "cadastrada nessa guia, então aparece sem comparação por enquanto."
+        ),
+    },
+    {
+        "date": "16/07/2026",
+        "tag": "correção",
+        "title": "Relatório de Facções: Meta do Período ignorava o filtro de Facção",
+        "description": (
+            "Reportado pelo usuário: no relatório PDF de Produção por Facções, "
+            "ao filtrar por uma ou poucas facções, o KPI 'Meta do Período' "
+            "continuava somando a meta de TODAS as facções cadastradas, não só "
+            "das selecionadas. Causa: tanto pages/5_Producao_Faccoes.py quanto "
+            "utils/faccoes_metas_calc.py:calcular_meta_faccoes agrupavam a "
+            "planilha de metas inteira (goals_df) por facção, sem restringir "
+            "às facções filtradas pelo usuário. Corrigido nos dois pontos: "
+            "a meta agora só soma as facções presentes no filtro ativo. "
+            "Além disso, quando há filtro de Facção aplicado (poucas facções), "
+            "o relatório fica mais enxuto: o 'Painel de Alertas — Facção x "
+            "Meta' (que compara todas as facções entre si) é omitido, e o "
+            "'Resumo por Facção' passa a aparecer logo na 2ª folha, direto "
+            "após o Resumo Executivo."
+        ),
+    },
+    {
+        "date": "15/07/2026",
+        "tag": "correção",
+        "title": "MEGA PREVEN (BOCA) mostrava 'até 06/12' em vez de 'até 14/07'",
+        "description": (
+            "Reportado pelo usuário: no seletor de facções (Produção Geral), "
+            "MEGA PREVEN (BOCA) aparecia com data 06/12 (6 de dezembro) "
+            "enquanto todas as outras facções mostravam 14/07. Causa: a aba "
+            "dessa facção mistura dois formatos de data na mesma coluna — a "
+            "maioria das linhas vem do Google Sheets em M/D/YYYY (ex.: "
+            "'6/12/2026' = 12 de junho), mas as 4 linhas mais recentes "
+            "(digitadas à mão) usam DD/MM/YYYY (ex.: '14/07/2026'). "
+            "utils/date_parser.py:parse_date_series detecta UM formato pra "
+            "coluna inteira (certo pra evitar inversão dia/mês linha-a-linha "
+            "em planilhas de formato único), mas numa coluna genuinamente "
+            "mista isso faz a presença de '14/07/2026' (dia>12, força DMY) "
+            "inverter também linhas ambíguas do formato majoritário — "
+            "'6/12/2026' (12 de junho) virou 6 de dezembro. Adicionada uma "
+            "correção em utils/faccao_loader.py: produção real nunca é no "
+            "futuro, então qualquer data que caia depois de hoje E tenha dia "
+            "e mês ambos ≤12 (logo invertível) tenta a versão invertida e "
+            "usa se ela não for futura. Testado: MEGA PREVEN (BOCA) agora "
+            "mostra 14/07 corretamente, e nenhuma linha de nenhuma facção "
+            "ficou com data no futuro (0 de 748 linhas)."
+        ),
+    },
+    {
         "date": "15/07/2026",
         "tag": "melhoria",
         "title": "Produção Facções: otimização de performance (dashboard lento)",

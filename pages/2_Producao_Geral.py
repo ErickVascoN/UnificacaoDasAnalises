@@ -31,7 +31,7 @@ from utils.producao_unificada import (
     is_quarterizada,
     GRUPO_QUARTERIZADAS,
 )
-from utils.faccoes_metas_calc import calcular_meta_faccoes
+from utils.faccoes_metas_calc import calcular_meta_faccoes, calcular_meta_interna_periodo
 from utils.faccoes_viz import heatmap_por_dimensao, consistencia_por_dimensao
 from utils.feriados import eh_dia_util, eh_feriado, nome_feriado, feriados_no_periodo
 from utils.ui_helpers import multiselect_reset_on_grow as _multiselect_reset_on_grow
@@ -450,6 +450,46 @@ def _join_unique(s: pd.Series) -> str:
     nenhuma. Mesmo padrão de utils/controle_op.py::agregar_por_op."""
     vals = sorted({str(v).strip() for v in s if str(v).strip() not in ("", "nan", "NAN", "None")})
     return " / ".join(vals)
+
+def _tabela_resumo_meta(
+    prod_total: float, meta_periodo: float, media_dia: float, meta_dia: float, tem_meta: bool,
+) -> None:
+    """Tabela compacta Realizado x Meta — período e média diária lado a lado.
+
+    Complementa os cards de KPI (que já mostram os números soltos) com uma
+    leitura direta de rendimento: quanto foi produzido/dia contra o ritmo que
+    a meta exige, sem precisar calcular de cabeça (pedido do usuário 16/07/2026).
+    """
+    linhas = [{
+        "Indicador":     "Produção do Período",
+        "Realizado":     prod_total,
+        "Meta":          meta_periodo if tem_meta else None,
+        "Atingimento":   (prod_total / meta_periodo * 100) if (tem_meta and meta_periodo) else None,
+    }, {
+        "Indicador":     "Média Diária",
+        "Realizado":     media_dia,
+        "Meta":          meta_dia if tem_meta else None,
+        "Atingimento":   (media_dia / meta_dia * 100) if (tem_meta and meta_dia) else None,
+    }]
+    tabela = pd.DataFrame(linhas)
+
+    def _sfmt(v):
+        return fmt_br(v) if v is not None and not pd.isna(v) else "—"
+
+    def _pfmt(v):
+        return f"{v:.1f}%" if v is not None and not pd.isna(v) else "—"
+
+    st.dataframe(
+        tabela.style.map(_color_pct_comparacao, subset=["Atingimento"]).format({
+            "Realizado":   _sfmt,
+            "Meta":        _sfmt,
+            "Atingimento": _pfmt,
+        }),
+        use_container_width=True, hide_index=True,
+    )
+    if not tem_meta:
+        st.caption("Sem meta cadastrada para comparação — mostrando apenas o realizado.")
+
 
 def dias_uteis(datas):
     """
@@ -1615,6 +1655,10 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
     if not tem_meta:
         st.info("Esta facção ainda não possui meta cadastrada para o período selecionado.")
 
+    meta_dia_medio = (meta_periodo / d_uteis) if (tem_meta and d_uteis) else 0
+    st.markdown("##### 🎯 Rendimento — Realizado x Meta")
+    _tabela_resumo_meta(prod_total, meta_periodo, media_dia, meta_dia_medio, tem_meta)
+
     st.markdown("")
 
     tab_vis, tab_cli, tab_rank, tab_dados = st.tabs(
@@ -1623,7 +1667,6 @@ def render_faccao_drilldown(faccao: str, df_unif: pd.DataFrame):
 
     with tab_vis:
         serie = df_f.groupby("DATA", as_index=False)["QUANTIDADE"].sum().sort_values("DATA")
-        meta_dia_medio = (meta_periodo / d_uteis) if (tem_meta and d_uteis) else 0
         serie["Acum. Produzido"] = serie["QUANTIDADE"].cumsum()
         serie["_feriado"] = serie["DATA"].dt.date.map(eh_feriado)
         serie["_dia_util"] = serie["DATA"].dt.date.map(eh_dia_util)
@@ -2011,6 +2054,17 @@ def _consistencia_colaboradores(base: pd.DataFrame, selecionados: list, dias_uni
         linhas.append({"COLABORADOR": nome, "METRICA": "Assiduidade",  "VALOR": round(min(assiduidade, 100.0), 1)})
     return pd.DataFrame(linhas)
 
+# Unidade interna (PRODUCAO_INTERNO_SHEETS) → nome de facção na guia de metas
+# (mesma planilha usada em Produção Facções). GGTTEX Fronha ainda não tem
+# entrada cadastrada nessa guia.
+_META_INTERNA_FACCAO: dict[str, str | None] = {
+    "LITTEX":         "LITEX",
+    "GGTTEX_JOGOS":   "GGTTEX RUTE",
+    "GGTTEX_FRONHA":  None,
+    "GGTTEX_CORTINA": "GGTTEX CORTINA",
+}
+
+
 def _render_interno_tab(chave: str, cfg: dict):
     with st.spinner(f"Carregando dados de {cfg['label']}…"):
         df = load_interno_unidade(chave)
@@ -2053,6 +2107,20 @@ def _render_interno_tab(chave: str, cfg: dict):
     k2.metric("Colaboradores", f"{n_colab}")
     k3.metric("Dias com Produção", f"{dias_unidade}")
     k4.metric("Média / Dia", f"{media_dia:,.0f}".replace(",", "."))
+
+    # ── Realizado x Meta ────────────────────────────────────────────────────────
+    # Mesma guia de metas usada em Produção Facções (utils/metas_manager.load_metas),
+    # casada pelo nome de facção que representa essa unidade interna na planilha
+    # (ver [[project_faccao_nomes_planilha_antiga]]). GGTTEX Fronha ainda não tem
+    # meta cadastrada nessa guia — pedido do usuário 16/07/2026.
+    _dias_com_prod = dff[dff["QUANTIDADE"] > 0]["DATA"].dt.date.nunique()
+    meta_calc = calcular_meta_interna_periodo(
+        _META_INTERNA_FACCAO.get(chave), dff, _dias_com_prod
+    )
+    st.markdown("##### 🎯 Rendimento — Realizado x Meta")
+    _tabela_resumo_meta(
+        total, meta_calc["meta_periodo"], media_dia, meta_calc["meta_dia"], meta_calc["tem_meta"]
+    )
 
     st.markdown("<hr>", unsafe_allow_html=True)
 

@@ -364,8 +364,17 @@ if not _df_periodo_pre.empty:
         _qty_fac_prod_cli[(fn, pn, cn)] = int(qty)
         _qty_fac_prod[(fn, pn)] = _qty_fac_prod.get((fn, pn), 0) + int(qty)
 
+
+# Metas restritas às facções filtradas — sem isso, a Meta do Período soma
+# a meta de TODAS as facções mesmo com filtro de Facção aplicado (reportado
+# pelo usuário 16/07/2026).
+_goals_calc = goals_df
+if faccoes_sel:
+    _faccoes_sel_n = {normalize_text(f) for f in faccoes_sel}
+    _goals_calc = goals_df[goals_df["FACCAO_N"].isin(_faccoes_sel_n)]
+
 _meta_fac_rows = []
-for fn, grp in goals_df.groupby("FACCAO_N"):
+for fn, grp in _goals_calc.groupby("FACCAO_N"):
     faccao_label = grp["FACCAO"].iloc[0]
     meta_dia_fac  = 0.0
     meta_sem_fac  = 0.0
@@ -730,6 +739,8 @@ if _secao_faccoes == "📅 Mensal":
             data_ini=data_ini,
             data_fim=data_fim,
             filtros_texto=" | ".join(filtros_str),
+            rank_df=rank_df,
+            tem_filtro_faccao=bool(faccoes_sel),
         )
 
     def _html_faccoes_mensal() -> bytes:

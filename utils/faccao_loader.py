@@ -124,6 +124,32 @@ def _load_tab(
     # Datas: gviz exporta no formato M/D/YYYY (locale US do Google)
     out["DATA"] = parse_date_series(out["DATA"], default_order="MDY")
 
+    # Corrige datas que caíram no futuro por causa de mistura de formatos na
+    # mesma coluna — ex.: aba QUARTERIZADAS/MEGA PREVEN (BOCA), onde a maioria
+    # das linhas vem do Google Sheets em M/D/YYYY, mas linhas digitadas à mão
+    # usam DD/MM/YYYY. parse_date_series detecta UM formato pra coluna inteira
+    # (correto pra evitar inversão dia/mês linha-a-linha), mas quando a coluna
+    # é genuinamente mista, isso pode inverter dia/mês de linhas ambíguas do
+    # formato minoritário — ex.: "6/12/2026" (12 de junho) virou 6 de dezembro,
+    # aparecendo como a "última data" da facção no dashboard em vez de julho.
+    # Produção real nunca é no futuro: se a data ficou depois de hoje E dia e
+    # mês são ambos ≤12 (logo dava pra inverter), tenta a versão invertida e
+    # usa se ela não for futura. Reportado pelo usuário 15/07/2026.
+    _hoje = pd.Timestamp.now().normalize()
+    def _corrigir_data_futura(ts):
+        if pd.isna(ts) or ts <= _hoje:
+            return ts
+        d, m = ts.day, ts.month
+        if d <= 12 and m <= 12:
+            try:
+                alt = pd.Timestamp(year=ts.year, month=d, day=m)
+                if alt <= _hoje:
+                    return alt
+            except ValueError:
+                pass
+        return ts
+    out["DATA"] = out["DATA"].apply(_corrigir_data_futura)
+
     # Remove linhas inválidas (placeholder, sem quantidade, etc.). Exceção:
     # QUANTIDADE=0 com Observação preenchida é um dia sem produção só pra
     # contextualização (ex.: "máquina quebrou") — mantém a linha pra aparecer
